@@ -1,5 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local WCS = require(ReplicatedStorage.Packages.wcs)
+local WCS = require(ReplicatedStorage.WCS)
 
 local Client = WCS.CreateClient()
 
