@@ -1,0 +1,8 @@
+[package]
+name = "admin/wcs"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+wcs = "cheetiedotpy/wcs@2.4.0"
