@@ -29,7 +29,9 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "$path": "src/client/init.client.luau"
+        "Client": {
+          "$path": "src/client"
+        }
       }
     }
   }
