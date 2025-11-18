@@ -7,7 +7,10 @@
       "Shared": {
         "$path": "src/shared"
       },
-        "Packages": {
+      "Client": {
+        "$path": "src/client"
+      },
+      "Packages": {
         "$path": "Packages"
       }
     },
@@ -21,7 +24,7 @@
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "Client": {
-          "$path": "src/client"
+          "$path": "src/client/init.client.luau"
         }
       }
     }
