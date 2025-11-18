@@ -1,16 +1,17 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
-local Stun = WCS.StatusEffect.new("Stun")
+local Stun = WCS.RegisterStatusEffect({
+	Name = "Stun",
+	Duration = 2,
 
-Stun.Duration = 2
+	OnStartServer = function(self)
+		print("Character stunned")
+	end,
 
-function Stun:OnStartServer()
-	print("Character stunned")
-end
-
-function Stun:OnStartClient()
-	print("Stun effect displayed")
-end
+	OnStartClient = function(self)
+		print("Stun effect displayed")
+	end,
+})
 
 return Stun

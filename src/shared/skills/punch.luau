@@ -1,16 +1,17 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
-local Punch = WCS.Skill.new("Punch")
+local Punch = WCS.RegisterSkill({
+	Name = "Punch",
+	Cooldown = 0.5,
 
-Punch.Cooldown = 0.5
+	OnStartServer = function(self)
+		print("Punch activated on server")
+	end,
 
-function Punch:OnStartServer()
-	print("Punch activated on server")
-end
-
-function Punch:OnStartClient()
-	print("Punch activated on client")
-end
+	OnStartClient = function(self)
+		print("Punch activated on client")
+	end,
+})
 
 return Punch
