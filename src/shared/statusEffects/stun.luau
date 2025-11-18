@@ -1,7 +1,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
-local Stun = WCS.RegisteredStatusEffects.StatusEffect.new("Stun")
+local Stun = WCS.StatusEffect.new("Stun")
 
 Stun.Duration = 2
 
