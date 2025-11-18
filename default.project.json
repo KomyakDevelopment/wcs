@@ -8,7 +8,12 @@
         "$path": "src/shared"
       },
       "Client": {
-        "$path": "src/client"
+        "controllers": {
+          "$path": "src/client/controllers"
+        },
+        "managers": {
+          "$path": "src/client/managers"
+        }
       },
       "Packages": {
         "$path": "Packages"
@@ -23,7 +28,7 @@
 
     "StarterPlayer": {
       "StarterPlayerScripts": {
-        "Client": {
+        "init": {
           "$path": "src/client/init.client.luau"
         }
       }
