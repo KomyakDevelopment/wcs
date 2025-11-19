@@ -6,6 +6,16 @@ local SoftHitstun = WCS.RegisterStatusEffect("SoftHitstun")
 -- Movement reduction: player moves at 20% of their normal speed
 local SPEED_MULTIPLIER = 0.2
 
+function SoftHitstun:OnConstructServer()
+	-- Store reference to this status effect on the character
+	-- This allows us to stop previous instances
+	if self.Character._ActiveSoftHitstun then
+		-- Stop the previous soft hitstun
+		self.Character._ActiveSoftHitstun:Stop()
+	end
+	self.Character._ActiveSoftHitstun = self
+end
+
 function SoftHitstun:OnStartServer()
 	local character = self.Character
 	local humanoid = character.Instance:FindFirstChild("Humanoid")
@@ -31,14 +41,18 @@ function SoftHitstun:OnStartServer()
 	self:SetHumanoidData({
 		WalkSpeed = { hitstunSpeed, "Set" },
 		JumpPower = { 0, "Set" },
+		JumpHeight = { 0, "Set" },
 	})
 
 	print(`[SoftHitstun] Applied to {character.Instance.Name} - Speed: {hitstunSpeed}`)
 end
 
 function SoftHitstun:OnEndServer()
-	-- Clear hitstun flag when effect ends
-	self.Character.IsInHitstun = false
+	-- Only clear flag if this is the active hitstun
+	if self.Character._ActiveSoftHitstun == self then
+		self.Character.IsInHitstun = false
+		self.Character._ActiveSoftHitstun = nil
+	end
 
 	-- Clear metadata
 	self:SetMetadata({

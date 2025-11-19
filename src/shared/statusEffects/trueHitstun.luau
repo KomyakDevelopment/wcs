@@ -6,6 +6,16 @@ local TrueHitstun = WCS.RegisterStatusEffect("TrueHitstun")
 -- Movement reduction: player moves at 15% of their normal speed
 local SPEED_MULTIPLIER = 0.15
 
+function TrueHitstun:OnConstructServer()
+	-- Store reference to this status effect on the character
+	-- This allows us to stop previous instances
+	if self.Character._ActiveTrueHitstun then
+		-- Stop the previous true hitstun
+		self.Character._ActiveTrueHitstun:Stop()
+	end
+	self.Character._ActiveTrueHitstun = self
+end
+
 function TrueHitstun:OnStartServer()
 	local character = self.Character
 	local humanoid = character.Instance:FindFirstChild("Humanoid")
@@ -31,14 +41,18 @@ function TrueHitstun:OnStartServer()
 	self:SetHumanoidData({
 		WalkSpeed = { hitstunSpeed, "Set" },
 		JumpPower = { 0, "Set" },
+		JumpHeight = { 0, "Set" },
 	})
 
 	print(`[TrueHitstun] Applied to {character.Instance.Name} - Speed: {hitstunSpeed}`)
 end
 
 function TrueHitstun:OnEndServer()
-	-- Clear hitstun flag when effect ends
-	self.Character.IsInHitstun = false
+	-- Only clear flag if this is the active hitstun
+	if self.Character._ActiveTrueHitstun == self then
+		self.Character.IsInHitstun = false
+		self.Character._ActiveTrueHitstun = nil
+	end
 
 	-- Clear metadata
 	self:SetMetadata({
