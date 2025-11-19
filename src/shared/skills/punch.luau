@@ -12,7 +12,7 @@ local PUNCH_RANGE = 8
 local PUNCH_COOLDOWN = 0.5
 
 -- Hitstun duration for unarmed attacks
-local SOFT_HITSTUN_DURATION = 0.8
+local SOFT_HITSTUN_DURATION = 1.3
 
 function Punch:OnConstructServer()
 	-- Setup server-side skill data
