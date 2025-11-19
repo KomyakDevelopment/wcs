@@ -1,13 +1,12 @@
 --!strict
 -- Client Initialization
--- Sets up WCS, input manager, combat controller, and debug tools
+-- Sets up WCS, input manager, and combat controller
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
-local StunIndicatorManager = require(ReplicatedStorage.Client.managers.stunIndicatorManager)
 
 -- Initialize WCS Client
 local Client = WCS.CreateClient()
@@ -21,7 +20,6 @@ Client:Start()
 -- Initialize managers and controllers
 local inputManager = InputManager.new()
 local combatController = CombatController.new()
-local stunIndicatorManager = StunIndicatorManager.new()
 
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)
@@ -74,4 +72,4 @@ inputManager:bindAction("UI.ToggleMap", function(actionName, state, input)
 	end
 end)
 
-print("[Client] Initialization complete - Input manager, combat controller, and stun indicators ready")
+print("[Client] Initialization complete - Input manager and combat controller ready")

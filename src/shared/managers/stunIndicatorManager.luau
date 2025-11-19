@@ -1,5 +1,5 @@
 --!strict
--- Stun Indicator Manager
+-- Stun Indicator Manager (Server)
 -- Shows visual indicators welded to players' heads for debugging hitstun states
 -- GREEN = No stun, YELLOW = Soft hitstun, RED = True hitstun
 
@@ -92,27 +92,30 @@ function StunIndicatorManager:_createIndicator(character: Model): Part?
 	return indicator
 end
 
--- Get hitstun state by checking humanoid speed (replicated automatically)
+-- Get hitstun state from WCS character (server has direct access to IsInHitstun flag)
 function StunIndicatorManager:_getHitstunState(wcsCharacter): string
 	if not wcsCharacter then
 		return "None"
 	end
 
-	-- Check humanoid speed (this is replicated to clients automatically)
-	local humanoid = wcsCharacter.Instance:FindFirstChild("Humanoid")
-	if humanoid then
-		local speed = humanoid.WalkSpeed
+	-- Check the IsInHitstun flag (set by status effects)
+	if wcsCharacter.IsInHitstun then
+		-- Determine type by checking humanoid speed
+		local humanoid = wcsCharacter.Instance:FindFirstChild("Humanoid")
+		if humanoid then
+			local speed = humanoid.WalkSpeed
 
-		-- If speed is significantly reduced, they're in hitstun
-		if speed < 6 then -- Normal is 16
-			-- True hitstun = 15% speed (around 2.4)
-			-- Soft hitstun = 20% speed (around 3.2)
+			-- True hitstun = 15% speed (around 2.4 for default 16)
+			-- Soft hitstun = 20% speed (around 3.2 for default 16)
 			if speed < 3 then
 				return "TrueHitstun"
 			else
 				return "SoftHitstun"
 			end
 		end
+
+		-- Default to soft if we can't determine
+		return "SoftHitstun"
 	end
 
 	return "None"
