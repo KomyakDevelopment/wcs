@@ -1,12 +1,13 @@
 --!strict
 -- Client Initialization
--- Sets up WCS, input manager, and combat controller
+-- Sets up WCS, input manager, combat controller, and equipment
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
+local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
 -- Initialize WCS Client
 local Client = WCS.CreateClient()
@@ -20,6 +21,7 @@ Client:Start()
 -- Initialize managers and controllers
 local inputManager = InputManager.new()
 local combatController = CombatController.new()
+local equipmentController = EquipmentController.new()
 
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)
@@ -44,8 +46,15 @@ inputManager:bindAction("Combat.Dodge", function(actionName, state, input)
 	end
 end)
 
--- Bind ability hotkeys
-for i = 1, 4 do
+-- Bind ability hotkeys (slot 1 now equips fists)
+inputManager:bindAction(`Abilities.Ability1`, function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		equipmentController:equipWeapon("fists")
+	end
+end)
+
+-- Slots 2-4 for future abilities
+for i = 2, 4 do
 	inputManager:bindAction(`Abilities.Ability{i}`, function(actionName, state, input)
 		if state == Enum.UserInputState.Begin then
 			combatController:useAbility(i)
@@ -72,4 +81,4 @@ inputManager:bindAction("UI.ToggleMap", function(actionName, state, input)
 	end
 end)
 
-print("[Client] Initialization complete - Input manager and combat controller ready")
+print("[Client] Initialization complete - Input manager, combat controller, and equipment ready")

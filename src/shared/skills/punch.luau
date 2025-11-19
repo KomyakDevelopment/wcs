@@ -24,7 +24,19 @@ function Punch:OnConstructClient()
 end
 
 function Punch:OnStartServer()
-	-- Check if player is in hitstun by checking the flag
+	-- Check if player has equipment manager
+	if not self.Character.EquipmentManager then
+		warn("[Punch] No equipment manager found")
+		return
+	end
+
+	-- Check if player has a weapon equipped
+	if not self.Character.EquipmentManager:hasWeaponEquipped() then
+		print("[Punch] Blocked - No weapon equipped")
+		return
+	end
+
+	-- Check if player is in hitstun
 	if self.Character.IsInHitstun then
 		print("[Punch] Blocked - Player is in hitstun")
 		return
