@@ -104,13 +104,20 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	targetHumanoid:TakeDamage(PUNCH_DAMAGE)
 
 	-- Apply soft hitstun to the target (if they have WCS character)
-	local targetWCSCharacter = self.Server:GetCharacterFromInstance(targetModel)
+	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
-		local hitstun = targetWCSCharacter:ApplyStatusEffect("SoftHitstun")
+		-- WCS 2.4.0 uses CreateStatusEffect, not ApplyStatusEffect
+		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+		local hitstun = SoftHitstun.new(targetWCSCharacter)
+
 		if hitstun then
 			hitstun:Start(SOFT_HITSTUN_DURATION)
 			print(`[Punch] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
+		else
+			warn(`[Punch] Failed to create SoftHitstun for {targetModel.Name}`)
 		end
+	else
+		warn(`[Punch] No WCS character found for {targetModel.Name}`)
 	end
 
 	-- TODO: Apply knockback

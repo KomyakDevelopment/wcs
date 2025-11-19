@@ -15,10 +15,6 @@ CombatController.__index = CombatController
 function CombatController.new()
 	local self = setmetatable({}, CombatController)
 
-	self.comboCount = 0
-	self.lastAttackTime = 0
-	self.comboResetTime = 1.5 -- Seconds before combo resets
-
 	return self
 end
 
@@ -49,15 +45,12 @@ function CombatController:performPrimaryAttack()
 	-- Check if skill is on cooldown
 	local state = punchSkill:GetState()
 	if state.Debounce then
-		print("[CombatController] Punch is on cooldown")
+		-- Don't update combo or print anything - skill is on cooldown
 		return
 	end
 
 	-- Execute the skill
 	punchSkill:Start()
-
-	-- Update combo tracking
-	self:_updateCombo()
 end
 
 -- Perform secondary attack (M2)
@@ -87,32 +80,6 @@ end
 function CombatController:useAbility(slotNumber: number)
 	print(`[CombatController] Using ability slot {slotNumber} - Not implemented yet`)
 	-- TODO: Get ability from hotbar and execute
-end
-
--- Internal: Update combo counter
-function CombatController:_updateCombo()
-	local currentTime = tick()
-
-	-- Reset combo if too much time has passed
-	if currentTime - self.lastAttackTime > self.comboResetTime then
-		self.comboCount = 0
-	end
-
-	self.comboCount += 1
-	self.lastAttackTime = currentTime
-
-	print(`[CombatController] Combo: {self.comboCount}`)
-end
-
--- Get current combo count
-function CombatController:getComboCount(): number
-	return self.comboCount
-end
-
--- Reset combo manually
-function CombatController:resetCombo()
-	self.comboCount = 0
-	self.lastAttackTime = 0
 end
 
 return CombatController
