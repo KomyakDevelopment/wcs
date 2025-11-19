@@ -10,6 +10,11 @@ Server:RegisterDirectory(ReplicatedStorage.Shared.statusEffects)
 
 Server:Start()
 
+-- NOW create the dummy after server has started
+local dummy = workspace:WaitForChild("Dummy")
+local wcsChar = WCS.Character.new(dummy)
+wcsChar:ApplyMoveset("Unarmed")
+
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function(character)
 		local humanoid = character:WaitForChild("Humanoid")
