@@ -6,6 +6,10 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local Punch = WCS.RegisterSkill("Punch")
 
+-- Import status effects for checking
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+
 -- Configuration
 local PUNCH_DAMAGE = 10
 local PUNCH_RANGE = 8
@@ -24,6 +28,22 @@ function Punch:OnConstructClient()
 end
 
 function Punch:OnStartServer()
+	-- Check if player is in hitstun by checking for active status effects
+	-- Try to get status effects from character
+	local softHitstun = self.Character:GetStatusEffectFromConstructor(SoftHitstun)
+	local trueHitstun = self.Character:GetStatusEffectFromConstructor(TrueHitstun)
+
+	-- Check if either hitstun is active
+	if softHitstun and softHitstun:GetState().Active then
+		print("[Punch] Blocked - Player is in SoftHitstun")
+		return
+	end
+
+	if trueHitstun and trueHitstun:GetState().Active then
+		print("[Punch] Blocked - Player is in TrueHitstun")
+		return
+	end
+
 	print("[Punch] Server: Punch activated")
 
 	-- Apply cooldown
@@ -106,8 +126,7 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	-- Apply soft hitstun to the target (if they have WCS character)
 	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
-		-- WCS 2.4.0 uses CreateStatusEffect, not ApplyStatusEffect
-		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+		-- WCS 2.4.0 uses direct instantiation
 		local hitstun = SoftHitstun.new(targetWCSCharacter)
 
 		if hitstun then
