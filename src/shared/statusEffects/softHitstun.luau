@@ -17,6 +17,12 @@ function SoftHitstun:OnStartServer()
 	-- Set flag on WCS Character to indicate hitstun is active
 	character.IsInHitstun = true
 
+	-- Replicate state to clients via metadata
+	self:SetMetadata({
+		Active = true,
+		Type = "SoftHitstun",
+	})
+
 	-- Get current walkspeed and calculate hitstun speed
 	local originalSpeed = humanoid.WalkSpeed
 	local hitstunSpeed = originalSpeed * SPEED_MULTIPLIER
@@ -33,6 +39,12 @@ end
 function SoftHitstun:OnEndServer()
 	-- Clear hitstun flag when effect ends
 	self.Character.IsInHitstun = false
+
+	-- Clear metadata
+	self:SetMetadata({
+		Active = false,
+		Type = nil,
+	})
 
 	print(`[SoftHitstun] Ended on {self.Character.Instance.Name}`)
 end

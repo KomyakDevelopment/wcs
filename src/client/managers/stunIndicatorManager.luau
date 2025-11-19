@@ -1,10 +1,11 @@
 --!strict
 -- Stun Indicator Manager
 -- Shows visual indicators welded to players' heads for debugging hitstun states
--- RED = No stun, GREEN = Soft hitstun, BLUE = True hitstun
+-- GREEN = No stun, YELLOW = Soft hitstun, RED = True hitstun
 
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local StunIndicatorManager = {}
 StunIndicatorManager.__index = StunIndicatorManager
@@ -37,9 +38,9 @@ end
 -- Create indicator welded to character's head
 function StunIndicatorManager:_createIndicator(character: Model): Part?
 	-- Check if template exists
-	local template = game.ReplicatedStorage.Assets.Testing:FindFirstChild("StunIndicator")
+	local template = ReplicatedStorage.Assets.Testing:FindFirstChild("StunIndicator")
 	if not template or not template:IsA("BasePart") then
-		warn("[StunIndicator] StunIndicator template not found in Workspace")
+		warn("[StunIndicator] StunIndicator template not found in ReplicatedStorage.Assets.Testing")
 		return nil
 	end
 
@@ -91,30 +92,53 @@ function StunIndicatorManager:_createIndicator(character: Model): Part?
 	return indicator
 end
 
--- Get hitstun state from WCS character
+-- Get hitstun state from status effect metadata (replicated from server)
 function StunIndicatorManager:_getHitstunState(wcsCharacter): string
 	if not wcsCharacter then
 		return "None"
 	end
 
-	-- Check the IsInHitstun flag we set in status effects
-	if wcsCharacter.IsInHitstun then
-		-- Check which specific hitstun by looking at humanoid speed
-		local humanoid = wcsCharacter.Instance:FindFirstChild("Humanoid")
-		if humanoid then
-			local speed = humanoid.WalkSpeed
-
-			-- True hitstun = 15% speed (around 2.4 for default 16)
-			-- Soft hitstun = 20% speed (around 3.2 for default 16)
+	-- Try to get status effects and check their metadata
+	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+	
+	-- Check for soft hitstun via metadata
+	local softHitstunInstances = {}
+	local trueHitstunInstances = {}
+	
+	-- Get all instances of status effects from character
+	-- We'll check by looking at the character's children for status effect instances
+	for _, child in pairs(wcsCharacter.Instance:GetDescendants()) do
+		if child:IsA("ObjectValue") and child.Name:find("StatusEffect") then
+			local effect = child.Value
+			if effect then
+				local metadata = effect:GetMetadata and effect:GetMetadata()
+				if metadata and metadata.Active then
+					if metadata.Type == "SoftHitstun" then
+						return "SoftHitstun"
+					elseif metadata.Type == "TrueHitstun" then
+						return "TrueHitstun"
+					end
+				end
+			end
+		end
+	end
+	
+	-- Fallback: Check humanoid speed (less reliable but works)
+	local humanoid = wcsCharacter.Instance:FindFirstChild("Humanoid")
+	if humanoid then
+		local speed = humanoid.WalkSpeed
+		
+		-- If speed is significantly reduced, they're in hitstun
+		if speed < 6 then -- Normal is 16
+			-- True hitstun = 15% speed (around 2.4)
+			-- Soft hitstun = 20% speed (around 3.2)
 			if speed < 3 then
 				return "TrueHitstun"
 			else
 				return "SoftHitstun"
 			end
 		end
-
-		-- Default to soft if we can't determine
-		return "SoftHitstun"
 	end
 
 	return "None"
@@ -162,7 +186,7 @@ function StunIndicatorManager:_startUpdating()
 		self.lastUpdate = currentTime
 
 		-- Update all character indicators
-		local WCS = require(game:GetService("ReplicatedStorage").Packages.wcs)
+		local WCS = require(ReplicatedStorage.Packages.wcs)
 
 		for _, character in pairs(Workspace:GetChildren()) do
 			if character:IsA("Model") and character:FindFirstChild("Humanoid") then
