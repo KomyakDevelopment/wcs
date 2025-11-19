@@ -14,20 +14,26 @@ function SoftHitstun:OnStartServer()
 		return
 	end
 
+	-- Set flag on WCS Character to indicate hitstun is active
+	character.IsInHitstun = true
+
 	-- Get current walkspeed and calculate hitstun speed
 	local originalSpeed = humanoid.WalkSpeed
 	local hitstunSpeed = originalSpeed * SPEED_MULTIPLIER
 
-	-- Apply movement reduction
+	-- Apply movement reduction using WCS SetHumanoidData
 	self:SetHumanoidData({
 		WalkSpeed = { hitstunSpeed, "Set" },
-		JumpPower = { 0, "Set" }, -- Can't jump during hitstun
+		JumpPower = { 0, "Set" },
 	})
 
 	print(`[SoftHitstun] Applied to {character.Instance.Name} - Speed: {hitstunSpeed}`)
 end
 
 function SoftHitstun:OnEndServer()
+	-- Clear hitstun flag when effect ends
+	self.Character.IsInHitstun = false
+
 	print(`[SoftHitstun] Ended on {self.Character.Instance.Name}`)
 end
 
