@@ -11,6 +11,9 @@ local PUNCH_DAMAGE = 10
 local PUNCH_RANGE = 8
 local PUNCH_COOLDOWN = 0.5
 
+-- Hitstun duration for unarmed attacks
+local SOFT_HITSTUN_DURATION = 0.8
+
 function Punch:OnConstructServer()
 	-- Setup server-side skill data
 	self.hitTargets = {}
@@ -99,6 +102,16 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 
 	-- Apply damage
 	targetHumanoid:TakeDamage(PUNCH_DAMAGE)
+
+	-- Apply soft hitstun to the target (if they have WCS character)
+	local targetWCSCharacter = self.Server:GetCharacterFromInstance(targetModel)
+	if targetWCSCharacter then
+		local hitstun = targetWCSCharacter:ApplyStatusEffect("SoftHitstun")
+		if hitstun then
+			hitstun:Start(SOFT_HITSTUN_DURATION)
+			print(`[Punch] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
+		end
+	end
 
 	-- TODO: Apply knockback
 	-- local targetRootPart = targetModel:FindFirstChild("HumanoidRootPart")
