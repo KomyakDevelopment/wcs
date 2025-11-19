@@ -15,7 +15,15 @@ CombatController.__index = CombatController
 function CombatController.new()
 	local self = setmetatable({}, CombatController)
 
+	-- Reference to equipment controller (set later)
+	self.equipmentController = nil
+
 	return self
+end
+
+-- Set equipment controller reference
+function CombatController:setEquipmentController(equipmentController)
+	self.equipmentController = equipmentController
 end
 
 -- Get the current WCS character wrapper
@@ -30,6 +38,19 @@ end
 
 -- Perform primary attack (M1)
 function CombatController:performPrimaryAttack()
+	-- Check if player has a slot selected (waiting to confirm equip/unequip)
+	if self.equipmentController and self.equipmentController:getSelectedSlot() then
+		-- Confirm the equip/unequip action
+		local slotNumber = self.equipmentController:getSelectedSlot()
+
+		-- Map slot to weapon ID
+		if slotNumber == 1 then
+			self.equipmentController:confirmAction("fists")
+		end
+
+		return -- Don't perform attack when confirming equipment
+	end
+
 	local character = self:getCharacter()
 	if not character then
 		return
@@ -38,7 +59,7 @@ function CombatController:performPrimaryAttack()
 	-- Get the punch skill from character
 	local punchSkill = character:GetSkillFromConstructor(Punch)
 	if not punchSkill then
-		warn("[CombatController] Punch skill not found on character")
+		-- No skill found - player probably doesn't have weapon equipped
 		return
 	end
 

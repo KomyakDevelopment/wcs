@@ -23,6 +23,9 @@ local inputManager = InputManager.new()
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
+-- Link equipment controller to combat controller
+combatController:setEquipmentController(equipmentController)
+
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
@@ -46,10 +49,10 @@ inputManager:bindAction("Combat.Dodge", function(actionName, state, input)
 	end
 end)
 
--- Bind ability hotkeys (slot 1 now equips fists)
+-- Bind ability hotkeys (slot 1 now SELECTS fists, M1 to confirm)
 inputManager:bindAction(`Abilities.Ability1`, function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
-		equipmentController:equipWeapon("fists")
+		equipmentController:selectSlot(1)
 	end
 end)
 
