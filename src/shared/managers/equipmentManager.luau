@@ -76,7 +76,11 @@ function EquipmentManager:unequip()
 
 	-- Stop idle animation
 	if self.idleAnimation then
-		self.idleAnimation:Stop()
+		for _, track in ipairs(self.idleAnimation) do
+			if track and track.Stop then
+				track:Stop()
+			end
+		end
 		self.idleAnimation = nil
 	end
 
