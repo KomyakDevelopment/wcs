@@ -1,0 +1,322 @@
+--!strict
+-- Sprint Manager
+-- Handles double-tap sprint detection and sprint state management
+-- Works independently of WCS movesets - always available to the player
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+local WCS = require(ReplicatedStorage.Packages.wcs)
+
+local SprintManager = {}
+SprintManager.__index = SprintManager
+
+-- Configuration
+local SPRINT_SPEED_MULTIPLIER = 1.5 -- 150% of normal walk speed
+local DOUBLE_TAP_WINDOW = 0.4 -- Time window to detect double tap (seconds) - increased for better detection
+local MIN_SPRINT_VELOCITY = 3 -- Minimum velocity to maintain sprint - lowered for better fluidity
+local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after sprint starts
+
+-- Animation
+local SPRINT_ANIMATION_ID = "rbxassetid://104453488066690"
+
+-- Movement keys for double-tap detection
+local MOVEMENT_KEYS = {
+	[Enum.KeyCode.W] = "Forward",
+	[Enum.KeyCode.A] = "Left",
+	[Enum.KeyCode.S] = "Backward",
+	[Enum.KeyCode.D] = "Right",
+}
+
+function SprintManager.new()
+	local self = setmetatable({}, SprintManager)
+
+	-- State tracking
+	self.doubleTapReady = {} -- Tracks if first tap occurred for each key
+	self.doubleTapTimers = {} -- Tracks timeout tasks for each key
+	self.sprintActive = false
+	self.loadedAnimation = nil
+	self.currentAnimTrack = nil
+	self.sprintDirection = nil
+	self.baseWalkSpeed = 16 -- Default walkspeed
+	self.sprintStartTime = 0 -- Track when sprint started for grace period
+
+	-- Setup
+	self:_initialize()
+
+	return self
+end
+
+function SprintManager:_initialize()
+	-- Wait for character
+	local player = Players.LocalPlayer
+	local character = player.Character or player.CharacterAdded:Wait()
+
+	-- Preload sprint animation
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid then
+		self.baseWalkSpeed = humanoid.WalkSpeed
+
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			local animation = Instance.new("Animation")
+			animation.AnimationId = SPRINT_ANIMATION_ID
+			self.loadedAnimation = animator:LoadAnimation(animation)
+		end
+	end
+
+	-- Setup double-tap detection
+	self:_setupDoubleTapDetection()
+
+	-- Monitor sprint state
+	self:_monitorSprint()
+
+	print("[SprintManager] Initialized")
+end
+
+-- Setup double-tap detection for movement keys
+function SprintManager:_setupDoubleTapDetection()
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+
+		-- Check if it's a movement key
+		local direction = MOVEMENT_KEYS[input.KeyCode]
+		if not direction then
+			return
+		end
+
+		-- Check if sprint is already active
+		if self.sprintActive then
+			return
+		end
+
+		local keyCode = input.KeyCode
+
+		-- Check if this is the second tap (double-tap ready is true)
+		if self.doubleTapReady[keyCode] == true then
+			-- Double tap detected!
+			self:_handleDoubleTap(direction)
+
+			-- Cancel the timeout timer
+			if self.doubleTapTimers[keyCode] then
+				task.cancel(self.doubleTapTimers[keyCode])
+				self.doubleTapTimers[keyCode] = nil
+			end
+
+			-- Reset double-tap state
+			self.doubleTapReady[keyCode] = false
+		else
+			-- First tap - set ready state and start timeout
+			self.doubleTapReady[keyCode] = true
+
+			-- Start timeout to reset if second tap doesn't come
+			self.doubleTapTimers[keyCode] = task.delay(DOUBLE_TAP_WINDOW, function()
+				if self.doubleTapReady[keyCode] == true then
+					self.doubleTapReady[keyCode] = false
+				end
+			end)
+		end
+	end)
+end
+
+-- Handle double-tap sprint activation
+function SprintManager:_handleDoubleTap(direction: string)
+	-- Check if player is in shiftlock
+	local isShiftLock = self:_isInShiftLock()
+
+	-- Determine sprint direction based on mode
+	local sprintDirection = direction
+
+	if isShiftLock then
+		-- In shiftlock, only W-W (forward) triggers sprint
+		if direction ~= "Forward" then
+			return
+		end
+	else
+		-- Not in shiftlock - check camera-relative direction
+		-- If pressing S while looking backward, treat as forward sprint
+		if direction == "Backward" then
+			sprintDirection = self:_getActualSprintDirection()
+		end
+	end
+
+	self.sprintDirection = sprintDirection
+	print(`[SprintManager] Double-tap detected: {direction} -> Sprint: {sprintDirection}`)
+
+	-- Start sprint
+	self:_startSprint()
+end
+
+-- Start sprint
+function SprintManager:_startSprint()
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	-- Check if player has any status effects that prevent sprinting
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if wcsCharacter then
+		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+		local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+		local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+
+		if wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
+			print("[SprintManager] Blocked - Player is in hitstun/stun")
+			return
+		end
+	end
+
+	self.sprintActive = true
+	self.sprintStartTime = tick() -- Record sprint start time
+
+	-- Play sprint animation
+	if self.loadedAnimation then
+		self.currentAnimTrack = self.loadedAnimation
+		self.currentAnimTrack:Play(0.1) -- Smooth transition
+		print("[SprintManager] Playing sprint animation")
+	end
+
+	-- Apply sprint speed
+	local humanoid = character:FindFirstChild("Humanoid")
+	if humanoid then
+		self.baseWalkSpeed = humanoid.WalkSpeed
+		humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
+		print(`[SprintManager] Sprint activated - Speed: {humanoid.WalkSpeed}`)
+	end
+end
+
+-- Stop sprint
+function SprintManager:_stopSprint()
+	if not self.sprintActive then
+		return
+	end
+
+	self.sprintActive = false
+	self.sprintDirection = nil
+
+	-- Stop animation
+	if self.currentAnimTrack then
+		self.currentAnimTrack:Stop(0.1)
+		self.currentAnimTrack = nil
+	end
+
+	-- Reset walk speed
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if character then
+		local humanoid = character:FindFirstChild("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = self.baseWalkSpeed
+		end
+	end
+
+	print("[SprintManager] Sprint deactivated")
+end
+
+-- Check if player is in shiftlock mode
+function SprintManager:_isInShiftLock(): boolean
+	-- Check if shiftlock is enabled in player settings
+	return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+end
+
+-- Get actual sprint direction based on camera and movement
+function SprintManager:_getActualSprintDirection(): string
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return "Forward"
+	end
+
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then
+		return "Forward"
+	end
+
+	local camera = workspace.CurrentCamera
+	if not camera then
+		return "Forward"
+	end
+
+	-- Calculate angle between camera look vector and character forward
+	local cameraLook = camera.CFrame.LookVector
+	local characterForward = humanoidRootPart.CFrame.LookVector
+
+	local dotProduct = cameraLook:Dot(characterForward)
+
+	-- If camera is facing opposite direction (looking backward), S becomes forward sprint
+	if dotProduct < -0.5 then
+		return "Forward"
+	end
+
+	return "Backward"
+end
+
+-- Monitor sprint state and auto-cancel when conditions aren't met
+function SprintManager:_monitorSprint()
+	RunService.Heartbeat:Connect(function()
+		if not self.sprintActive then
+			return
+		end
+
+		-- Check if sprint should be cancelled
+		if self:_shouldCancelSprint() then
+			self:_stopSprint()
+		end
+	end)
+end
+
+-- Check if sprint should be cancelled
+function SprintManager:_shouldCancelSprint(): boolean
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return true
+	end
+
+	-- Check if player is in hitstun
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if wcsCharacter then
+		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+		local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+		local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+
+		if wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
+			return true
+		end
+	end
+
+	-- Grace period - don't check velocity immediately after starting sprint
+	local timeSinceSprintStart = tick() - self.sprintStartTime
+	if timeSinceSprintStart < SPRINT_GRACE_PERIOD then
+		return false
+	end
+
+	-- Check if player is not pressing any movement keys
+	local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W)
+		or UserInputService:IsKeyDown(Enum.KeyCode.A)
+		or UserInputService:IsKeyDown(Enum.KeyCode.S)
+		or UserInputService:IsKeyDown(Enum.KeyCode.D)
+
+	if not isMoving then
+		return true
+	end
+
+	-- Check if player stopped moving (only after grace period)
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if humanoidRootPart then
+		local velocity = Vector3.new(humanoidRootPart.AssemblyLinearVelocity.X, 0, humanoidRootPart.AssemblyLinearVelocity.Z)
+		if velocity.Magnitude < MIN_SPRINT_VELOCITY then
+			return true
+		end
+	end
+
+	return false
+end
+
+return SprintManager
