@@ -11,7 +11,7 @@ export type EquipmentManager = typeof(setmetatable(
 	{} :: {
 		character: any, -- WCS Character
 		equipped: string?, -- Currently equipped weapon ID
-		idleAnimation: AnimationTrack?,
+		idleAnimation: { AnimationTrack }?,
 	},
 	EquipmentManager
 ))
@@ -20,7 +20,7 @@ export type EquipmentManager = typeof(setmetatable(
 local EQUIPMENT = {
 	fists = {
 		Name = "Fists",
-		IdleAnimationId = 139347452198150,
+		IdleAnimationIds = { 115261994832101, 118333310231162 },
 		Moveset = "Unarmed",
 	},
 }
@@ -55,8 +55,8 @@ function EquipmentManager:equip(weaponId: string): boolean
 	self.character:ApplyMoveset(weapon.Moveset)
 
 	-- Play idle animation (server-side, replicates to all clients)
-	if weapon.IdleAnimationId then
-		self:_playIdleAnimation(weapon.IdleAnimationId)
+	if weapon.IdleAnimationIds then
+		self:_playIdleAnimation(weapon.IdleAnimationIds)
 	end
 
 	self.equipped = weaponId
@@ -99,33 +99,40 @@ function EquipmentManager:getEquipped(): string?
 end
 
 -- Internal: Play idle animation (server-side, replicates to clients)
-function EquipmentManager:_playIdleAnimation(animationId: number)
+function EquipmentManager:_playIdleAnimation(animationIds: { number })
 	local humanoid = self.character.Instance:FindFirstChild("Humanoid")
-
 	if not humanoid then
 		warn("[EquipmentManager] No Humanoid found")
 		return
 	end
 
 	local animator = humanoid:FindFirstChildOfClass("Animator")
-
 	if not animator then
 		warn("[EquipmentManager] No Animator found")
 		return
 	end
 
-	-- Create animation instance
-	local animation = Instance.new("Animation")
-	animation.AnimationId = `rbxassetid://{animationId}`
+	-- Stop previous animations (if any)
+	if self.idleAnimation then
+		for _, track in ipairs(self.idleAnimation) do
+			track:Stop()
+		end
+	end
 
-	-- Load and play animation
-	local track = animator:LoadAnimation(animation)
-	track.Looped = true
-	track:Play()
+	self.idleAnimation = {} -- store multiple tracks
 
-	self.idleAnimation = track
+	-- Load & play ALL idle animations
+	for _, animId in ipairs(animationIds) do
+		local anim = Instance.new("Animation")
+		anim.AnimationId = `rbxassetid://{animId}`
 
-	print(`[EquipmentManager] Playing idle animation: {animationId}`)
+		local track = animator:LoadAnimation(anim)
+		track.Looped = true
+		track:Play()
+
+		table.insert(self.idleAnimation, track)
+		print(`[EquipmentManager] Playing idle animation: {animId}`)
+	end
 end
 
 -- Cleanup
