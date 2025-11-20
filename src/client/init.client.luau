@@ -25,8 +25,9 @@ local sprintManager = SprintManager.new()
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
--- Link equipment controller to combat controller
+-- Link controllers and managers
 combatController:setEquipmentController(equipmentController)
+combatController:setSprintManager(sprintManager)
 
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)

@@ -65,6 +65,24 @@ function SprintManager:_initialize()
 			animation.AnimationId = SPRINT_ANIMATION_ID
 			self.loadedAnimation = animator:LoadAnimation(animation)
 		end
+
+		-- Monitor WalkSpeed changes to prevent animations/equipment from overriding sprint
+		humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+			if self.sprintActive then
+				-- Sprint is active - restore sprint speed if something changed it
+				local expectedSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
+				if math.abs(humanoid.WalkSpeed - expectedSpeed) > 0.1 then
+					-- Something else changed speed - restore sprint multiplier
+					task.defer(function()
+						humanoid.WalkSpeed = expectedSpeed
+						print(`[SprintManager] Sprint speed restored: {expectedSpeed}`)
+					end)
+				end
+			else
+				-- Not sprinting - track base speed changes
+				self.baseWalkSpeed = humanoid.WalkSpeed
+			end
+		end)
 	end
 
 	-- Setup double-tap detection
@@ -191,7 +209,12 @@ function SprintManager:_startSprint()
 	end
 end
 
--- Stop sprint
+-- Stop sprint (public method)
+function SprintManager:stopSprint()
+	self:_stopSprint()
+end
+
+-- Stop sprint (internal)
 function SprintManager:_stopSprint()
 	if not self.sprintActive then
 		return

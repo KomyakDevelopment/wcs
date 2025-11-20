@@ -15,8 +15,9 @@ CombatController.__index = CombatController
 function CombatController.new()
 	local self = setmetatable({}, CombatController)
 
-	-- Reference to equipment controller (set later)
+	-- References to other controllers/managers (set later)
 	self.equipmentController = nil
+	self.sprintManager = nil
 
 	return self
 end
@@ -24,6 +25,11 @@ end
 -- Set equipment controller reference
 function CombatController:setEquipmentController(equipmentController)
 	self.equipmentController = equipmentController
+end
+
+-- Set sprint manager reference
+function CombatController:setSprintManager(sprintManager)
+	self.sprintManager = sprintManager
 end
 
 -- Get the current WCS character wrapper
@@ -39,6 +45,7 @@ end
 -- Perform primary attack (M1)
 function CombatController:performPrimaryAttack()
 	-- Check if player has a slot selected (waiting to confirm equip/unequip)
+	-- IMPORTANT: Check this BEFORE canceling sprint
 	if self.equipmentController and self.equipmentController:getSelectedSlot() then
 		-- Confirm the equip/unequip action
 		local slotNumber = self.equipmentController:getSelectedSlot()
@@ -48,7 +55,13 @@ function CombatController:performPrimaryAttack()
 			self.equipmentController:confirmAction("fists")
 		end
 
-		return -- Don't perform attack when confirming equipment
+		-- Don't cancel sprint or perform attack when confirming equipment
+		return
+	end
+
+	-- Cancel sprint if active (only when actually attacking)
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
 	end
 
 	local character = self:getCharacter()
