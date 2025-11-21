@@ -31,8 +31,8 @@ end
 function BlockVFXManager:_setupRemotes()
 	-- Wait for remotes created by server
 	local parryFlashRemote = ReplicatedStorage:WaitForChild("PlayParryFlashVFX") :: RemoteEvent
-	parryFlashRemote.OnClientEvent:Connect(function(targetCharacter)
-		self:playParryFlashVFX(targetCharacter)
+	parryFlashRemote.OnClientEvent:Connect(function(targetCharacter, attackPhase)
+		self:playParryFlashVFX(targetCharacter, attackPhase)
 	end)
 
 	local parryVFXRemote = ReplicatedStorage:WaitForChild("PlayParryVFX") :: RemoteEvent
@@ -48,31 +48,89 @@ function BlockVFXManager:_setupRemotes()
 	print("[BlockVFXManager] Remote events setup complete")
 end
 
--- Play parry flash VFX (when parry window starts)
-function BlockVFXManager:playParryFlashVFX(character: Model)
+-- Play parry flash VFX (timing indicator shown at start of every M1 attack)
+function BlockVFXManager:playParryFlashVFX(character: Model, attackPhase: number?)
 	if not character then
 		return
 	end
 
-	print(`[BlockVFXManager] Playing parry flash VFX for {character.Name}`)
+	-- Default to phase 2 (right arm) if no phase specified
+	attackPhase = attackPhase or 2
 
-	-- Parry flash on right arm's RightGripAttachment
-	local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-	if rightArm then
-		local rightGripAttachment = rightArm:FindFirstChild("RightGripAttachment")
-		if rightGripAttachment and rightGripAttachment:IsA("Attachment") then
-			-- Pass the RightGripAttachment as the target so VFX appears at grip position
-			self:_emitAttachmentVFXAtAttachment(self.parryFlashAttachment, rightGripAttachment)
-		else
-			-- Fallback: use the arm itself if no RightGripAttachment found
-			self:_emitAttachmentVFX(self.parryFlashAttachment, rightArm)
-		end
-	else
-		warn(`[BlockVFXManager] Right arm not found on {character.Name}`)
+	print(`[BlockVFXManager] Playing parry flash for {character.Name}, phase {attackPhase}`)
+
+	-- Get the parry flash attachment source
+	local parryFlashSource = self.parryFlashAttachment
+	if not parryFlashSource then
+		warn("[BlockVFXManager] Parry flash attachment not found")
+		return
 	end
 
-	-- Play parry SFX
-	self:_playSFXFromFolder(self.parrySFXFolder, character)
+	-- Determine target grip attachment based on phase
+	local targetGripAttachment
+
+	if attackPhase == 1 or attackPhase == 3 then
+		-- Left arm
+		local leftArm = character:FindFirstChild("Left Arm") or character:FindFirstChild("LeftHand")
+		if leftArm then
+			targetGripAttachment = leftArm:FindFirstChild("LeftGripAttachment")
+		end
+	elseif attackPhase == 2 then
+		-- Right arm
+		local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+		if rightArm then
+			targetGripAttachment = rightArm:FindFirstChild("RightGripAttachment")
+		end
+	elseif attackPhase == 4 then
+		-- Left foot
+		local leftLeg = character:FindFirstChild("Left Leg") or character:FindFirstChild("LeftFoot")
+		if leftLeg then
+			targetGripAttachment = leftLeg:FindFirstChild("LeftFootAttachment")
+		end
+	end
+
+	if not targetGripAttachment then
+		warn(`[BlockVFXManager] Could not find grip attachment for phase {attackPhase}`)
+		return
+	end
+
+	-- CLONE the attachment so each client has their own copy
+	local parryFlashClone = parryFlashSource:Clone()
+	parryFlashClone.Parent = targetGripAttachment
+
+	-- Emit all ParticleEmitters
+	local maxLifetime = 0
+	for _, child in ipairs(parryFlashClone:GetChildren()) do
+		if child:IsA("ParticleEmitter") then
+			-- Get emit count
+			local emitCount = child:GetAttribute("EmitCount")
+			if typeof(emitCount) ~= "number" then
+				emitCount = child.Rate or 10
+			end
+
+			-- Emit particles
+			child:Emit(emitCount)
+
+			-- Calculate lifetime for cleanup
+			local duration = child:GetAttribute("Duration")
+			if typeof(duration) ~= "number" then
+				duration = 1
+			end
+			local lifetime = child.Lifetime.Max + duration
+			if lifetime > maxLifetime then
+				maxLifetime = lifetime
+			end
+		end
+	end
+
+	-- Destroy the cloned attachment after VFX finishes
+	task.delay(maxLifetime + 0.5, function()
+		if parryFlashClone and parryFlashClone.Parent then
+			parryFlashClone:Destroy()
+		end
+	end)
+
+	print(`[BlockVFXManager] Played parry flash VFX for phase {attackPhase}`)
 end
 
 -- Play parry VFX (parry flash on right hand + parry effect on torso)
@@ -128,21 +186,26 @@ function BlockVFXManager:playBlockHitVFX(character: Model)
 	self:_playSFXFromFolder(self.blockSFXFolder, character)
 end
 
--- Emit VFX at a specific attachment's location (parents to attachment's parent with same position)
+-- Emit VFX at a specific attachment's location (parents to body part, positioned at attachment)
 function BlockVFXManager:_emitAttachmentVFXAtAttachment(templateAttachment: Attachment, targetAttachment: Attachment)
+	if not targetAttachment or not targetAttachment:IsA("Attachment") then
+		warn("[BlockVFXManager] Target attachment is invalid")
+		return
+	end
+
 	local targetBodyPart = targetAttachment.Parent
 	if not targetBodyPart or not targetBodyPart:IsA("BasePart") then
 		warn("[BlockVFXManager] Target attachment's parent is not a BasePart")
 		return
 	end
 
-	-- Clone the template attachment
+	-- Clone the template attachment and parent to the body part
 	local attachmentClone = templateAttachment:Clone()
 	attachmentClone.Parent = targetBodyPart
-
-	-- Copy position and orientation from target attachment
-	attachmentClone.CFrame = targetAttachment.CFrame
 	attachmentClone.Name = templateAttachment.Name .. "_VFX"
+
+	-- Position it at the target attachment's location
+	attachmentClone.CFrame = targetAttachment.CFrame
 
 	-- Emit all particle emitters in the cloned attachment
 	local emitters = {}

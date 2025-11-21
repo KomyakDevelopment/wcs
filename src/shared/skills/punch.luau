@@ -25,19 +25,19 @@ local FLOURISH_KNOCKBACK_DURATION = 0.18
 
 -- Animation IDs for each combo phase
 local COMBO_ANIMATIONS = {
-	[1] = "rbxassetid://71780482128433",
-	[2] = "rbxassetid://122171966838136",
-	[3] = "rbxassetid://102972252804338",
-	[4] = "rbxassetid://122171966838136", -- Flourish uses 2_m1 temporarily
+	[1] = "rbxassetid://100518847191051",
+	[2] = "rbxassetid://76103103515407",
+	[3] = "rbxassetid://128845445156895",
+	[4] = "rbxassetid://76103103515407", -- Flourish uses 2_m1 temporarily
 }
 
 -- Damage delays for each combo phase (in seconds)
 -- Adjust these to match when the fist actually hits in each animation
 local DAMAGE_DELAYS = {
-	[1] = 0.3, -- First M1 damage delay
-	[2] = 0.3, -- Second M1 damage delay
-	[3] = 0.3, -- Third M1 damage delay
-	[4] = 0.3, -- Flourish damage delay
+	[1] = 0.45, -- First M1 damage delay
+	[2] = 0.45, -- Second M1 damage delay
+	[3] = 0.45, -- Third M1 damage delay
+	[4] = 0.45, -- Flourish damage delay
 }
 
 function Punch:OnConstructServer()
@@ -81,10 +81,12 @@ function Punch:OnStartServer()
 		return
 	end
 
-	-- Check if player is in hitstun or dashing
+	-- Check if player is in hitstun, dashing, or blocking/parrying
 	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-	if self.Character.IsInHitstun or self.Character:HasStatusEffects({ Dashing }) then
-		print("[Punch] Blocked - Player is in hitstun or dashing")
+	local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+	local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+	if self.Character.IsInHitstun or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying }) then
+		print("[Punch] Blocked - Player is in hitstun, dashing, or blocking/parrying")
 		return
 	end
 
@@ -92,6 +94,13 @@ function Punch:OnStartServer()
 	self.currentAttackPhase = self.comboPhase
 
 	print(`[Punch] Server: Punch activated - Phase {self.currentAttackPhase}`)
+
+	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
+	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
+	if parryFlashRemote then
+		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase)
+		print(`[Punch] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}`)
+	end
 
 	-- Apply cooldown
 	self:ApplyCooldown(PUNCH_COOLDOWN)
@@ -122,14 +131,16 @@ function Punch:OnStartServer()
 end
 
 function Punch:OnStartClient()
-	-- Check if player has any hitstun status effects active or is dashing
+	-- Check if player has any hitstun status effects active, is dashing, or is blocking/parrying
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+	local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+	local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
-		print("[Punch] Client: Blocked - Player is in hitstun/stun/dashing")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying }) then
+		print("[Punch] Client: Blocked - Player is in hitstun/stun/dashing/blocking/parrying")
 		return
 	end
 
@@ -138,14 +149,23 @@ function Punch:OnStartClient()
 		task.cancel(self.comboResetTimer)
 	end
 
+	-- Store current phase before advancing
+	local currentPhase = self.comboPhase
+
 	-- Play animation for current combo phase
-	local animTrack = self.loadedAnimations[self.comboPhase]
+	local animTrack = self.loadedAnimations[currentPhase]
 	if animTrack then
 		animTrack:Play()
-		print(`[Punch] Client: Playing combo phase {self.comboPhase} animation`)
+		print(`[Punch] Client: Playing combo phase {currentPhase} animation`)
+
+		-- Apply fists trail VFX when animation starts, remove when it ends
+		self:_applyFistsTrail(animTrack, currentPhase)
 	else
-		warn(`[Punch] No animation loaded for phase {self.comboPhase}`)
+		warn(`[Punch] No animation loaded for phase {currentPhase}`)
 	end
+
+	-- Play swing SFX
+	self:_playSwingSFX()
 
 	-- Advance combo phase for next attack
 	if self.comboPhase < MAX_COMBO_PHASE then
@@ -312,7 +332,9 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 
 			if selfHitstun then
 				selfHitstun:Start(FLOURISH_SELF_HITSTUN_DURATION)
-				print(`[Punch] Applied self-hitstun ({FLOURISH_SELF_HITSTUN_DURATION}s) to attacker for flourish recovery`)
+				print(
+					`[Punch] Applied self-hitstun ({FLOURISH_SELF_HITSTUN_DURATION}s) to attacker for flourish recovery`
+				)
 			else
 				warn("[Punch] Failed to create self-hitstun for flourish recovery")
 			end
@@ -349,13 +371,7 @@ function Punch:_handleParry(defenderWCSCharacter)
 		print(`[Punch] Applied Parried status (0.8s) to attacker {self.Character.Instance.Name}`)
 	end
 
-	-- Fire parry flash VFX event (when attack is parried)
-	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
-	if parryFlashRemote then
-		parryFlashRemote:FireAllClients(defenderWCSCharacter.Instance)
-	end
-
-	-- Fire parry VFX event (full parry effect)
+	-- Fire parry VFX event on DEFENDER (full parry effect on defender)
 	local parryVFXRemote = ReplicatedStorage:FindFirstChild("PlayParryVFX")
 	if parryVFXRemote then
 		parryVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
@@ -391,9 +407,147 @@ function Punch:_handleBlock(defenderWCSCharacter)
 	print("[Punch] TODO: Apply posture damage for block")
 end
 
+-- Apply fists trail VFX to specific arm based on combo phase (client-only)
+function Punch:_applyFistsTrail(animTrack: AnimationTrack, currentPhase: number)
+	if not RunService:IsClient() then
+		return
+	end
+
+	-- Flourish (phase 4) has no trail
+	if currentPhase == 4 then
+		return
+	end
+
+	-- Get fists trail template
+	local fistsTrailPart = ReplicatedStorage.Assets.VFX.Weapon_Classes.Fists.fists_trail
+	if not fistsTrailPart or not fistsTrailPart:IsA("BasePart") then
+		warn("[Punch] Fists trail part not found")
+		return
+	end
+
+	-- Get the attachment from the trail part
+	local trailAttachment = fistsTrailPart:FindFirstChildOfClass("Attachment")
+	if not trailAttachment then
+		warn("[Punch] No attachment found in fists_trail part")
+		return
+	end
+
+	local character = self.Character.Instance
+
+	-- Determine which arm to use based on combo phase
+	-- Phase 1: Left Arm, Phase 2: Right Arm, Phase 3: Left Arm
+	local targetGrip
+	local armName
+
+	if currentPhase == 1 or currentPhase == 3 then
+		-- Left arm
+		local leftArm = character:FindFirstChild("Left Arm") or character:FindFirstChild("LeftHand")
+		targetGrip = leftArm and leftArm:FindFirstChild("LeftGripAttachment")
+		armName = "left"
+	elseif currentPhase == 2 then
+		-- Right arm
+		local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
+		targetGrip = rightArm and rightArm:FindFirstChild("RightGripAttachment")
+		armName = "right"
+	end
+
+	if not targetGrip or not targetGrip:IsA("Attachment") then
+		warn(`[Punch] Could not find grip attachment for phase {currentPhase}`)
+		return
+	end
+
+	-- Clone trail attachment and parent it to the grip attachment
+	local trailClone = trailAttachment:Clone()
+	trailClone.Name = "FistsTrail_" .. armName
+	trailClone.Parent = targetGrip -- Parent to grip attachment directly
+	print(`[Punch] Applied fists trail to {armName} arm grip attachment (phase {currentPhase})`)
+
+	-- Remove trail when animation ends
+	local animLength = animTrack.Length or 0.5
+	task.delay(animLength, function()
+		if trailClone and trailClone.Parent then
+			trailClone:Destroy()
+		end
+		print("[Punch] Removed fists trail VFX")
+	end)
+end
+
+-- Play swing SFX (client-only)
+function Punch:_playSwingSFX()
+	if not RunService:IsClient() then
+		return
+	end
+
+	-- Get swing SFX folder
+	local swingSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.swings
+	if not swingSFXFolder then
+		warn("[Punch] Swing SFX folder not found")
+		return
+	end
+
+	-- Get all Sound instances from folder
+	local sounds = {}
+	for _, child in ipairs(swingSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		warn("[Punch] No swing sounds found in folder")
+		return
+	end
+
+	-- Select random sound
+	local randomSound = sounds[math.random(1, #sounds)]
+
+	-- Find the character's HumanoidRootPart for spatial audio
+	local character = self.Character.Instance
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		warn("[Punch] No HumanoidRootPart found")
+		return
+	end
+
+	-- Clone the sound and parent it to the root part for spatial audio
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = rootPart
+
+	-- Play the sound
+	soundClone:Play()
+
+	-- Clean up after sound finishes
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
+
+	print(`[Punch] Playing swing SFX: {randomSound.Name}`)
+end
+
 function Punch:OnEndServer()
 	-- Clear hit targets when skill ends
 	self.hitTargets = {}
+end
+
+function Punch:OnEndClient()
+	-- Only stop animations if interrupted (not normal completion)
+	-- Check if we were interrupted by looking for hitstun status
+	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun })
+
+	if interrupted then
+		-- Only stop animations if we were interrupted by hitstun
+		for _, animTrack in pairs(self.loadedAnimations) do
+			if animTrack and animTrack.IsPlaying then
+				animTrack:Stop(0.1)
+				print("[Punch] Client: Stopped animation due to hitstun interrupt")
+			end
+		end
+	end
+	-- Otherwise let animations finish naturally
 end
 
 return Punch

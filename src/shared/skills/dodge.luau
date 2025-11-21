@@ -10,7 +10,7 @@ local Dodge = WCS.RegisterSkill("Dodge")
 local DODGE_DISTANCE = 17 -- Studs to travel (slightly longer than 16)
 local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)
 local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
-local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
+local MAX_CANCELS = 2 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
 -- Iframes configuration
 local IFRAME_START = 0.1 -- Iframes start 0.1 seconds into dodge
@@ -51,6 +51,8 @@ function Dodge:OnConstructClient()
 	self.loadedAnimations = {}
 	self.currentAnimTrack = nil
 	self.m2Connection = nil
+	self.rollVFXAttachment = nil
+	self.dodgeSFX = nil
 
 	-- Preload all dodge animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -67,6 +69,14 @@ function Dodge:OnConstructClient()
 end
 
 function Dodge:OnStartServer()
+	-- Check if player is in hitstun (soft or true)
+	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun }) then
+		print("[Dodge] Server: Cannot dodge - Player is in hitstun")
+		return
+	end
+
 	-- Get character components
 	local character = self.Character.Instance
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
@@ -262,6 +272,63 @@ function Dodge:OnStartClient()
 		warn(`[Dodge] Client: No animation loaded for direction: {animDirection}`)
 	end
 
+	-- Setup roll VFX
+	local rollVFXSource = ReplicatedStorage.Assets.VFX.Movement.roll.Attachment
+	if rollVFXSource and hrp then
+		-- CLONE the attachment so each client has their own copy
+		local rollVFXClone = rollVFXSource:Clone()
+		rollVFXClone.Parent = hrp
+		self.rollVFXAttachment = rollVFXClone
+
+		print("[Dodge] Client: Cloned and parented roll VFX to HumanoidRootPart")
+
+		-- Enable all ParticleEmitters
+		for _, child in ipairs(rollVFXClone:GetChildren()) do
+			if child:IsA("ParticleEmitter") then
+				child.Enabled = true
+				print(`[Dodge] Client: Enabled {child.Name} particle emitter`)
+			end
+		end
+
+		-- Schedule disabling emitters when dodge ends (let particles fade out naturally)
+		task.delay(DODGE_DURATION, function()
+			if rollVFXClone and rollVFXClone.Parent then
+				-- Disable emitters so they stop spawning new particles
+				for _, child in ipairs(rollVFXClone:GetChildren()) do
+					if child:IsA("ParticleEmitter") then
+						child.Enabled = false
+					end
+				end
+				print("[Dodge] Client: Disabled roll VFX emitters (fading out)")
+
+				-- Calculate max particle lifetime to know when to destroy
+				local maxLifetime = 0
+				for _, child in ipairs(rollVFXClone:GetChildren()) do
+					if child:IsA("ParticleEmitter") then
+						local lifetime = child.Lifetime.Max
+						if lifetime > maxLifetime then
+							maxLifetime = lifetime
+						end
+					end
+				end
+
+				-- Destroy after all particles have faded out
+				task.delay(maxLifetime + 0.5, function()
+					if rollVFXClone and rollVFXClone.Parent then
+						rollVFXClone:Destroy()
+						self.rollVFXAttachment = nil
+						print("[Dodge] Client: Destroyed roll VFX clone after fade")
+					end
+				end)
+			end
+		end)
+	else
+		warn("[Dodge] Client: Roll VFX attachment not found")
+	end
+
+	-- Play dodge roll SFX
+	self:_playDodgeSFX()
+
 	-- Setup M2 listener for canceling (extended window for easier cancelling)
 	self.m2Connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then
@@ -283,6 +350,124 @@ function Dodge:OnStartClient()
 	end)
 end
 
+-- Play dodge roll SFX
+function Dodge:_playDodgeSFX()
+	local dodgeSFXFolder = ReplicatedStorage.Assets.SFX.Movement.Dodges
+	if not dodgeSFXFolder then
+		warn("[Dodge] Dodge SFX folder not found")
+		return
+	end
+
+	local character = self.Character.Instance
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	-- Get all Sound instances from folder
+	local sounds = {}
+	for _, child in ipairs(dodgeSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		warn("[Dodge] No dodge sounds found")
+		return
+	end
+
+	-- Select random sound
+	local randomSound = sounds[math.random(1, #sounds)]
+
+	-- Clone and play with spatial audio
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = hrp
+	soundClone:Play()
+
+	-- Store reference for potential fade-out on cancel
+	self.dodgeSFX = soundClone
+
+	-- Clean up after sound finishes
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
+
+	print(`[Dodge] Playing dodge SFX: {randomSound.Name}`)
+end
+
+-- Play rollcancel SFX with fade-out of current dodge SFX
+function Dodge:_playRollCancelSFX()
+	local cancelSFXFolder = ReplicatedStorage.Assets.SFX.Movement.Dodges.Cancel
+	if not cancelSFXFolder then
+		warn("[Dodge] Rollcancel SFX folder not found")
+		return
+	end
+
+	-- Fade out current dodge SFX if playing
+	if self.dodgeSFX and self.dodgeSFX.Parent then
+		local fadeTime = 0.2
+		local originalVolume = self.dodgeSFX.Volume
+		local startTime = tick()
+
+		task.spawn(function()
+			while tick() - startTime < fadeTime do
+				local progress = (tick() - startTime) / fadeTime
+				if self.dodgeSFX and self.dodgeSFX.Parent then
+					self.dodgeSFX.Volume = originalVolume * (1 - progress)
+				else
+					break
+				end
+				task.wait()
+			end
+
+			-- Destroy after fade
+			if self.dodgeSFX and self.dodgeSFX.Parent then
+				self.dodgeSFX:Destroy()
+				self.dodgeSFX = nil
+			end
+		end)
+	end
+
+	local character = self.Character.Instance
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	-- Get all Sound instances from cancel folder
+	local sounds = {}
+	for _, child in ipairs(cancelSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		warn("[Dodge] No rollcancel sounds found")
+		return
+	end
+
+	-- Select random sound
+	local randomSound = sounds[math.random(1, #sounds)]
+
+	-- Clone and play with spatial audio
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = hrp
+	soundClone:Play()
+
+	-- Clean up after sound finishes
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
+
+	print(`[Dodge] Playing rollcancel SFX: {randomSound.Name}`)
+end
+
 -- Calculate dash direction using Humanoid.MoveDirection (industry standard)
 function Dodge:_calculateDashDirection(humanoid: Humanoid, hrp: BasePart): Vector3
 	-- Use MoveDirection for camera-relative directional dashing (like Deepwoken)
@@ -302,10 +487,80 @@ end
 function Dodge:_attemptCancel()
 	print("[Dodge] Client: Cancelling dodge")
 
-	-- Stop animation immediately
+	-- Stop current dodge animation
 	if self.currentAnimTrack then
 		self.currentAnimTrack:Stop(0.1)
 		self.currentAnimTrack = nil
+	end
+
+	-- Play rollcancel SFX with fade-out
+	self:_playRollCancelSFX()
+
+	-- Determine rollcancel direction based on movement
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid")
+	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
+
+	if humanoid and hrp then
+		-- Determine direction (left/right/forward/backward)
+		local rollCancelAnimId = "rbxassetid://96765830085186" -- Default to right
+		local moveDir = humanoid.MoveDirection
+
+		if moveDir.Magnitude > 0.1 then
+			local lookVector = hrp.CFrame.LookVector
+			local rightVector = hrp.CFrame.RightVector
+
+			-- Project movement onto character's forward and right vectors
+			local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
+			local rightDot = moveDir:Dot(Vector3.new(rightVector.X, 0, rightVector.Z).Unit)
+
+			-- Determine primary direction
+			if math.abs(forwardDot) > math.abs(rightDot) then
+				-- Moving primarily forward/backward
+				if forwardDot > 0 then
+					rollCancelAnimId = "rbxassetid://96765830085186" -- Forward = right anim
+				else
+					rollCancelAnimId = "rbxassetid://135861148893814" -- Backward = left anim
+				end
+			else
+				-- Moving primarily left/right
+				if rightDot > 0 then
+					rollCancelAnimId = "rbxassetid://96765830085186" -- Right = right anim
+				else
+					rollCancelAnimId = "rbxassetid://135861148893814" -- Left = left anim
+				end
+			end
+		end
+
+		-- Play rollcancel animation with high priority
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			local rollCancelAnim = Instance.new("Animation")
+			rollCancelAnim.AnimationId = rollCancelAnimId
+			local rollCancelTrack = animator:LoadAnimation(rollCancelAnim)
+
+			-- Set high priority to prevent sprint animation from overriding
+			rollCancelTrack.Priority = Enum.AnimationPriority.Action
+			rollCancelTrack:Play(0.05)
+			print(`[Dodge] Client: Playing rollcancel animation ({rollCancelAnimId}) with Action priority`)
+
+			-- Store the track so sprint doesn't resume until animation finishes
+			self.rollCancelTrack = rollCancelTrack
+		end
+	end
+
+	-- Cleanup roll VFX on cancel
+	if self.rollVFXAttachment then
+		-- Disable emitters
+		for _, child in ipairs(self.rollVFXAttachment:GetChildren()) do
+			if child:IsA("ParticleEmitter") then
+				child.Enabled = false
+			end
+		end
+		-- Destroy the clone
+		self.rollVFXAttachment:Destroy()
+		self.rollVFXAttachment = nil
+		print("[Dodge] Client: Cleaned up roll VFX clone on cancel")
 	end
 
 	-- Disconnect M2 listener
@@ -346,10 +601,11 @@ function Dodge:OnEndServer()
 
 	-- Cancelling gives one more dodge (unless already used)
 	if self.cancelCountRef.Value < MAX_CANCELS then
-		-- First cancel - no cooldown, can dodge again immediately
+		-- First cancel - 0.2s delay before next roll
 		self.cancelCountRef.Value = self.cancelCountRef.Value + 1
+		self:ApplyCooldown(0.2)
 		print(
-			`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
+			`[Dodge] Server: Dodge cancelled - 0.2s delay before next dodge (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
 		)
 	else
 		-- Already used the cancel - apply full cooldown and reset
@@ -360,7 +616,7 @@ function Dodge:OnEndServer()
 end
 
 function Dodge:OnEndClient()
-	-- Stop animation
+	-- Stop dodge animation (not rollcancel)
 	if self.currentAnimTrack then
 		self.currentAnimTrack:Stop(0.1)
 		self.currentAnimTrack = nil
@@ -372,8 +628,15 @@ function Dodge:OnEndClient()
 		self.m2Connection = nil
 	end
 
-	-- Resume sprinting if W is held (industry standard behavior)
+	-- Resume sprinting if W is held, but wait for rollcancel animation to finish if present
 	task.defer(function()
+		-- If rollcancel animation is playing, wait for it to finish
+		if self.rollCancelTrack and self.rollCancelTrack.IsPlaying then
+			local animLength = self.rollCancelTrack.Length or 0.5
+			print(`[Dodge] Client: Waiting {animLength}s for rollcancel animation to finish`)
+			task.wait(animLength)
+		end
+
 		local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
 		if resumeSprintEvent then
 			resumeSprintEvent:Fire()

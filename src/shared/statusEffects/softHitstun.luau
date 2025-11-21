@@ -4,7 +4,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local SoftHitstun = WCS.RegisterStatusEffect("SoftHitstun")
 
 -- Movement reduction: player moves at 20% of their normal speed
-local SPEED_MULTIPLIER = 0.2
+local SPEED_MULTIPLIER = 0.375
 
 function SoftHitstun:OnConstructServer()
 	-- Store reference to this status effect on the character
@@ -64,6 +64,15 @@ function SoftHitstun:OnEndServer()
 end
 
 function SoftHitstun:OnStartClient()
+	-- Cancel any active M1 attacks (stops animation and skill)
+	if self.Character and self.Character.Moveset then
+		local punchSkill = self.Character.Moveset:GetSkillFromConstructor("Punch")
+		if punchSkill and punchSkill:IsActive() then
+			punchSkill:End()
+			print("[SoftHitstun] Client: Cancelled active punch skill")
+		end
+	end
+
 	-- TODO: Add visual effects (yellow outline, slight stagger animation)
 	print("[SoftHitstun] Client effect started")
 end
