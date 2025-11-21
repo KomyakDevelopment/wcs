@@ -320,7 +320,7 @@ function SprintManager:_shouldCancelSprint(): boolean
 		return false
 	end
 
-	-- Check if player is not pressing any movement keys
+	-- Check if player is pressing any movement keys
 	local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W)
 		or UserInputService:IsKeyDown(Enum.KeyCode.A)
 		or UserInputService:IsKeyDown(Enum.KeyCode.S)
@@ -328,6 +328,37 @@ function SprintManager:_shouldCancelSprint(): boolean
 
 	if not isMoving then
 		return true
+	end
+
+	-- In shiftlock mode, validate movement direction (must be moving forward)
+	local isShiftLock = self:_isInShiftLock()
+	if isShiftLock then
+		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+		if humanoidRootPart then
+			-- Get velocity direction (horizontal only)
+			local velocity = Vector3.new(
+				humanoidRootPart.AssemblyLinearVelocity.X,
+				0,
+				humanoidRootPart.AssemblyLinearVelocity.Z
+			)
+
+			-- Check if velocity is significant enough to determine direction
+			if velocity.Magnitude > MIN_SPRINT_VELOCITY then
+				-- Get character's forward direction
+				local lookDirection = humanoidRootPart.CFrame.LookVector
+				local horizontalLookDirection = Vector3.new(lookDirection.X, 0, lookDirection.Z).Unit
+
+				-- Calculate dot product between velocity and look direction
+				local velocityDirection = velocity.Unit
+				local dotProduct = velocityDirection:Dot(horizontalLookDirection)
+
+				-- If dot product < 0.7 (~45 degrees), player is not moving forward enough
+				if dotProduct < 0.7 then
+					print(`[SprintManager] Sprint cancelled - Not moving forward in shiftlock (dot: {dotProduct})`)
+					return true
+				end
+			end
+		end
 	end
 
 	-- Check if player stopped moving (only after grace period)
