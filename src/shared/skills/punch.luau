@@ -204,26 +204,32 @@ function Punch:_detectHit()
 		end
 	end
 
-	-- Fire hit effects ONCE if any targets were hit
-	if #hitTargets > 0 then
-		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
-		if hitEffectsRemote then
-			-- Send the first target for sound positioning (plays once regardless of hit count)
-			hitEffectsRemote:FireAllClients(hitTargets[1].model, "fists")
+	-- Process all hit targets and collect actual hits (not blocked/parried)
+	local actualHits = {}
+	for _, targetData in ipairs(hitTargets) do
+		local hitResult = self:_hitTarget(targetData.model, targetData.humanoid)
+		-- hitResult will be true if it was a real hit, false if blocked/parried/iframed
+		if hitResult then
+			table.insert(actualHits, targetData)
 		end
 	end
 
-	-- Apply damage and effects to all hit targets
-	for _, targetData in ipairs(hitTargets) do
-		self:_hitTarget(targetData.model, targetData.humanoid)
+	-- Fire hit effects ONCE if any actual hits occurred (not blocked/parried)
+	if #actualHits > 0 then
+		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		if hitEffectsRemote then
+			-- Send the first target for sound positioning (plays once regardless of hit count)
+			hitEffectsRemote:FireAllClients(actualHits[1].model, "fists")
+		end
 	end
 end
 
 -- Apply damage to a target
+-- Returns true if it was a real hit, false if blocked/parried/iframed
 function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	-- Check if we already hit this target (prevent double-hitting)
 	if self.hitTargets[targetModel] then
-		return
+		return false
 	end
 
 	-- Check if target has iframes (invincibility)
@@ -232,7 +238,25 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
-			return
+			return false
+		end
+
+		-- Check for parry (Parrying or Autoparry status)
+		local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+		local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
+		local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+
+		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
+			print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
+			self:_handleParry(targetWCSCharacter)
+			return false
+		end
+
+		-- Check for block (Blocking status but NOT parrying)
+		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
+			print(`[Punch] Target {targetModel.Name} blocked the attack`)
+			self:_handleBlock(targetWCSCharacter)
+			return false
 		end
 	end
 
@@ -248,12 +272,10 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	end
 	if targetWCSCharacter then
-		-- Create status effect per WCS docs: StatusEffect.new(character)
 		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 		local hitstun = SoftHitstun.new(targetWCSCharacter)
-
 		if hitstun then
-			-- Start with duration per WCS docs
+			-- Start with duration per WCS docs (will refresh if already active)
 			hitstun:Start(SOFT_HITSTUN_DURATION)
 			print(`[Punch] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
 		else
@@ -296,6 +318,77 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			end
 		end
 	end
+
+	-- Return true to indicate this was a real hit (not blocked/parried)
+	return true
+end
+
+-- Handle successful parry
+function Punch:_handleParry(defenderWCSCharacter)
+	-- Apply Autoparry status to defender for 0.4s
+	local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
+	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
+	if autoparryEffect then
+		autoparryEffect:Start(0.4)
+		print(`[Punch] Applied Autoparry (0.4s) to {defenderWCSCharacter.Instance.Name}`)
+	end
+
+	-- Apply TrueHitstun to attacker (0.8s punishment for getting parried)
+	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+	local trueHitstunEffect = TrueHitstun.new(self.Character)
+	if trueHitstunEffect then
+		trueHitstunEffect:Start(0.8)
+		print(`[Punch] Applied TrueHitstun (0.8s) to attacker {self.Character.Instance.Name} - Got parried`)
+	end
+
+	-- Apply Parried status to attacker for visual/audio feedback
+	local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
+	local parriedEffect = Parried.new(self.Character)
+	if parriedEffect then
+		parriedEffect:Start(0.8)
+		print(`[Punch] Applied Parried status (0.8s) to attacker {self.Character.Instance.Name}`)
+	end
+
+	-- Fire parry flash VFX event (when attack is parried)
+	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
+	if parryFlashRemote then
+		parryFlashRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- Fire parry VFX event (full parry effect)
+	local parryVFXRemote = ReplicatedStorage:FindFirstChild("PlayParryVFX")
+	if parryVFXRemote then
+		parryVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- TODO: Apply posture changes (defender -30%, attacker +30%)
+	print("[Punch] TODO: Apply posture changes for parry")
+end
+
+-- Handle successful block (not a parry)
+function Punch:_handleBlock(defenderWCSCharacter)
+	-- Apply BlockStunned status to defender for 0.1s
+	local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+	local blockStunnedEffect = BlockStunned.new(defenderWCSCharacter)
+	if blockStunnedEffect then
+		blockStunnedEffect:Start(0.1)
+		print(`[Punch] Applied BlockStunned (0.1s) to {defenderWCSCharacter.Instance.Name}`)
+	end
+
+	-- Fire block hit animation event
+	local blockHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitAnimation")
+	if blockHitAnimRemote then
+		blockHitAnimRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- Fire block hit VFX event
+	local blockHitVFXRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitVFX")
+	if blockHitVFXRemote then
+		blockHitVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- TODO: Apply posture damage (defender +24%)
+	print("[Punch] TODO: Apply posture damage for block")
 end
 
 function Punch:OnEndServer()

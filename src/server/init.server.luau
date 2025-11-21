@@ -26,6 +26,23 @@ local hitEffectsRemote = Instance.new("RemoteEvent")
 hitEffectsRemote.Name = "PlayHitEffects"
 hitEffectsRemote.Parent = ReplicatedStorage
 
+-- Create RemoteEvents for block/parry effects (server -> clients)
+local parryFlashRemote = Instance.new("RemoteEvent")
+parryFlashRemote.Name = "PlayParryFlashVFX"
+parryFlashRemote.Parent = ReplicatedStorage
+
+local parryVFXRemote = Instance.new("RemoteEvent")
+parryVFXRemote.Name = "PlayParryVFX"
+parryVFXRemote.Parent = ReplicatedStorage
+
+local blockHitVFXRemote = Instance.new("RemoteEvent")
+blockHitVFXRemote.Name = "PlayBlockHitVFX"
+blockHitVFXRemote.Parent = ReplicatedStorage
+
+local blockHitAnimRemote = Instance.new("RemoteEvent")
+blockHitAnimRemote.Name = "PlayBlockHitAnimation"
+blockHitAnimRemote.Parent = ReplicatedStorage
+
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)
 	local character = player.Character
@@ -47,12 +64,15 @@ equipRemote.OnServerEvent:Connect(function(player, weaponId)
 	end
 end)
 
--- Create the dummy after server has started
+-- Create the regular dummy after server has started
 local dummy = workspace:WaitForChild("Dummy")
 local dummyWcsChar = WCS.Character.new(dummy)
 
 -- Attach equipment manager to dummy (no weapon equipped by default)
 dummyWcsChar.EquipmentManager = EquipmentManager.new(dummyWcsChar)
+
+-- Note: Test dummies (BlockingDummy, ParryingDummy, MissParryDummy, DodgingDummy)
+-- are initialized in testDummies.server.luau
 
 Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(function(character)

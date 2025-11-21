@@ -8,6 +8,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
 local HitEffectsManager = require(ReplicatedStorage.Client.managers.hitEffectsManager)
+local BlockVFXManager = require(ReplicatedStorage.Client.managers.blockVFXManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -24,6 +25,7 @@ Client:Start()
 local inputManager = InputManager.new()
 local sprintManager = SprintManager.new()
 local hitEffectsManager = HitEffectsManager.new() -- Handles client-side hit effects replication
+local blockVFXManager = BlockVFXManager.new() -- Handles block/parry VFX
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
@@ -54,7 +56,7 @@ inputManager:bindAction("Combat.SecondaryAttack", function(actionName, state, in
 	end
 end)
 
-inputManager:bindAction("Combat.Block", function(actionName, state, input)
+inputManager:bindAction("Combat.Block", function(_actionName, state, _input)
 	combatController:performBlock(state)
 end)
 

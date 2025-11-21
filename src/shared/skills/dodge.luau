@@ -20,8 +20,8 @@ local IFRAME_END = 0.345 -- Iframes end right before dodge completes
 local DODGE_ANIMATIONS = {
 	Forward = "rbxassetid://85622930154432",
 	Backward = "rbxassetid://85622930154432",
-	Left = "rbxassetid://85622930154432",
-	Right = "rbxassetid://85622930154432",
+	Left = "rbxassetid://114727994149492",
+	Right = "rbxassetid://105899711970527",
 }
 
 function Dodge:OnConstructServer()
@@ -192,10 +192,14 @@ function Dodge:OnStartClient()
 			local tracks = animator:GetPlayingAnimationTracks()
 			for _, track in ipairs(tracks) do
 				-- Stop combat animations (punch animations)
-				if track.Animation
-					and (track.Animation.AnimationId:match("71780482128433")
-					or track.Animation.AnimationId:match("122171966838136")
-					or track.Animation.AnimationId:match("102972252804338")) then
+				if
+					track.Animation
+					and (
+						track.Animation.AnimationId:match("71780482128433")
+						or track.Animation.AnimationId:match("122171966838136")
+						or track.Animation.AnimationId:match("102972252804338")
+					)
+				then
 					track:Stop(0.05) -- Quick fade out
 					print("[Dodge] Client: Stopped M1 animation")
 				end

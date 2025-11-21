@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
+local Block = require(ReplicatedStorage.Shared.skills.block)
 
 local CombatController = {}
 CombatController.__index = CombatController
@@ -102,12 +103,33 @@ end
 
 -- Perform block action
 function CombatController:performBlock(state: Enum.UserInputState)
+	local character = self:getCharacter()
+	if not character then
+		return
+	end
+
+	-- Get the block skill from character
+	local blockSkill = character:GetSkillFromConstructor(Block)
+	if not blockSkill then
+		print("[CombatController] performBlock: No block skill found on character")
+		return
+	end
+
 	if state == Enum.UserInputState.Begin then
 		print("[CombatController] Block started")
-		-- TODO: Start blocking
+
+		-- Cancel sprint if active
+		if self.sprintManager then
+			self.sprintManager:stopSprint()
+		end
+
+		-- Start blocking
+		blockSkill:Start()
 	elseif state == Enum.UserInputState.End then
 		print("[CombatController] Block ended")
-		-- TODO: Stop blocking
+
+		-- Stop blocking
+		blockSkill:End()
 	end
 end
 
