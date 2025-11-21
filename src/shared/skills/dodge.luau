@@ -20,8 +20,8 @@ local IFRAME_END = 0.345 -- Iframes end right before dodge completes
 local DODGE_ANIMATIONS = {
 	Forward = "rbxassetid://85622930154432",
 	Backward = "rbxassetid://85622930154432",
-	Left = "rbxassetid://114727994149492",
-	Right = "rbxassetid://105899711970527",
+	Left = "rbxassetid://82194383365576",
+	Right = "rbxassetid://97514479751497",
 }
 
 function Dodge:OnConstructServer()
