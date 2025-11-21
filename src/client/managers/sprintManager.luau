@@ -42,6 +42,7 @@ function SprintManager.new()
 	self.sprintDirection = nil
 	self.baseWalkSpeed = 16 -- Default walkspeed
 	self.sprintStartTime = 0 -- Track when sprint started for grace period
+	self.postDodgeGraceEnd = 0 -- Track when post-dodge grace period ends
 
 	-- Setup
 	self:_initialize()
@@ -193,6 +194,12 @@ function SprintManager:_startSprint()
 	self.sprintActive = true
 	self.sprintStartTime = tick() -- Record sprint start time
 
+	-- Set a brief grace period for directional checks (helps with initial sprint and post-dodge)
+	-- Only set if not already in a grace period (don't override longer post-dodge grace)
+	if tick() >= self.postDodgeGraceEnd then
+		self.postDodgeGraceEnd = tick() + 0.3 -- 0.3s grace for normal sprint start
+	end
+
 	-- Play sprint animation
 	if self.loadedAnimation then
 		self.currentAnimTrack = self.loadedAnimation
@@ -212,6 +219,21 @@ end
 -- Stop sprint (public method)
 function SprintManager:stopSprint()
 	self:_stopSprint()
+end
+
+-- Resume sprint if W is held (public method for post-dodge sprint resume)
+function SprintManager:resumeSprintIfHoldingW()
+	-- Check if W is being held
+	if not UserInputService:IsKeyDown(Enum.KeyCode.W) then
+		return
+	end
+
+	-- Set post-dodge grace period (0.5s where directional checks are lenient)
+	self.postDodgeGraceEnd = tick() + 0.5
+
+	-- Start sprint
+	self:_startSprint()
+	print("[SprintManager] Sprint resumed after dodge - Grace period active for 0.5s")
 end
 
 -- Stop sprint (internal)
@@ -330,34 +352,15 @@ function SprintManager:_shouldCancelSprint(): boolean
 		return true
 	end
 
-	-- In shiftlock mode, validate movement direction (must be moving forward)
+	-- In shiftlock mode, validate that W is being held (allows strafing with W+A/W+D)
 	local isShiftLock = self:_isInShiftLock()
+
 	if isShiftLock then
-		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-		if humanoidRootPart then
-			-- Get velocity direction (horizontal only)
-			local velocity = Vector3.new(
-				humanoidRootPart.AssemblyLinearVelocity.X,
-				0,
-				humanoidRootPart.AssemblyLinearVelocity.Z
-			)
-
-			-- Check if velocity is significant enough to determine direction
-			if velocity.Magnitude > MIN_SPRINT_VELOCITY then
-				-- Get character's forward direction
-				local lookDirection = humanoidRootPart.CFrame.LookVector
-				local horizontalLookDirection = Vector3.new(lookDirection.X, 0, lookDirection.Z).Unit
-
-				-- Calculate dot product between velocity and look direction
-				local velocityDirection = velocity.Unit
-				local dotProduct = velocityDirection:Dot(horizontalLookDirection)
-
-				-- If dot product < 0.7 (~45 degrees), player is not moving forward enough
-				if dotProduct < 0.7 then
-					print(`[SprintManager] Sprint cancelled - Not moving forward in shiftlock (dot: {dotProduct})`)
-					return true
-				end
-			end
+		-- In shiftlock, sprint should only continue if W is held
+		-- This allows strafing (W+A, W+D) while sprinting
+		if not UserInputService:IsKeyDown(Enum.KeyCode.W) then
+			print("[SprintManager] Sprint cancelled - W not held in shiftlock")
+			return true
 		end
 	end
 

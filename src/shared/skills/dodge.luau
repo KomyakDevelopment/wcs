@@ -7,35 +7,49 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local Dodge = WCS.RegisterSkill("Dodge")
 
 -- Configuration
-local DODGE_DISTANCE = 20 -- Studs to travel
-local DODGE_DURATION = 0.3 -- Seconds for dodge to complete (matching reference)
+local DODGE_DISTANCE = 16 -- Studs to travel (20% shorter: 20 * 0.8 = 16)
+local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)
 local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
 local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
 -- Iframes configuration
 local IFRAME_START = 0.1 -- Iframes start 0.1 seconds into dodge
-local IFRAME_END = 0.3 -- Iframes end at 0.3 seconds (right before dodge completes)
+local IFRAME_END = 0.345 -- Iframes end right before dodge completes
 
 -- Animation IDs for each direction
 local DODGE_ANIMATIONS = {
-	Forward = "rbxassetid://74256834635946",
-	Backward = "rbxassetid://74256834635946",
-	Left = "rbxassetid://74256834635946",
-	Right = "rbxassetid://74256834635946",
+	Forward = "rbxassetid://106929700080073",
+	Backward = "rbxassetid://106929700080073",
+	Left = "rbxassetid://106929700080073",
+	Right = "rbxassetid://106929700080073",
 }
 
 function Dodge:OnConstructServer()
-	self.cancelCount = 0
 	self.dodgeActive = false
 	self.dashingEffect = nil
 	self.bodyVelocity = nil
 	self.iframesEffect = nil
+
+	-- Retrieve persistent cancel count from character instance
+	-- Store it in the character model itself for persistence across skill instances
+	local character = self.Character.Instance
+	local cancelCountValue = character:FindFirstChild("_DodgeCancelCount") :: IntValue
+
+	if not cancelCountValue then
+		-- Create IntValue to store cancel count persistently
+		local newValue = Instance.new("IntValue")
+		newValue.Name = "_DodgeCancelCount"
+		newValue.Value = 0
+		newValue.Parent = character
+		cancelCountValue = newValue
+	end
+
+	self.cancelCountRef = cancelCountValue
 end
 
 function Dodge:OnConstructClient()
 	self.loadedAnimations = {}
 	self.currentAnimTrack = nil
-	self.cancelCount = 0
 	self.m2Connection = nil
 
 	-- Preload all dodge animations
@@ -124,7 +138,18 @@ function Dodge:OnStartServer()
 
 		-- Recalculate direction each frame for more responsive control
 		local direction = self:_calculateDashDirection(humanoid, humanoidRootPart)
-		bodyVelocity.Velocity = direction * dashStrength
+
+		-- Apply subtle easing at the end (last 20% of duration slows down slightly)
+		local progress = elapsed / DODGE_DURATION
+		local speedMultiplier = 1
+
+		if progress > 0.8 then
+			-- Gentle ease out in the last 20% of the dodge
+			local easeProgress = (progress - 0.8) / 0.2 -- 0 to 1 in the last 20%
+			speedMultiplier = 1 - (easeProgress * 0.175) -- Gradually reduce by 17.5%
+		end
+
+		bodyVelocity.Velocity = direction * dashStrength * speedMultiplier
 
 		task.wait(rate)
 		elapsed = elapsed + rate
@@ -142,7 +167,7 @@ function Dodge:OnStartServer()
 
 	-- Normal completion always applies full cooldown and resets cancel count
 	self:ApplyCooldown(DODGE_COOLDOWN)
-	self.cancelCount = 0
+	self.cancelCountRef.Value = 0
 	print("[Dodge] Server: Dodge completed - Cooldown applied, cancel count reset")
 end
 
@@ -186,12 +211,27 @@ function Dodge:OnStartClient()
 		end
 	end
 
-	-- Play animation for dodge direction
+	-- Play animation for dodge direction immediately (don't wait)
 	local animTrack = self.loadedAnimations[animDirection]
 	if animTrack then
 		self.currentAnimTrack = animTrack
-		animTrack:Play()
-		print(`[Dodge] Client: Playing {animDirection} dodge animation`)
+		local animLength = animTrack.Length
+
+		-- Play with adjusted speed to match dodge duration
+		if animLength and animLength > 0 then
+			-- Calculate speed but find middle ground between default and matched speed, 40% faster
+			local perfectSpeed = animLength / DODGE_DURATION
+			local speedMultiplier = 1 + ((perfectSpeed - 1) * 0.6) -- 60% toward perfect speed
+			speedMultiplier = speedMultiplier * 1.4 -- Make it 40% faster
+			animTrack:Play(0.05, speedMultiplier) -- Quick fade-in (0.05s)
+			print(
+				`[Dodge] Client: Playing {animDirection} dodge animation - Length: {animLength}s, Perfect: {perfectSpeed}x, Using: {speedMultiplier}x`
+			)
+		else
+			-- Fallback if length not available - 40% faster than before
+			animTrack:Play(0.05, 1.96) -- 1.4 * 1.4 = 1.96
+			print(`[Dodge] Client: Playing {animDirection} dodge animation - Using default speed 1.96x`)
+		end
 	else
 		warn(`[Dodge] Client: No animation loaded for direction: {animDirection}`)
 	end
@@ -279,14 +319,14 @@ function Dodge:OnEndServer()
 	end
 
 	-- Cancelling gives one more dodge (unless already used)
-	if self.cancelCount < MAX_CANCELS then
+	if self.cancelCountRef.Value < MAX_CANCELS then
 		-- First cancel - no cooldown, can dodge again immediately
-		self.cancelCount = self.cancelCount + 1
-		print(`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCount}/{MAX_CANCELS})`)
+		self.cancelCountRef.Value = self.cancelCountRef.Value + 1
+		print(`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`)
 	else
 		-- Already used the cancel - apply full cooldown and reset
 		self:ApplyCooldown(DODGE_COOLDOWN)
-		self.cancelCount = 0
+		self.cancelCountRef.Value = 0
 		print("[Dodge] Server: Second dodge cancelled - Cooldown applied, cancel count reset")
 	end
 end
@@ -303,6 +343,14 @@ function Dodge:OnEndClient()
 		self.m2Connection:Disconnect()
 		self.m2Connection = nil
 	end
+
+	-- Resume sprinting if W is held (industry standard behavior)
+	task.defer(function()
+		local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
+		if resumeSprintEvent then
+			resumeSprintEvent:Fire()
+		end
+	end)
 
 	print("[Dodge] Client: Skill ended")
 end

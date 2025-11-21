@@ -31,6 +31,16 @@ local equipmentController = EquipmentController.new()
 combatController:setEquipmentController(equipmentController)
 combatController:setSprintManager(sprintManager)
 
+-- Create BindableEvent for dodge -> sprint communication
+local resumeSprintEvent = Instance.new("BindableEvent")
+resumeSprintEvent.Name = "ResumeSprintAfterDodge"
+resumeSprintEvent.Parent = ReplicatedStorage
+
+-- Connect sprint resume handler
+resumeSprintEvent.Event:Connect(function()
+	sprintManager:resumeSprintIfHoldingW()
+end)
+
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then

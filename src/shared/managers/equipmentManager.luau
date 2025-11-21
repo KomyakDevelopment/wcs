@@ -84,12 +84,13 @@ function EquipmentManager:unequip()
 		self.idleAnimation = nil
 	end
 
-	-- Clear moveset
+	-- Clear moveset and reapply Unarmed to keep permanent skills (Dodge, Sprint)
 	self.character:ClearMoveset()
+	self.character:ApplyMoveset("Unarmed")
 
 	self.equipped = nil
 
-	print(`[EquipmentManager] Weapon unequipped`)
+	print(`[EquipmentManager] Weapon unequipped - Unarmed moveset restored`)
 end
 
 -- Check if player has a weapon equipped
