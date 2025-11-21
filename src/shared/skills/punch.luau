@@ -176,6 +176,7 @@ function Punch:_detectHit()
 	-- Get all potential targets in range
 	local origin = humanoidRootPart.Position
 	local lookDirection = humanoidRootPart.CFrame.LookVector
+	local hitTargets = {}
 
 	-- Find all characters in workspace
 	for _, potentialTarget in ipairs(workspace:GetChildren()) do
@@ -194,11 +195,25 @@ function Punch:_detectHit()
 
 					-- If dot product > 0.5, target is roughly in front (within ~60 degrees)
 					if dotProduct > 0.5 then
-						self:_hitTarget(potentialTarget, targetHumanoid)
+						table.insert(hitTargets, { model = potentialTarget, humanoid = targetHumanoid })
 					end
 				end
 			end
 		end
+	end
+
+	-- Fire hit effects ONCE if any targets were hit
+	if #hitTargets > 0 then
+		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		if hitEffectsRemote then
+			-- Send the first target for sound positioning (plays once regardless of hit count)
+			hitEffectsRemote:FireAllClients(hitTargets[1].model, "fists")
+		end
+	end
+
+	-- Apply damage and effects to all hit targets
+	for _, targetData in ipairs(hitTargets) do
+		self:_hitTarget(targetData.model, targetData.humanoid)
 	end
 end
 

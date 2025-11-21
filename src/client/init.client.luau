@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
+local HitEffectsManager = require(ReplicatedStorage.Client.managers.hitEffectsManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -22,6 +23,7 @@ Client:Start()
 -- Initialize managers and controllers
 local inputManager = InputManager.new()
 local sprintManager = SprintManager.new()
+local hitEffectsManager = HitEffectsManager.new() -- Handles client-side hit effects replication
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 

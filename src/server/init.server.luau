@@ -21,6 +21,11 @@ local equipRemote = Instance.new("RemoteEvent")
 equipRemote.Name = "EquipWeapon"
 equipRemote.Parent = ReplicatedStorage
 
+-- Create RemoteEvent for hit effects (server -> clients)
+local hitEffectsRemote = Instance.new("RemoteEvent")
+hitEffectsRemote.Name = "PlayHitEffects"
+hitEffectsRemote.Parent = ReplicatedStorage
+
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)
 	local character = player.Character
