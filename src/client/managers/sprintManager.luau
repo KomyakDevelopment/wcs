@@ -184,12 +184,16 @@ function SprintManager:_startSprint()
 		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 		local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 		local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+		local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 
-		if wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
-			print("[SprintManager] Blocked - Player is in hitstun/stun")
+		if wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
+			print("[SprintManager] Blocked - Player is in hitstun/stun/dashing")
 			return
 		end
 	end
+
+	-- Record current sprint state before activating
+	local wasAlreadySprinting = self.sprintActive
 
 	self.sprintActive = true
 	self.sprintStartTime = tick() -- Record sprint start time
@@ -210,9 +214,12 @@ function SprintManager:_startSprint()
 	-- Apply sprint speed
 	local humanoid = character:FindFirstChild("Humanoid")
 	if humanoid then
-		self.baseWalkSpeed = humanoid.WalkSpeed
+		-- Only update base speed if not already sprinting (prevents compound multiplier bug)
+		if not wasAlreadySprinting then
+			self.baseWalkSpeed = humanoid.WalkSpeed
+		end
 		humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
-		print(`[SprintManager] Sprint activated - Speed: {humanoid.WalkSpeed}`)
+		print(`[SprintManager] Sprint activated - Base: {self.baseWalkSpeed}, Speed: {humanoid.WalkSpeed}`)
 	end
 end
 
@@ -225,6 +232,12 @@ end
 function SprintManager:resumeSprintIfHoldingW()
 	-- Check if W is being held
 	if not UserInputService:IsKeyDown(Enum.KeyCode.W) then
+		return
+	end
+
+	-- Don't resume if already sprinting (prevents double speed bug)
+	if self.sprintActive then
+		print("[SprintManager] Already sprinting - Skipping resume")
 		return
 	end
 

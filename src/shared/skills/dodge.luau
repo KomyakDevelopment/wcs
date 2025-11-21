@@ -7,7 +7,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local Dodge = WCS.RegisterSkill("Dodge")
 
 -- Configuration
-local DODGE_DISTANCE = 16 -- Studs to travel (20% shorter: 20 * 0.8 = 16)
+local DODGE_DISTANCE = 17 -- Studs to travel (slightly longer than 16)
 local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)
 local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
 local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
@@ -18,10 +18,10 @@ local IFRAME_END = 0.345 -- Iframes end right before dodge completes
 
 -- Animation IDs for each direction
 local DODGE_ANIMATIONS = {
-	Forward = "rbxassetid://106929700080073",
-	Backward = "rbxassetid://106929700080073",
-	Left = "rbxassetid://106929700080073",
-	Right = "rbxassetid://106929700080073",
+	Forward = "rbxassetid://85622930154432",
+	Backward = "rbxassetid://85622930154432",
+	Left = "rbxassetid://85622930154432",
+	Right = "rbxassetid://85622930154432",
 }
 
 function Dodge:OnConstructServer()
@@ -172,19 +172,38 @@ function Dodge:OnStartServer()
 end
 
 function Dodge:OnStartClient()
-	-- Check if player has any hitstun status effects active
+	-- Check if player has any hitstun status effects active or is dashing
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
-		print("[Dodge] Client: Blocked - Player is in hitstun/stun")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
+		print("[Dodge] Client: Blocked - Player is in hitstun/stun/dashing")
 		return
 	end
 
-	-- Get the actual movement direction (camera-relative) for animation
+	-- Stop any M1 animations that might be playing
 	local character = self.Character.Instance
 	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
+	if humanoid then
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			local tracks = animator:GetPlayingAnimationTracks()
+			for _, track in ipairs(tracks) do
+				-- Stop combat animations (punch animations)
+				if track.Animation
+					and (track.Animation.AnimationId:match("71780482128433")
+					or track.Animation.AnimationId:match("122171966838136")
+					or track.Animation.AnimationId:match("102972252804338")) then
+					track:Stop(0.05) -- Quick fade out
+					print("[Dodge] Client: Stopped M1 animation")
+				end
+			end
+		end
+	end
+
+	-- Get the actual movement direction (camera-relative) for animation
 	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
 
 	local animDirection = "Forward" -- Default
@@ -222,14 +241,17 @@ function Dodge:OnStartClient()
 			-- Calculate speed but find middle ground between default and matched speed, 40% faster
 			local perfectSpeed = animLength / DODGE_DURATION
 			local speedMultiplier = 1 + ((perfectSpeed - 1) * 0.6) -- 60% toward perfect speed
-			speedMultiplier = speedMultiplier * 1.4 -- Make it 40% faster
-			animTrack:Play(0.05, speedMultiplier) -- Quick fade-in (0.05s)
+			speedMultiplier = speedMultiplier * 0.8 -- Make it 40% faster
+
+			animTrack:Play(0.05) -- Quick fade-in (0.05s)
+			animTrack:AdjustSpeed(speedMultiplier) -- Adjust speed after playing
 			print(
 				`[Dodge] Client: Playing {animDirection} dodge animation - Length: {animLength}s, Perfect: {perfectSpeed}x, Using: {speedMultiplier}x`
 			)
 		else
 			-- Fallback if length not available - 40% faster than before
-			animTrack:Play(0.05, 1.96) -- 1.4 * 1.4 = 1.96
+			animTrack:Play(0.05)
+			animTrack:AdjustSpeed(1.96) -- 1.4 * 1.4 = 1.96
 			print(`[Dodge] Client: Playing {animDirection} dodge animation - Using default speed 1.96x`)
 		end
 	else
@@ -322,7 +344,9 @@ function Dodge:OnEndServer()
 	if self.cancelCountRef.Value < MAX_CANCELS then
 		-- First cancel - no cooldown, can dodge again immediately
 		self.cancelCountRef.Value = self.cancelCountRef.Value + 1
-		print(`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`)
+		print(
+			`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
+		)
 	else
 		-- Already used the cancel - apply full cooldown and reset
 		self:ApplyCooldown(DODGE_COOLDOWN)
