@@ -28,7 +28,7 @@ local COMBO_ANIMATIONS = {
 	[1] = "rbxassetid://100518847191051",
 	[2] = "rbxassetid://76103103515407",
 	[3] = "rbxassetid://128845445156895",
-	[4] = "rbxassetid://76103103515407", -- Flourish uses 2_m1 temporarily
+	[4] = "rbxassetid://77003004079538", -- Flourish uses 2_m1 temporarily
 }
 
 -- Damage delays for each combo phase (in seconds)
