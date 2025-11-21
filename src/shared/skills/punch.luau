@@ -81,9 +81,10 @@ function Punch:OnStartServer()
 		return
 	end
 
-	-- Check if player is in hitstun
-	if self.Character.IsInHitstun then
-		print("[Punch] Blocked - Player is in hitstun")
+	-- Check if player is in hitstun or dashing
+	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+	if self.Character.IsInHitstun or self.Character:HasStatusEffects({ Dashing }) then
+		print("[Punch] Blocked - Player is in hitstun or dashing")
 		return
 	end
 
@@ -121,13 +122,14 @@ function Punch:OnStartServer()
 end
 
 function Punch:OnStartClient()
-	-- Check if player has any hitstun status effects active
+	-- Check if player has any hitstun status effects active or is dashing
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
-		print("[Punch] Client: Blocked - Player is in hitstun/stun")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
+		print("[Punch] Client: Blocked - Player is in hitstun/stun/dashing")
 		return
 	end
 
@@ -224,6 +226,16 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		return
 	end
 
+	-- Check if target has iframes (invincibility)
+	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
+	if targetWCSCharacter then
+		local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
+		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
+			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
+			return
+		end
+	end
+
 	self.hitTargets[targetModel] = true
 
 	print(`[Punch] Hit target: {targetModel.Name} - Phase {self.currentAttackPhase}`)
@@ -232,7 +244,9 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	targetHumanoid:TakeDamage(PUNCH_DAMAGE)
 
 	-- Apply soft hitstun to the target (if they have WCS character)
-	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
+	if not targetWCSCharacter then
+		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
+	end
 	if targetWCSCharacter then
 		-- Create status effect per WCS docs: StatusEffect.new(character)
 		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)

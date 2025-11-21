@@ -61,6 +61,9 @@ Players.PlayerAdded:Connect(function(player)
 		-- Create WCS character
 		local wcsCharacter = WCS.Character.new(character)
 
+		-- Apply Unarmed moveset by default (gives access to Dodge)
+		wcsCharacter:ApplyMoveset("Unarmed")
+
 		-- Attach equipment manager (no weapon equipped by default)
 		wcsCharacter.EquipmentManager = EquipmentManager.new(wcsCharacter)
 

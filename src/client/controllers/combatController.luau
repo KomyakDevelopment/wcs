@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
+local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 
 local CombatController = {}
 CombatController.__index = CombatController
@@ -59,6 +60,12 @@ function CombatController:performPrimaryAttack()
 		return
 	end
 
+	-- Check if player has equipment equipped
+	if not self.equipmentController or not self.equipmentController:getEquipped() then
+		print("[CombatController] Cannot attack - No weapon equipped")
+		return
+	end
+
 	-- Cancel sprint if active (only when actually attacking)
 	if self.sprintManager then
 		self.sprintManager:stopSprint()
@@ -106,8 +113,34 @@ end
 
 -- Perform dodge action
 function CombatController:performDodge()
-	print("[CombatController] Dodge - Not implemented yet")
-	-- TODO: Implement dodge roll
+	local character = self:getCharacter()
+	if not character then
+		print("[CombatController] performDodge: No character found")
+		return
+	end
+
+	-- Get the dodge skill from character
+	local dodgeSkill = character:GetSkillFromConstructor(Dodge)
+	if not dodgeSkill then
+		print("[CombatController] performDodge: No dodge skill found on character")
+		return
+	end
+
+	-- Check if skill is on cooldown
+	local state = dodgeSkill:GetState()
+	if state.Debounce then
+		print("[CombatController] performDodge: Dodge is on cooldown")
+		return
+	end
+
+	-- Cancel sprint if active (AFTER validation)
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
+	end
+
+	print("[CombatController] performDodge: Starting dodge skill")
+	-- Execute the dodge skill
+	dodgeSkill:Start()
 end
 
 -- Use ability from hotbar slot
