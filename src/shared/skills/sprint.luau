@@ -8,6 +8,10 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local Sprint = WCS.RegisterSkill("Sprint")
 
+-- WCS Client Prediction Configuration
+Sprint.CheckClientState = false -- Don't wait for server validation
+Sprint.CheckOthersActive = false -- Don't check if other skills are active
+
 -- Configuration
 local SPRINT_SPEED_MULTIPLIER = 1.5 -- 150% of normal walk speed
 local DOUBLE_TAP_WINDOW = 0.3 -- Time window to detect double tap (seconds)

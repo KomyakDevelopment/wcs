@@ -1,4 +1,5 @@
 --!strict
+local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -6,17 +7,22 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local Punch = WCS.RegisterSkill("Punch")
 
+-- WCS Client Prediction Configuration
+-- These settings make the skill feel responsive by not waiting for server validation
+Punch.CheckClientState = false -- Don't wait for server to validate before playing client effects
+Punch.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
+
 -- Configuration
 local PUNCH_DAMAGE = 10
 local PUNCH_RANGE = 10 -- Increased for better hit registration
-local PUNCH_COOLDOWN = 0.7
+local PUNCH_COOLDOWN = 0.75
 
 -- Hitbox configuration
 local HIT_ANGLE_THRESHOLD = 0.3 -- Dot product threshold for hit detection (~72 degrees in front)
 local BLOCK_ANGLE_THRESHOLD = 0.3 -- Must face attacker to block/parry
 
 -- Hitstun duration for unarmed attacks
-local SOFT_HITSTUN_DURATION = 1.3
+local SOFT_HITSTUN_DURATION = 0.6
 local FLOURISH_SELF_HITSTUN_DURATION = 0.5 -- Recovery time after landing flourish
 
 -- Combo system configuration
@@ -38,14 +44,11 @@ local COMBO_ANIMATIONS = {
 -- Damage delays for each combo phase (in seconds)
 -- Adjust these to match when the fist actually hits in each animation
 local DAMAGE_DELAYS = {
-	[1] = 0.45, -- First M1 damage delay
-	[2] = 0.45, -- Second M1 damage delay
-	[3] = 0.45, -- Third M1 damage delay
-	[4] = 0.45, -- Flourish damage delay
+	[1] = 0.5, -- First M1 damage delay
+	[2] = 0.5, -- Second M1 damage delay
+	[3] = 0.5, -- Third M1 damage delay
+	[4] = 0.65, -- Flourish damage delay
 }
-
--- Animation transition configuration
-local ANIM_WEIGHT_FADE_TIME = 0.05 -- Time to fade animation weight (lower = snappier transitions)
 
 function Punch:OnConstructServer()
 	-- Setup server-side skill data
@@ -61,17 +64,35 @@ function Punch:OnConstructClient()
 	self.comboPhase = 1
 	self.comboResetTimer = nil
 	self.loadedAnimations = {}
+	self.animationsReady = false
 
 	-- Preload all combo animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if animator then
+			-- Create animation instances first
+			local animationInstances = {}
 			for phase, animId in pairs(COMBO_ANIMATIONS) do
 				local animation = Instance.new("Animation")
 				animation.AnimationId = animId
+				animationInstances[phase] = animation
+				-- Load into animator
 				self.loadedAnimations[phase] = animator:LoadAnimation(animation)
 			end
+
+			-- Mark as ready immediately (LoadAnimation is synchronous)
+			self.animationsReady = true
+
+			-- Preload in background via ContentProvider for smoother first play
+			task.spawn(function()
+				local animsToPreload = {}
+				for _, anim in pairs(animationInstances) do
+					table.insert(animsToPreload, anim)
+				end
+				ContentProvider:PreloadAsync(animsToPreload)
+				print("[Punch] Client: Animations preloaded via ContentProvider")
+			end)
 		end
 	end
 end
@@ -103,17 +124,11 @@ function Punch:OnStartServer()
 
 	print(`[Punch] Server: Punch activated - Phase {self.currentAttackPhase}`)
 
-	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
-	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
-	if parryFlashRemote then
-		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase)
-		print(`[Punch] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}`)
-	end
-
 	-- Apply cooldown
 	self:ApplyCooldown(PUNCH_COOLDOWN)
 
-	-- Apply Attacking status effect (prevents dodging and slows movement during attack)
+	-- Apply Attacking status effect FIRST (prevents dodging and slows movement during attack)
+	-- This MUST be applied before parry flash remote so clients can validate the status
 	local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
@@ -124,6 +139,14 @@ function Punch:OnStartServer()
 		local attackDuration = DAMAGE_DELAYS[self.currentAttackPhase] or 0.45
 		self.attackingEffect:Start(attackDuration)
 		print(`[Punch] Applied Attacking status for {attackDuration}s`)
+	end
+
+	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
+	-- NOTE: This is sent AFTER Attacking status is applied so clients can validate
+	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
+	if parryFlashRemote then
+		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase)
+		print(`[Punch] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}`)
 	end
 
 	-- Perform hitbox detection with delay based on animation timing
@@ -257,14 +280,19 @@ function Punch:OnStartClient()
 	-- Store current phase before advancing
 	local currentPhase = self.comboPhase
 
+	-- Stop any other punch animations that might be playing (prevents animation conflicts)
+	for phase, track in pairs(self.loadedAnimations) do
+		if track and track.IsPlaying and phase ~= currentPhase then
+			track:Stop(0.05) -- Quick stop
+		end
+	end
+
 	-- Play animation for current combo phase
 	local animTrack = self.loadedAnimations[currentPhase]
 	if animTrack then
-		-- Set high priority to override any other animations
-		animTrack.Priority = Enum.AnimationPriority.Action
-		animTrack:Play()
-		-- Snap to full weight quickly for snappier transitions
-		animTrack:AdjustWeight(1, ANIM_WEIGHT_FADE_TIME)
+		-- Play first, then set priority (fixes known Roblox bug where priority resets on Play)
+		animTrack:Play(0.05) -- Quick fade-in for snappy feel
+		animTrack.Priority = Enum.AnimationPriority.Action4 -- Highest priority, set AFTER Play
 		print(`[Punch] Client: Playing combo phase {currentPhase} animation`)
 
 		-- Apply fists trail VFX when animation starts, remove when it ends
@@ -424,6 +452,16 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		else
 			warn(`[Punch] Failed to create SoftHitstun for {targetModel.Name}`)
 		end
+
+		-- Cancel target's M1 if they were attacking (M1 cancellation on hit)
+		local targetPunchSkill = targetWCSCharacter:GetSkillFromConstructor(Punch)
+		if targetPunchSkill then
+			local punchState = targetPunchSkill:GetState()
+			if punchState.IsActive then
+				targetPunchSkill:End()
+				print(`[Punch] Cancelled {targetModel.Name}'s M1 - Got hit`)
+			end
+		end
 	else
 		warn(`[Punch] No WCS character found for {targetModel.Name}`)
 	end
@@ -493,17 +531,24 @@ end
 
 -- Handle successful parry
 function Punch:_handleParry(defenderWCSCharacter)
-	-- Reset parry cooldown as reward for successful parry
-	-- This allows immediate re-parry after a successful parry
+	-- End Block skill so defender can attack during Autoparry window (enables parry trading)
 	local Block = require(ReplicatedStorage.Shared.skills.block)
 	local blockSkill = defenderWCSCharacter:GetSkillFromConstructor(Block)
 	if blockSkill then
+		-- End the block skill to remove Blocking/Parrying status
+		local blockState = blockSkill:GetState()
+		if blockState.IsActive then
+			blockSkill:End()
+			print(`[Punch] Ended Block skill for {defenderWCSCharacter.Instance.Name} - Parry reward`)
+		end
+
+		-- Reset parry cooldown as reward for successful parry
 		blockSkill.lastBlockEndTime = 0
 		blockSkill.parryOnCooldown = false
 		print(`[Punch] Reset parry cooldown for {defenderWCSCharacter.Instance.Name} - Parry reward`)
 	end
 
-	-- Apply Autoparry status to defender for 0.4s
+	-- Apply Autoparry status to defender for 0.4s (protects during attack window)
 	local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
 	if autoparryEffect then
@@ -511,12 +556,19 @@ function Punch:_handleParry(defenderWCSCharacter)
 		print(`[Punch] Applied Autoparry (0.4s) to {defenderWCSCharacter.Instance.Name}`)
 	end
 
-	-- Apply TrueHitstun to attacker (0.8s punishment for getting parried)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local trueHitstunEffect = TrueHitstun.new(self.Character)
-	if trueHitstunEffect then
-		trueHitstunEffect:Start(0.8)
-		print(`[Punch] Applied TrueHitstun (0.8s) to attacker {self.Character.Instance.Name} - Got parried`)
+	-- Apply SoftHitstun to attacker (0.8s stagger - can still parry out of it)
+	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+	local softHitstunEffect = SoftHitstun.new(self.Character)
+	if softHitstunEffect then
+		softHitstunEffect:Start(0.8)
+		print(`[Punch] Applied SoftHitstun (0.8s) to attacker {self.Character.Instance.Name} - Got parried`)
+	end
+
+	-- Cancel attacker's M1 (this skill) - stop the attack animation
+	-- The skill will end naturally but we want immediate feedback
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+		self.attackingEffect = nil
 	end
 
 	-- Apply Parried status to attacker for visual/audio feedback
@@ -691,22 +743,23 @@ function Punch:OnEndClient()
 	-- Restore walking animation speeds when punch ends
 	self:_restoreMovementAnimations()
 
-	-- Only stop animations if interrupted (not normal completion)
-	-- Check if we were interrupted by looking for hitstun status
+	-- Industry standard: Only stop animations on interrupt, let them finish naturally otherwise
+	-- Check if we were interrupted by looking for hitstun status OR Parried status
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun })
+	local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
+	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then
-		-- Only stop animations if we were interrupted by hitstun
+		-- Only stop animations if interrupted - use fast fade
 		for _, animTrack in pairs(self.loadedAnimations) do
 			if animTrack and animTrack.IsPlaying then
-				animTrack:Stop(0.1)
-				print("[Punch] Client: Stopped animation due to hitstun interrupt")
+				animTrack:Stop(0.05)
+				print("[Punch] Client: Stopped animation due to interrupt")
 			end
 		end
 	end
-	-- Otherwise let animations finish naturally
+	-- Otherwise let animations finish naturally - don't stop them
 end
 
 return Punch

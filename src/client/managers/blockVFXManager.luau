@@ -22,6 +22,9 @@ function BlockVFXManager.new()
 	self.blockSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.block
 	self.parrySFXFolder = ReplicatedStorage.Assets.SFX.General_Combat.parry
 
+	-- Debounce tracking for parry flash (prevents duplicate emissions per attack)
+	self.lastParryFlashTime = {} -- [character] = lastTime
+
 	-- Setup remote event listeners
 	self:_setupRemotes()
 
@@ -56,8 +59,39 @@ function BlockVFXManager:playParryFlashVFX(character: Model, attackPhase: number
 		return
 	end
 
-	-- Default to phase 2 (right arm) if no phase specified
-	attackPhase = attackPhase or 2
+	-- Don't show parry flash on local player's own attacks (only show on other players)
+	local localPlayer = Players.LocalPlayer
+	if localPlayer and localPlayer.Character == character then
+		return
+	end
+
+	-- Note: We trust the server to validate before firing this remote
+	-- The Attacking status check was removed because network latency can cause
+	-- the remote to arrive before the status effect replicates to the client
+
+	-- Debounce check to prevent duplicate parry flashes per attack
+	local currentTime = tick()
+	local lastTime = self.lastParryFlashTime[character]
+	local PARRY_FLASH_DEBOUNCE = 0.3 -- Minimum time between parry flashes per character
+	if lastTime and (currentTime - lastTime) < PARRY_FLASH_DEBOUNCE then
+		print(`[BlockVFXManager] Parry flash debounced for {character.Name} (too soon)`)
+		return
+	end
+	self.lastParryFlashTime[character] = currentTime
+
+	-- Cleanup old entries (characters that no longer exist)
+	for char, _ in pairs(self.lastParryFlashTime) do
+		if not char or not char.Parent then
+			self.lastParryFlashTime[char] = nil
+		end
+	end
+
+	-- Security: Validate phase is valid (1-4)
+	local validPhase: number = 2 -- Default to right arm
+	if type(attackPhase) == "number" and attackPhase >= 1 and attackPhase <= 4 then
+		validPhase = math.floor(attackPhase)
+	end
+	attackPhase = validPhase
 
 	print(`[BlockVFXManager] Playing parry flash for {character.Name}, phase {attackPhase}`)
 
@@ -143,20 +177,7 @@ function BlockVFXManager:playParryVFX(character: Model)
 
 	print(`[BlockVFXManager] Playing parry VFX for {character.Name}`)
 
-	-- Parry flash on right arm's RightGripAttachment
-	local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-	if rightArm then
-		local rightGripAttachment = rightArm:FindFirstChild("RightGripAttachment")
-		if rightGripAttachment and rightGripAttachment:IsA("Attachment") then
-			self:_emitAttachmentVFXAtAttachment(self.parryFlashAttachment, rightGripAttachment)
-		else
-			self:_emitAttachmentVFX(self.parryFlashAttachment, rightArm)
-		end
-	else
-		warn(`[BlockVFXManager] Right arm not found on {character.Name}`)
-	end
-
-	-- Parry effect on torso
+	-- Parry effect on torso (the main parry VFX when successfully parrying)
 	local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
 	if torso then
 		self:_emitAttachmentVFX(self.parryAttachment, torso)

@@ -6,6 +6,11 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local Dodge = WCS.RegisterSkill("Dodge")
 
+-- WCS Client Prediction Configuration
+-- These settings make the skill feel responsive by not waiting for server validation
+Dodge.CheckClientState = false -- Don't wait for server to validate before playing client effects
+Dodge.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
+
 -- Configuration
 local DODGE_DISTANCE = 17 -- Studs to travel (slightly longer than 16)
 local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)

@@ -5,9 +5,14 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local Block = WCS.RegisterSkill("Block")
 
+-- WCS Client Prediction Configuration
+-- These settings make the skill feel responsive by not waiting for server validation
+Block.CheckClientState = false -- Don't wait for server to validate before playing client effects
+Block.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
+
 -- Configuration
 local BLOCK_STARTUP_TIME = 0.03 -- Windup before block becomes active
-local PARRY_WINDOW_DURATION = 0.25 -- Perfect parry window at start of block (0.2 * 1.35)
+local PARRY_WINDOW_DURATION = 0.35 -- Perfect parry window at start of block (0.2 * 1.35)
 local BLOCK_COOLDOWN = 0.5 -- Cooldown after releasing block to prevent spam parrying
 
 -- Animation IDs
