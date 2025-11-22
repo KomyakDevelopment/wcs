@@ -43,6 +43,7 @@ function SprintManager.new()
 	self.baseWalkSpeed = 16 -- Default walkspeed
 	self.sprintStartTime = 0 -- Track when sprint started for grace period
 	self.postDodgeGraceEnd = 0 -- Track when post-dodge grace period ends
+	self.wasSprintingBeforeDodge = false -- Track if player was sprinting before dodge
 
 	-- Setup
 	self:_initialize()
@@ -144,6 +145,12 @@ end
 
 -- Handle double-tap sprint activation
 function SprintManager:_handleDoubleTap(direction: string)
+	-- Check if punch animation is playing - don't start sprint (animation priority)
+	if self:_isPunchAnimationPlaying() then
+		print("[SprintManager] Double-tap ignored - Punch animation playing")
+		return
+	end
+
 	-- Check if player is in shiftlock
 	local isShiftLock = self:_isInShiftLock()
 
@@ -170,6 +177,42 @@ function SprintManager:_handleDoubleTap(direction: string)
 	self:_startSprint()
 end
 
+-- Punch animation IDs to check against
+local PUNCH_ANIMATION_IDS = {
+	["rbxassetid://100518847191051"] = true, -- M1 phase 1
+	["rbxassetid://76103103515407"] = true,  -- M1 phase 2
+	["rbxassetid://128845445156895"] = true, -- M1 phase 3
+	["rbxassetid://77003004079538"] = true,  -- Flourish (phase 4)
+}
+
+-- Check if player is currently in a punch animation
+function SprintManager:_isPunchAnimationPlaying(): boolean
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return false
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not humanoid then
+		return false
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return false
+	end
+
+	-- Check all playing animations for punch animations
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		if track.Animation and PUNCH_ANIMATION_IDS[track.Animation.AnimationId] then
+			return true
+		end
+	end
+
+	return false
+end
+
 -- Start sprint
 function SprintManager:_startSprint()
 	local player = Players.LocalPlayer
@@ -190,6 +233,12 @@ function SprintManager:_startSprint()
 			print("[SprintManager] Blocked - Player is in hitstun/stun/dashing")
 			return
 		end
+	end
+
+	-- Check if punch animation is playing - don't start sprint (animation priority)
+	if self:_isPunchAnimationPlaying() then
+		print("[SprintManager] Blocked - Punch animation playing")
+		return
 	end
 
 	-- Record current sprint state before activating
@@ -226,6 +275,12 @@ end
 -- Stop sprint (public method)
 function SprintManager:stopSprint()
 	self:_stopSprint()
+end
+
+-- Save sprint state before dodge (public method)
+function SprintManager:saveSprintStateForDodge()
+	self.wasSprintingBeforeDodge = self.sprintActive
+	print(`[SprintManager] Saved sprint state before dodge: {self.wasSprintingBeforeDodge}`)
 end
 
 -- Resume sprint if W is held (public method for post-dodge sprint resume)
@@ -347,6 +402,12 @@ function SprintManager:_shouldCancelSprint(): boolean
 		if wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
 			return true
 		end
+	end
+
+	-- Check if punch animation started - cancel sprint (animation priority)
+	if self:_isPunchAnimationPlaying() then
+		print("[SprintManager] Sprint cancelled - Punch animation playing")
+		return true
 	end
 
 	-- Grace period - don't check velocity immediately after starting sprint

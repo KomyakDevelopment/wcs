@@ -1,4 +1,5 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local TrueHitstun = WCS.RegisterStatusEffect("TrueHitstun")
@@ -63,13 +64,69 @@ function TrueHitstun:OnEndServer()
 	print(`[TrueHitstun] Ended on {self.Character.Instance.Name}`)
 end
 
+-- Walk animation speed during hitstun
+local WALK_ANIM_SPEED_DURING_HITSTUN = 0.5 -- 50% speed
+
 function TrueHitstun:OnStartClient()
-	-- TODO: Add visual effects (red outline, stun stars, etc.)
+	-- Slow down walk animations
+	self:_slowWalkAnimations()
+
 	print("[TrueHitstun] Client effect started")
 end
 
 function TrueHitstun:OnEndClient()
+	-- Restore walk animation speeds
+	self:_restoreWalkAnimations()
+
 	print("[TrueHitstun] Client effect ended")
+end
+
+-- Slow down walk/movement animations during hitstun
+function TrueHitstun:_slowWalkAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Store original speeds for restoration
+	self.originalWalkAnimSpeeds = {}
+
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		-- Slow down core movement animations (walk/run)
+		if track.Priority == Enum.AnimationPriority.Core or track.Priority == Enum.AnimationPriority.Movement then
+			self.originalWalkAnimSpeeds[track] = track.Speed
+			track:AdjustSpeed(WALK_ANIM_SPEED_DURING_HITSTUN)
+		end
+	end
+end
+
+-- Restore walk animation speeds after hitstun
+function TrueHitstun:_restoreWalkAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	if not self.originalWalkAnimSpeeds then
+		return
+	end
+
+	for track, originalSpeed in pairs(self.originalWalkAnimSpeeds) do
+		if track and track.IsPlaying then
+			track:AdjustSpeed(originalSpeed)
+		end
+	end
+
+	self.originalWalkAnimSpeeds = nil
 end
 
 return TrueHitstun

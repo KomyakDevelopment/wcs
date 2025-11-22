@@ -130,6 +130,78 @@ function Punch:OnStartServer()
 	end)
 end
 
+-- Animation IDs that should be stopped when punching (movement animations)
+local MOVEMENT_ANIMATION_IDS = {
+	["rbxassetid://104453488066690"] = true, -- Sprint animation
+}
+
+-- Walking animation speed multiplier during punch
+local WALK_ANIM_SPEED_DURING_PUNCH = 0.5 -- 50% speed
+
+-- Stop sprint and slow walking animations during punch
+function Punch:_stopMovementAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Store original walk animation speeds for restoration later
+	self.originalWalkAnimSpeeds = self.originalWalkAnimSpeeds or {}
+
+	-- Process all playing animations
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		if track.Animation then
+			local animId = track.Animation.AnimationId
+			-- Stop sprint animation completely
+			if MOVEMENT_ANIMATION_IDS[animId] then
+				track:Stop(0.1)
+				print(`[Punch] Stopped movement animation: {animId}`)
+			end
+		end
+
+		-- Slow down core movement animations (walk/run) by checking priority
+		if track.Priority == Enum.AnimationPriority.Core or track.Priority == Enum.AnimationPriority.Movement then
+			-- Store original speed if not already stored
+			if not self.originalWalkAnimSpeeds[track] then
+				self.originalWalkAnimSpeeds[track] = track.Speed
+			end
+			-- Slow down the animation
+			track:AdjustSpeed(WALK_ANIM_SPEED_DURING_PUNCH)
+		end
+	end
+end
+
+-- Restore walking animation speeds after punch
+function Punch:_restoreMovementAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	if not self.originalWalkAnimSpeeds then
+		return
+	end
+
+	-- Restore original speeds for all tracked animations
+	for track, originalSpeed in pairs(self.originalWalkAnimSpeeds) do
+		if track and track.IsPlaying then
+			track:AdjustSpeed(originalSpeed)
+		end
+	end
+
+	-- Clear the stored speeds
+	self.originalWalkAnimSpeeds = {}
+end
+
 function Punch:OnStartClient()
 	-- Check if player has any hitstun status effects active, is dashing, or is blocking/parrying
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
@@ -144,6 +216,9 @@ function Punch:OnStartClient()
 		return
 	end
 
+	-- Stop any movement animations before playing punch animation (prevents overlap)
+	self:_stopMovementAnimations()
+
 	-- Reset combo timer on client
 	if self.comboResetTimer then
 		task.cancel(self.comboResetTimer)
@@ -155,6 +230,8 @@ function Punch:OnStartClient()
 	-- Play animation for current combo phase
 	local animTrack = self.loadedAnimations[currentPhase]
 	if animTrack then
+		-- Set high priority to override any other animations
+		animTrack.Priority = Enum.AnimationPriority.Action
 		animTrack:Play()
 		print(`[Punch] Client: Playing combo phase {currentPhase} animation`)
 
@@ -532,6 +609,9 @@ function Punch:OnEndServer()
 end
 
 function Punch:OnEndClient()
+	-- Restore walking animation speeds when punch ends
+	self:_restoreMovementAnimations()
+
 	-- Only stop animations if interrupted (not normal completion)
 	-- Check if we were interrupted by looking for hitstun status
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)

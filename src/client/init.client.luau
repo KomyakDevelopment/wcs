@@ -38,7 +38,7 @@ local resumeSprintEvent = Instance.new("BindableEvent")
 resumeSprintEvent.Name = "ResumeSprintAfterDodge"
 resumeSprintEvent.Parent = ReplicatedStorage
 
--- Connect sprint resume handler
+-- Connect sprint resume handler (called when dodge ends)
 resumeSprintEvent.Event:Connect(function()
 	sprintManager:resumeSprintIfHoldingW()
 end)
