@@ -20,7 +20,8 @@ function Block:OnConstructServer()
 	self.blockingEffect = nil
 	self.parryingEffect = nil
 	self.startupComplete = false
-	self.lastBlockEndTime = 0 -- Track when block was last released for cooldown
+	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
+	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
 end
 
 function Block:OnConstructClient()
@@ -29,7 +30,8 @@ function Block:OnConstructClient()
 	self.blockActive = false
 	self.blockHitRemote = nil
 	self.parryStartTime = nil
-	self.lastBlockEndTime = 0 -- Track when block was last released for cooldown
+	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
+	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
 
 	-- Preload animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -108,12 +110,14 @@ function Block:OnStartServer()
 
 	print("[Block] Server: Weapon equipped, proceeding with block")
 
-	-- Check if block is on cooldown
+	-- Check if parry is on cooldown (block is still allowed, just no parry window)
 	local currentTime = tick()
 	if currentTime - self.lastBlockEndTime < BLOCK_COOLDOWN then
 		local remainingCooldown = BLOCK_COOLDOWN - (currentTime - self.lastBlockEndTime)
-		print(`[Block] Server: Blocked - On cooldown ({string.format("%.2f", remainingCooldown)}s remaining)`)
-		return
+		self.parryOnCooldown = true
+		print(`[Block] Server: Parry on cooldown ({string.format("%.2f", remainingCooldown)}s remaining) - Block only`)
+	else
+		self.parryOnCooldown = false
 	end
 
 	-- Check if player is in hitstun or dashing
@@ -149,12 +153,16 @@ function Block:OnStartServer()
 			print("[Block] Server: Applied Blocking status")
 		end
 
-		-- Apply Parrying status effect for parry window
-		local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
-		self.parryingEffect = Parrying.new(self.Character)
-		if self.parryingEffect then
-			self.parryingEffect:Start(PARRY_WINDOW_DURATION)
-			print(`[Block] Server: Applied Parrying status ({PARRY_WINDOW_DURATION}s)`)
+		-- Apply Parrying status effect for parry window (only if not on cooldown)
+		if not self.parryOnCooldown then
+			local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+			self.parryingEffect = Parrying.new(self.Character)
+			if self.parryingEffect then
+				self.parryingEffect:Start(PARRY_WINDOW_DURATION)
+				print(`[Block] Server: Applied Parrying status ({PARRY_WINDOW_DURATION}s)`)
+			end
+		else
+			print("[Block] Server: Skipping parry window - On cooldown")
 		end
 	end)
 
@@ -168,12 +176,14 @@ function Block:OnStartServer()
 end
 
 function Block:OnStartClient()
-	-- Check if block is on cooldown
+	-- Check if parry is on cooldown (block is still allowed, just no parry window)
 	local currentTime = tick()
 	if currentTime - self.lastBlockEndTime < BLOCK_COOLDOWN then
 		local remainingCooldown = BLOCK_COOLDOWN - (currentTime - self.lastBlockEndTime)
-		print(`[Block] Client: Blocked - On cooldown ({string.format("%.2f", remainingCooldown)}s remaining)`)
-		return
+		self.parryOnCooldown = true
+		print(`[Block] Client: Parry on cooldown ({string.format("%.2f", remainingCooldown)}s remaining) - Block only`)
+	else
+		self.parryOnCooldown = false
 	end
 
 	-- Check if player has any status effects that prevent blocking
@@ -190,37 +200,53 @@ function Block:OnStartClient()
 
 	self.blockActive = true
 
-	-- Store when the parry window starts (after startup delay)
-	task.delay(BLOCK_STARTUP_TIME, function()
-		self.parryStartTime = tick()
-		print(`[Block] Client: Parry window started at {self.parryStartTime}`)
-	end)
-
-	-- Play parry transition animation first
-	local parryTransTrack = self.loadedAnimations.ParryTransition
-	if parryTransTrack then
-		self.currentAnimTrack = parryTransTrack
-		parryTransTrack:Play(0.05)
-		print("[Block] Client: Playing parry transition animation")
-
-		-- Wait for transition to complete, then play block hold
-		local transitionLength = parryTransTrack.Length
-		task.delay(transitionLength or 0.3, function()
-			if not self.blockActive then
-				return -- Block was cancelled
-			end
-
-			-- Play block hold animation (loops)
-			local blockTrack = self.loadedAnimations.Block
-			if blockTrack then
-				self.currentAnimTrack = blockTrack
-				blockTrack:Play(0.1)
-				blockTrack.Looped = true
-				print("[Block] Client: Playing block hold animation (looping)")
-			end
+	-- Store when the parry window starts (after startup delay) - only if not on cooldown
+	if not self.parryOnCooldown then
+		task.delay(BLOCK_STARTUP_TIME, function()
+			self.parryStartTime = tick()
+			print(`[Block] Client: Parry window started at {self.parryStartTime}`)
 		end)
 	else
-		warn("[Block] Client: Parry transition animation not loaded")
+		self.parryStartTime = nil -- No parry window when on cooldown
+	end
+
+	-- Play parry transition animation first (or go straight to block if on cooldown)
+	if not self.parryOnCooldown then
+		-- Normal block with parry window - play transition first
+		local parryTransTrack = self.loadedAnimations.ParryTransition
+		if parryTransTrack then
+			self.currentAnimTrack = parryTransTrack
+			parryTransTrack:Play(0.05)
+			print("[Block] Client: Playing parry transition animation")
+
+			-- Wait for transition to complete, then play block hold
+			local transitionLength = parryTransTrack.Length
+			task.delay(transitionLength or 0.3, function()
+				if not self.blockActive then
+					return -- Block was cancelled
+				end
+
+				-- Play block hold animation (loops)
+				local blockTrack = self.loadedAnimations.Block
+				if blockTrack then
+					self.currentAnimTrack = blockTrack
+					blockTrack:Play(0.1)
+					blockTrack.Looped = true
+					print("[Block] Client: Playing block hold animation (looping)")
+				end
+			end)
+		else
+			warn("[Block] Client: Parry transition animation not loaded")
+		end
+	else
+		-- On cooldown - skip parry transition, go straight to block hold
+		local blockTrack = self.loadedAnimations.Block
+		if blockTrack then
+			self.currentAnimTrack = blockTrack
+			blockTrack:Play(0.1)
+			blockTrack.Looped = true
+			print("[Block] Client: Playing block hold animation (no parry - on cooldown)")
+		end
 	end
 end
 
@@ -248,7 +274,7 @@ function Block:OnEndServer()
 end
 
 function Block:OnEndClient()
-	print("[Block] Client: Block released - Lingering parry frames and animation")
+	print("[Block] Client: Block released")
 
 	self.blockActive = false
 
@@ -256,28 +282,40 @@ function Block:OnEndClient()
 	self.lastBlockEndTime = tick()
 	print(`[Block] Client: Cooldown started ({BLOCK_COOLDOWN}s)`)
 
-	-- DON'T stop animation immediately - let parry window finish
+	-- Handle animation stopping based on whether we had a parry window
 	if self.currentAnimTrack then
-		-- Calculate how much time is left in the parry window
-		local parryTimeRemaining = 0
 		if self.parryStartTime then
+			-- Had a parry window - let lingering parry frames finish
 			local elapsedTime = tick() - self.parryStartTime
-			parryTimeRemaining = math.max(0, PARRY_WINDOW_DURATION - elapsedTime)
+			local parryTimeRemaining = math.max(0, PARRY_WINDOW_DURATION - elapsedTime)
 			print(`[Block] Client: Parry time remaining: {parryTimeRemaining}s`)
-		else
-			-- If parry hasn't started yet, wait the full duration
-			parryTimeRemaining = PARRY_WINDOW_DURATION + BLOCK_STARTUP_TIME
-			print(`[Block] Client: Parry hasn't started, waiting full duration: {parryTimeRemaining}s`)
-		end
 
-		-- Wait for parry frames to expire before stopping animation
-		task.delay(parryTimeRemaining, function()
-			if self.currentAnimTrack then
-				self.currentAnimTrack:Stop(0.1)
-				self.currentAnimTrack = nil
-				print("[Block] Client: Stopped block animation after parry window expired")
-			end
-		end)
+			-- Wait for parry frames to expire before stopping animation
+			task.delay(parryTimeRemaining, function()
+				if self.currentAnimTrack then
+					self.currentAnimTrack:Stop(0.1)
+					self.currentAnimTrack = nil
+					print("[Block] Client: Stopped block animation after parry window expired")
+				end
+			end)
+		elseif not self.parryOnCooldown then
+			-- Parry window hasn't started yet but we're not on cooldown - wait full duration
+			local parryTimeRemaining = PARRY_WINDOW_DURATION + BLOCK_STARTUP_TIME
+			print(`[Block] Client: Parry hasn't started, waiting full duration: {parryTimeRemaining}s`)
+
+			task.delay(parryTimeRemaining, function()
+				if self.currentAnimTrack then
+					self.currentAnimTrack:Stop(0.1)
+					self.currentAnimTrack = nil
+					print("[Block] Client: Stopped block animation after parry window expired")
+				end
+			end)
+		else
+			-- On cooldown - no parry window, stop animation immediately
+			self.currentAnimTrack:Stop(0.1)
+			self.currentAnimTrack = nil
+			print("[Block] Client: Stopped block animation (no parry window)")
+		end
 	end
 
 	-- Reset parry start time

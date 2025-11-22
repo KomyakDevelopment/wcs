@@ -3,6 +3,7 @@
 -- Handles visual and sound effects for blocking, parrying, and block hits
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
 local BlockVFXManager = {}
@@ -15,6 +16,7 @@ function BlockVFXManager.new()
 	self.parryFlashAttachment = ReplicatedStorage.Assets.VFX.General_Combat.parry_flash.Attachment
 	self.blockAttachment = ReplicatedStorage.Assets.VFX.General_Combat.block.Attachment
 	self.parryAttachment = ReplicatedStorage.Assets.VFX.General_Combat.parry.Attachment
+	self.blockHighlight = ReplicatedStorage.Assets.VFX.General_Combat.block.Highlight
 
 	-- SFX folder paths
 	self.blockSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.block
@@ -166,7 +168,7 @@ function BlockVFXManager:playParryVFX(character: Model)
 	self:_playSFXFromFolder(self.parrySFXFolder, character)
 end
 
--- Play block hit VFX (block effect on torso)
+-- Play block hit VFX (block effect on torso + highlight outline)
 function BlockVFXManager:playBlockHitVFX(character: Model)
 	if not character then
 		return
@@ -182,8 +184,61 @@ function BlockVFXManager:playBlockHitVFX(character: Model)
 		warn(`[BlockVFXManager] Torso not found on {character.Name}`)
 	end
 
+	-- Play block highlight outline effect
+	self:_playBlockHighlight(character)
+
 	-- Play block SFX
 	self:_playSFXFromFolder(self.blockSFXFolder, character)
+end
+
+-- Play block highlight outline effect (flash on block)
+function BlockVFXManager:_playBlockHighlight(character: Model)
+	if not self.blockHighlight then
+		warn("[BlockVFXManager] Block highlight template not found")
+		return
+	end
+
+	-- Clone the highlight and parent to character
+	local highlightClone = self.blockHighlight:Clone() :: Highlight
+	highlightClone.Parent = character
+	highlightClone.Adornee = character
+
+	-- Start fully transparent
+	highlightClone.FillTransparency = 1
+	highlightClone.OutlineTransparency = 1
+
+	-- Tween settings
+	local flashInTime = 0.08
+	local flashOutTime = 0.15
+
+	-- Tween in (flash visible)
+	local tweenInInfo = TweenInfo.new(flashInTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tweenIn = TweenService:Create(highlightClone, tweenInInfo, {
+		FillTransparency = 0.6,
+		OutlineTransparency = 0.25,
+	})
+
+	-- Tween out (fade back to invisible)
+	local tweenOutInfo = TweenInfo.new(flashOutTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	local tweenOut = TweenService:Create(highlightClone, tweenOutInfo, {
+		FillTransparency = 1,
+		OutlineTransparency = 1,
+	})
+
+	-- Play tween sequence
+	tweenIn:Play()
+	tweenIn.Completed:Once(function()
+		tweenOut:Play()
+	end)
+
+	-- Cleanup after tweens complete
+	tweenOut.Completed:Once(function()
+		if highlightClone and highlightClone.Parent then
+			highlightClone:Destroy()
+		end
+	end)
+
+	print(`[BlockVFXManager] Playing block highlight for {character.Name}`)
 end
 
 -- Emit VFX at a specific attachment's location (parents to body part, positioned at attachment)
