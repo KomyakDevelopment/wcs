@@ -31,7 +31,7 @@ Punch.CheckOthersActive = false -- Don't check if other skills are active (we ha
 
 -- Configuration
 local PUNCH_DAMAGE = 10
-local PUNCH_RANGE = 10 -- Increased for better hit registration
+local PUNCH_RANGE = 8 -- Increased for better hit registration
 local PUNCH_COOLDOWN = 0.75
 
 -- Hitbox configuration
@@ -52,19 +52,19 @@ local FLOURISH_KNOCKBACK_DURATION = 0.18
 
 -- Animation IDs for each combo phase
 local COMBO_ANIMATIONS = {
-	[1] = "rbxassetid://100518847191051",
-	[2] = "rbxassetid://76103103515407",
-	[3] = "rbxassetid://128845445156895",
-	[4] = "rbxassetid://107842696934406", -- Flourish uses 2_m1 temporarily
+	[1] = "rbxassetid://95618907841454",
+	[2] = "rbxassetid://126552545189412",
+	[3] = "rbxassetid://72345778790227",
+	[4] = "rbxassetid://139971702607493", -- Flourish uses 2_m1 temporarily
 }
 
 -- Damage delays for each combo phase (in seconds)
--- Adjust these to match when the fist actually hits in each animation
+-- Synced to when the fist/foot connects in each animation
 local DAMAGE_DELAYS = {
-	[1] = 0.5, -- First M1 damage delay
-	[2] = 0.5, -- Second M1 damage delay
-	[3] = 0.5, -- Third M1 damage delay
-	[4] = 0.65, -- Flourish damage delay
+	[1] = 0.41, -- First M1 - quick jab
+	[2] = 0.41, -- Second M1 - cross punch
+	[3] = 0.41, -- Third M1 - hook
+	[4] = 0.51, -- Flourish - kick takes slightly longer
 }
 
 function Punch:OnConstructServer()
@@ -222,17 +222,14 @@ function Punch:_stopMovementAnimations()
 			-- Stop sprint animation completely
 			if MOVEMENT_ANIMATION_IDS[animId] then
 				track:Stop(0.1)
-				print(`[Punch] Stopped movement animation: {animId}`)
 			end
 		end
 
 		-- Slow down core movement animations (walk/run) by checking priority
 		if track.Priority == Enum.AnimationPriority.Core or track.Priority == Enum.AnimationPriority.Movement then
-			-- Store original speed if not already stored
 			if not self.originalWalkAnimSpeeds[track] then
 				self.originalWalkAnimSpeeds[track] = track.Speed
 			end
-			-- Slow down the animation
 			track:AdjustSpeed(WALK_ANIM_SPEED_DURING_PUNCH)
 		end
 	end
@@ -262,64 +259,57 @@ end
 function Punch:OnStartClient()
 	-- Check if player has any hitstun status effects active, is dashing, or is blocking/parrying
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying }) then
-		print("[Punch] Client: Blocked - Player is in hitstun/stun/dashing/blocking/parrying")
 		return
-	end
-
-	-- Stop any movement animations before playing punch animation (prevents overlap)
-	self:_stopMovementAnimations()
-
-	-- Stop any rollcancel animation that might be playing (roll cancel into M1)
-	local dodgeSkill = self.Character:GetSkillFromConstructor(Dodge)
-	if dodgeSkill and dodgeSkill.rollCancelTrack and dodgeSkill.rollCancelTrack.IsPlaying then
-		dodgeSkill.rollCancelTrack:Stop(0.05)
-		dodgeSkill.rollCancelTrack = nil
-		print("[Punch] Client: Cancelled rollcancel animation for M1")
-	end
-
-	-- Reset combo timer on client
-	if self.comboResetTimer then
-		task.cancel(self.comboResetTimer)
 	end
 
 	-- Store current phase before advancing
 	local currentPhase = self.comboPhase
 
-	-- Stop any other punch animations that might be playing (prevents animation conflicts)
+	-- PRIORITY: Play animation FIRST for immediate visual feedback
+	local animTrack = self.loadedAnimations[currentPhase]
+	if animTrack then
+		animTrack:Play(0.05)
+		animTrack.Priority = Enum.AnimationPriority.Action4
+	end
+
+	-- Reset combo timer
+	if self.comboResetTimer then
+		task.cancel(self.comboResetTimer)
+	end
+
+	-- Stop any other punch animations that might be playing
 	for phase, track in pairs(self.loadedAnimations) do
 		if track and track.IsPlaying and phase ~= currentPhase then
-			track:Stop(0.05) -- Quick stop
+			track:Stop(0.05)
 		end
 	end
 
-	-- Play animation for current combo phase
-	local animTrack = self.loadedAnimations[currentPhase]
-	if animTrack then
-		-- Play first, then set priority (fixes known Roblox bug where priority resets on Play)
-		animTrack:Play(0.05) -- Quick fade-in for snappy feel
-		animTrack.Priority = Enum.AnimationPriority.Action4 -- Highest priority, set AFTER Play
-		print(`[Punch] Client: Playing combo phase {currentPhase} animation`)
+	-- Stop movement animations (after punch anim starts)
+	self:_stopMovementAnimations()
 
-		-- Apply fists trail VFX when animation starts, remove when it ends
-		self:_applyFistsTrail(animTrack, currentPhase)
-	else
-		warn(`[Punch] No animation loaded for phase {currentPhase}`)
+	-- Stop rollcancel animation if playing
+	local dodgeSkill = self.Character:GetSkillFromConstructor(Dodge)
+	if dodgeSkill and dodgeSkill.rollCancelTrack and dodgeSkill.rollCancelTrack.IsPlaying then
+		dodgeSkill.rollCancelTrack:Stop(0.05)
+		dodgeSkill.rollCancelTrack = nil
 	end
 
-	-- Play swing SFX
+	-- Apply VFX and SFX
+	if animTrack then
+		self:_applyFistsTrail(animTrack, currentPhase)
+	end
 	self:_playSwingSFX()
 
-	-- Advance combo phase for next attack
+	-- Advance combo phase
 	if self.comboPhase < MAX_COMBO_PHASE then
 		self.comboPhase = self.comboPhase + 1
 	else
-		self.comboPhase = 1 -- Reset to phase 1 after flourish
+		self.comboPhase = 1
 	end
 
-	-- Set timer to reset combo if no input
+	-- Set timer to reset combo
 	self.comboResetTimer = task.delay(COMBO_RESET_TIME, function()
 		self.comboPhase = 1
-		print("[Punch] Client: Combo reset to phase 1")
 	end)
 end
 
@@ -338,8 +328,9 @@ function Punch:_detectHit()
 	end
 
 	-- Get all potential targets in range
-	local origin = humanoidRootPart.Position
+	-- Origin is slightly behind the player so targets standing inside you still get hit
 	local lookDirection = humanoidRootPart.CFrame.LookVector
+	local origin = humanoidRootPart.Position - (lookDirection * 2)
 	local hitTargets = {}
 
 	-- Find all characters in workspace
@@ -402,25 +393,16 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			return false
 		end
 
-		-- Check for parry (Parrying or Autoparry status)
-
-		-- Check directional validity for blocking/parrying
-		-- Defender must be facing the attacker to block/parry
-		local defenderFacingAttacker = self:_isDefenderFacingAttacker(targetModel)
-
+		-- Check for parry (Parrying or Autoparry status) - 360 degrees, no facing requirement
 		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
-			if defenderFacingAttacker then
-				print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
-				self:_handleParry(targetWCSCharacter)
-				return false
-			else
-				print(`[Punch] Target {targetModel.Name} tried to parry but wasn't facing attacker!`)
-				-- Fall through to damage
-			end
+			print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
+			self:_handleParry(targetWCSCharacter)
+			return false
 		end
 
-		-- Check for block (Blocking status but NOT parrying)
+		-- Check for block (Blocking status but NOT parrying) - requires facing attacker
 		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
+			local defenderFacingAttacker = self:_isDefenderFacingAttacker(targetModel)
 			if defenderFacingAttacker then
 				print(`[Punch] Target {targetModel.Name} blocked the attack`)
 				self:_handleBlock(targetWCSCharacter)

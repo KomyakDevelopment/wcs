@@ -118,10 +118,10 @@ function BlockVFXManager:playParryFlashVFX(character: Model, attackPhase: number
 			targetGripAttachment = rightArm:FindFirstChild("RightGripAttachment")
 		end
 	elseif attackPhase == 4 then
-		-- Left foot
-		local leftLeg = character:FindFirstChild("Left Leg") or character:FindFirstChild("LeftFoot")
-		if leftLeg then
-			targetGripAttachment = leftLeg:FindFirstChild("LeftFootAttachment")
+		-- Right foot
+		local rightLeg = character:FindFirstChild("Right Leg") or character:FindFirstChild("RightFoot")
+		if rightLeg then
+			targetGripAttachment = rightLeg:FindFirstChild("RightFootAttachment")
 		end
 	end
 

@@ -232,43 +232,31 @@ function Block:OnStartClient()
 		self.parryStartTime = nil -- No parry window when on cooldown
 	end
 
-	-- Play parry transition animation first (or go straight to block if on cooldown)
-	if not self.parryOnCooldown then
-		-- Normal block with parry window - play transition first
-		local parryTransTrack = self.loadedAnimations.ParryTransition
-		if parryTransTrack then
-			self.currentAnimTrack = parryTransTrack
-			parryTransTrack:Play(0.05)
-			print("[Block] Client: Playing parry transition animation")
+	-- Always play parry transition animation first, then transition to block hold
+	local parryTransTrack = self.loadedAnimations.ParryTransition
+	if parryTransTrack then
+		self.currentAnimTrack = parryTransTrack
+		parryTransTrack:Play(0.05)
+		print("[Block] Client: Playing parry transition animation")
 
-			-- Wait for transition to complete, then play block hold
-			local transitionLength = parryTransTrack.Length
-			task.delay(transitionLength or 0.3, function()
-				if not self.blockActive then
-					return -- Block was cancelled
-				end
+		-- Wait for transition to complete, then play block hold
+		local transitionLength = parryTransTrack.Length
+		task.delay(transitionLength or 0.3, function()
+			if not self.blockActive then
+				return -- Block was cancelled
+			end
 
-				-- Play block hold animation (loops)
-				local blockTrack = self.loadedAnimations.Block
-				if blockTrack then
-					self.currentAnimTrack = blockTrack
-					blockTrack:Play(0.1)
-					blockTrack.Looped = true
-					print("[Block] Client: Playing block hold animation (looping)")
-				end
-			end)
-		else
-			warn("[Block] Client: Parry transition animation not loaded")
-		end
+			-- Play block hold animation (loops)
+			local blockTrack = self.loadedAnimations.Block
+			if blockTrack then
+				self.currentAnimTrack = blockTrack
+				blockTrack:Play(0.1)
+				blockTrack.Looped = true
+				print("[Block] Client: Playing block hold animation (looping)")
+			end
+		end)
 	else
-		-- On cooldown - skip parry transition, go straight to block hold
-		local blockTrack = self.loadedAnimations.Block
-		if blockTrack then
-			self.currentAnimTrack = blockTrack
-			blockTrack:Play(0.1)
-			blockTrack.Looped = true
-			print("[Block] Client: Playing block hold animation (no parry - on cooldown)")
-		end
+		warn("[Block] Client: Parry transition animation not loaded")
 	end
 end
 
