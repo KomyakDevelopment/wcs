@@ -5,6 +5,23 @@ local RunService = game:GetService("RunService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
+-- Pre-cache status effects and skills at module load (avoid require() in hot paths)
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
+local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
+local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
+local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+
+-- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
+local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
+local Block = require(ReplicatedStorage.Shared.skills.block)
+
 local Punch = WCS.RegisterSkill("Punch")
 
 -- WCS Client Prediction Configuration
@@ -111,9 +128,6 @@ function Punch:OnStartServer()
 	end
 
 	-- Check if player is in hitstun, dashing, or blocking/parrying
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-	local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
-	local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 	if self.Character.IsInHitstun or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying }) then
 		print("[Punch] Blocked - Player is in hitstun, dashing, or blocking/parrying")
 		return
@@ -129,7 +143,6 @@ function Punch:OnStartServer()
 
 	-- Apply Attacking status effect FIRST (prevents dodging and slows movement during attack)
 	-- This MUST be applied before parry flash remote so clients can validate the status
-	local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 	end
@@ -248,13 +261,6 @@ end
 
 function Punch:OnStartClient()
 	-- Check if player has any hitstun status effects active, is dashing, or is blocking/parrying
-	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-	local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
-	local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
-
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying }) then
 		print("[Punch] Client: Blocked - Player is in hitstun/stun/dashing/blocking/parrying")
 		return
@@ -264,7 +270,6 @@ function Punch:OnStartClient()
 	self:_stopMovementAnimations()
 
 	-- Stop any rollcancel animation that might be playing (roll cancel into M1)
-	local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 	local dodgeSkill = self.Character:GetSkillFromConstructor(Dodge)
 	if dodgeSkill and dodgeSkill.rollCancelTrack and dodgeSkill.rollCancelTrack.IsPlaying then
 		dodgeSkill.rollCancelTrack:Stop(0.05)
@@ -392,16 +397,12 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	-- Check if target has iframes (invincibility)
 	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
-		local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
 			return false
 		end
 
 		-- Check for parry (Parrying or Autoparry status)
-		local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
-		local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
-		local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 
 		-- Check directional validity for blocking/parrying
 		-- Defender must be facing the attacker to block/parry
@@ -443,7 +444,6 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	end
 	if targetWCSCharacter then
-		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 		local hitstun = SoftHitstun.new(targetWCSCharacter)
 		if hitstun then
 			-- Start with duration per WCS docs (will refresh if already active)
@@ -488,7 +488,6 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			print(`[Punch] Applied flourish knockback to {targetModel.Name}`)
 
 			-- Apply self-hitstun to attacker for recovery period
-			local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 			local selfHitstun = SoftHitstun.new(self.Character)
 
 			if selfHitstun then
@@ -532,7 +531,6 @@ end
 -- Handle successful parry
 function Punch:_handleParry(defenderWCSCharacter)
 	-- End Block skill so defender can attack during Autoparry window (enables parry trading)
-	local Block = require(ReplicatedStorage.Shared.skills.block)
 	local blockSkill = defenderWCSCharacter:GetSkillFromConstructor(Block)
 	if blockSkill then
 		-- End the block skill to remove Blocking/Parrying status
@@ -549,7 +547,6 @@ function Punch:_handleParry(defenderWCSCharacter)
 	end
 
 	-- Apply Autoparry status to defender for 0.4s (protects during attack window)
-	local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
 	if autoparryEffect then
 		autoparryEffect:Start(0.4)
@@ -557,7 +554,6 @@ function Punch:_handleParry(defenderWCSCharacter)
 	end
 
 	-- Apply SoftHitstun to attacker (0.8s stagger - can still parry out of it)
-	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local softHitstunEffect = SoftHitstun.new(self.Character)
 	if softHitstunEffect then
 		softHitstunEffect:Start(0.8)
@@ -572,7 +568,6 @@ function Punch:_handleParry(defenderWCSCharacter)
 	end
 
 	-- Apply Parried status to attacker for visual/audio feedback
-	local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 	local parriedEffect = Parried.new(self.Character)
 	if parriedEffect then
 		parriedEffect:Start(0.8)
@@ -592,7 +587,6 @@ end
 -- Handle successful block (not a parry)
 function Punch:_handleBlock(defenderWCSCharacter)
 	-- Apply BlockStunned status to defender for 0.1s
-	local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 	local blockStunnedEffect = BlockStunned.new(defenderWCSCharacter)
 	if blockStunnedEffect then
 		blockStunnedEffect:Start(0.1)
@@ -745,9 +739,6 @@ function Punch:OnEndClient()
 
 	-- Industry standard: Only stop animations on interrupt, let them finish naturally otherwise
 	-- Check if we were interrupted by looking for hitstun status OR Parried status
-	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then

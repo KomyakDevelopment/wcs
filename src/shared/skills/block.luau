@@ -3,6 +3,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
+-- Pre-cache status effects and skills at module load (avoid require() in hot paths)
+local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
+
 local Block = WCS.RegisterSkill("Block")
 
 -- WCS Client Prediction Configuration
@@ -127,18 +136,12 @@ function Block:OnStartServer()
 
 	-- Check if player is in hitstun or dashing
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
-	local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
-
 	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned }) then
 		print("[Block] Server: Blocked - Player is in true hitstun/stun/dashing/block recovery")
 		return
 	end
 
 	-- Check if player is sprinting (can't block while sprinting)
-	local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
 	if sprintSkill then
 		local sprintState = sprintSkill:GetState()
@@ -162,7 +165,6 @@ function Block:OnStartServer()
 		print("[Block] Server: Startup complete - Block now active")
 
 		-- Apply Blocking status effect
-		local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 		self.blockingEffect = Blocking.new(self.Character)
 		if self.blockingEffect then
 			self.blockingEffect:Start(-1) -- Infinite duration until cancelled
@@ -171,7 +173,6 @@ function Block:OnStartServer()
 
 		-- Apply Parrying status effect for parry window (only if not on cooldown)
 		if not self.parryOnCooldown then
-			local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 			self.parryingEffect = Parrying.new(self.Character)
 			if self.parryingEffect then
 				self.parryingEffect:Start(PARRY_WINDOW_DURATION)
@@ -204,18 +205,12 @@ function Block:OnStartClient()
 
 	-- Check if player has any status effects that prevent blocking
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-	local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
-
 	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned }) then
 		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery")
 		return
 	end
 
 	-- Check if player is sprinting (can't block while sprinting)
-	local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
 	if sprintSkill then
 		local sprintState = sprintSkill:GetState()

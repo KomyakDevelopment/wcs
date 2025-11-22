@@ -14,6 +14,24 @@ InputManager.__index = InputManager
 -- Stores all active action bindings
 local boundActions: { [string]: { callback: (string, Enum.UserInputState, InputObject) -> (), enabled: boolean } } = {}
 
+-- Pre-built lookup tables for O(1) input matching (built once at module load)
+local keyCodeToAction: { [Enum.KeyCode]: string } = {}
+local inputTypeToAction: { [Enum.UserInputType]: string } = {}
+
+-- Build lookup tables at module load time for instant matching
+for category, actions in pairs(InputConfig) do
+	for actionName, actionConfig in pairs(actions) do
+		local fullActionName = `{category}.{actionName}`
+		if actionConfig.KeyCode then
+			keyCodeToAction[actionConfig.KeyCode] = fullActionName
+		end
+		if actionConfig.InputType and not actionConfig.KeyCode then
+			-- Only map InputType if KeyCode is not set (mouse buttons)
+			inputTypeToAction[actionConfig.InputType] = fullActionName
+		end
+	end
+end
+
 function InputManager.new()
 	local self = setmetatable({}, InputManager)
 
@@ -61,34 +79,20 @@ function InputManager:setActionEnabled(actionName: string, enabled: boolean)
 	boundActions[actionName].enabled = enabled
 end
 
--- Internal: Handle input and route to appropriate callbacks
+-- Internal: Handle input and route to appropriate callbacks (O(1) lookup)
 function InputManager:_handleInput(input: InputObject, state: Enum.UserInputState, gameProcessed: boolean)
 	-- Don't process input if player is typing in chat, etc.
 	if gameProcessed then
 		return
 	end
 
-	-- Check all action categories
-	for category, actions in pairs(InputConfig) do
-		for actionName, actionConfig in pairs(actions) do
-			local matches = false
+	-- Fast O(1) lookup using pre-built tables
+	local fullActionName = keyCodeToAction[input.KeyCode] or inputTypeToAction[input.UserInputType]
 
-			-- Check if this input matches the action's keybind
-			if actionConfig.KeyCode then
-				matches = input.KeyCode == actionConfig.KeyCode
-			elseif actionConfig.InputType then
-				matches = input.UserInputType == actionConfig.InputType
-			end
-
-			-- If input matches and action is bound, execute callback
-			if matches then
-				local fullActionName = `{category}.{actionName}`
-				local boundAction = boundActions[fullActionName]
-
-				if boundAction and boundAction.enabled then
-					boundAction.callback(fullActionName, state, input)
-				end
-			end
+	if fullActionName then
+		local boundAction = boundActions[fullActionName]
+		if boundAction and boundAction.enabled then
+			boundAction.callback(fullActionName, state, input)
 		end
 	end
 end

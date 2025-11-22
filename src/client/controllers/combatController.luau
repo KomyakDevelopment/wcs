@@ -24,6 +24,12 @@ function CombatController.new()
 	-- Client-side debounce to prevent dodge spam
 	self.dodgeDebounce = false
 
+	-- Cached skill references (set on first use for faster subsequent lookups)
+	self._cachedCharacter = nil
+	self._cachedPunchSkill = nil
+	self._cachedBlockSkill = nil
+	self._cachedDodgeSkill = nil
+
 	return self
 end
 
@@ -37,14 +43,68 @@ function CombatController:setSprintManager(sprintManager)
 	self.sprintManager = sprintManager
 end
 
--- Get the current WCS character wrapper
+-- Get the current WCS character wrapper (cached for performance)
 function CombatController:getCharacter()
 	local characterModel = Players.LocalPlayer.Character
 	if not characterModel then
+		self._cachedCharacter = nil
 		return nil
 	end
 
-	return WCS.Character.GetCharacterFromInstance(characterModel)
+	-- Check if cached character is still valid
+	if self._cachedCharacter and self._cachedCharacter.Instance == characterModel then
+		return self._cachedCharacter
+	end
+
+	-- Cache new character and clear skill caches
+	self._cachedCharacter = WCS.Character.GetCharacterFromInstance(characterModel)
+	self._cachedPunchSkill = nil
+	self._cachedBlockSkill = nil
+	self._cachedDodgeSkill = nil
+
+	return self._cachedCharacter
+end
+
+-- Get punch skill (cached for performance)
+function CombatController:getPunchSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	if not self._cachedPunchSkill then
+		self._cachedPunchSkill = character:GetSkillFromConstructor(Punch)
+	end
+
+	return self._cachedPunchSkill
+end
+
+-- Get block skill (cached for performance)
+function CombatController:getBlockSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	if not self._cachedBlockSkill then
+		self._cachedBlockSkill = character:GetSkillFromConstructor(Block)
+	end
+
+	return self._cachedBlockSkill
+end
+
+-- Get dodge skill (cached for performance)
+function CombatController:getDodgeSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	if not self._cachedDodgeSkill then
+		self._cachedDodgeSkill = character:GetSkillFromConstructor(Dodge)
+	end
+
+	return self._cachedDodgeSkill
 end
 
 -- Perform primary attack (M1)
@@ -70,18 +130,8 @@ function CombatController:performPrimaryAttack()
 		return
 	end
 
-	-- Cancel sprint if active (only when actually attacking)
-	if self.sprintManager then
-		self.sprintManager:stopSprint()
-	end
-
-	local character = self:getCharacter()
-	if not character then
-		return
-	end
-
-	-- Get the punch skill from character
-	local punchSkill = character:GetSkillFromConstructor(Punch)
+	-- Get punch skill using cached accessor (fast path)
+	local punchSkill = self:getPunchSkill()
 	if not punchSkill then
 		-- No skill found - player probably doesn't have weapon equipped
 		return
@@ -92,6 +142,11 @@ function CombatController:performPrimaryAttack()
 	if state.Debounce then
 		-- Don't update combo or print anything - skill is on cooldown
 		return
+	end
+
+	-- Cancel sprint if active (only when actually attacking, after all checks pass)
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
 	end
 
 	-- Execute the skill
@@ -106,13 +161,8 @@ end
 
 -- Perform block action
 function CombatController:performBlock(state: Enum.UserInputState)
-	local character = self:getCharacter()
-	if not character then
-		return
-	end
-
-	-- Get the block skill from character
-	local blockSkill = character:GetSkillFromConstructor(Block)
+	-- Get block skill using cached accessor (fast path)
+	local blockSkill = self:getBlockSkill()
 	if not blockSkill then
 		print("[CombatController] performBlock: No block skill found on character")
 		return
@@ -143,14 +193,8 @@ function CombatController:performDodge()
 		return
 	end
 
-	local character = self:getCharacter()
-	if not character then
-		print("[CombatController] performDodge: No character found")
-		return
-	end
-
-	-- Get the dodge skill from character
-	local dodgeSkill = character:GetSkillFromConstructor(Dodge)
+	-- Get dodge skill using cached accessor (fast path)
+	local dodgeSkill = self:getDodgeSkill()
 	if not dodgeSkill then
 		print("[CombatController] performDodge: No dodge skill found on character")
 		return

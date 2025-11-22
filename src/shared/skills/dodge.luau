@@ -4,6 +4,13 @@ local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
+-- Pre-cache status effects at module load (avoid require() in hot paths)
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
+
 local Dodge = WCS.RegisterSkill("Dodge")
 
 -- WCS Client Prediction Configuration
@@ -75,8 +82,6 @@ end
 
 function Dodge:OnStartServer()
 	-- Check if player is in hitstun (soft or true)
-	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun }) then
 		print("[Dodge] Server: Cannot dodge - Player is in hitstun")
 		return
@@ -106,7 +111,6 @@ function Dodge:OnStartServer()
 	end
 
 	-- Apply Dashing status effect to block attacks
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 	self.dashingEffect = Dashing.new(self.Character)
 	if self.dashingEffect then
 		self.dashingEffect:Start(DODGE_DURATION)
@@ -134,7 +138,6 @@ function Dodge:OnStartServer()
 			return -- Dodge was cancelled
 		end
 
-		local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 		self.iframesEffect = Iframes.new(self.Character)
 		if self.iframesEffect then
 			local iframeDuration = IFRAME_END - IFRAME_START
@@ -188,11 +191,6 @@ end
 
 function Dodge:OnStartClient()
 	-- Check if player has any hitstun status effects active or is dashing
-	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
-	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
-	local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
 		print("[Dodge] Client: Blocked - Player is in hitstun/stun/dashing")
 		return
