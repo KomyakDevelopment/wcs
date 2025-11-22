@@ -8,8 +8,12 @@ local Punch = WCS.RegisterSkill("Punch")
 
 -- Configuration
 local PUNCH_DAMAGE = 10
-local PUNCH_RANGE = 8
-local PUNCH_COOLDOWN = 0.5
+local PUNCH_RANGE = 10 -- Increased for better hit registration
+local PUNCH_COOLDOWN = 0.7
+
+-- Hitbox configuration
+local HIT_ANGLE_THRESHOLD = 0.3 -- Dot product threshold for hit detection (~72 degrees in front)
+local BLOCK_ANGLE_THRESHOLD = 0.3 -- Must face attacker to block/parry
 
 -- Hitstun duration for unarmed attacks
 local SOFT_HITSTUN_DURATION = 1.3
@@ -320,8 +324,8 @@ function Punch:_detectHit()
 					local directionToTarget = (targetRootPart.Position - origin).Unit
 					local dotProduct = lookDirection:Dot(directionToTarget)
 
-					-- If dot product > 0.5, target is roughly in front (within ~60 degrees)
-					if dotProduct > 0.5 then
+					-- Check if target is within attack cone
+					if dotProduct > HIT_ANGLE_THRESHOLD then
 						table.insert(hitTargets, { model = potentialTarget, humanoid = targetHumanoid })
 					end
 				end
@@ -371,17 +375,31 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 		local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 
+		-- Check directional validity for blocking/parrying
+		-- Defender must be facing the attacker to block/parry
+		local defenderFacingAttacker = self:_isDefenderFacingAttacker(targetModel)
+
 		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
-			print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
-			self:_handleParry(targetWCSCharacter)
-			return false
+			if defenderFacingAttacker then
+				print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
+				self:_handleParry(targetWCSCharacter)
+				return false
+			else
+				print(`[Punch] Target {targetModel.Name} tried to parry but wasn't facing attacker!`)
+				-- Fall through to damage
+			end
 		end
 
 		-- Check for block (Blocking status but NOT parrying)
 		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
-			print(`[Punch] Target {targetModel.Name} blocked the attack`)
-			self:_handleBlock(targetWCSCharacter)
-			return false
+			if defenderFacingAttacker then
+				print(`[Punch] Target {targetModel.Name} blocked the attack`)
+				self:_handleBlock(targetWCSCharacter)
+				return false
+			else
+				print(`[Punch] Target {targetModel.Name} tried to block but wasn't facing attacker!`)
+				-- Fall through to damage
+			end
 		end
 	end
 
@@ -450,8 +468,41 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	return true
 end
 
+-- Check if defender is facing the attacker (for directional blocking)
+-- Returns true if the defender's look direction points towards the attacker
+function Punch:_isDefenderFacingAttacker(defenderModel: Model): boolean
+	local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local defenderRootPart = defenderModel:FindFirstChild("HumanoidRootPart") :: BasePart?
+
+	if not attackerRootPart or not defenderRootPart then
+		return false
+	end
+
+	-- Get defender's look direction
+	local defenderLookDirection = defenderRootPart.CFrame.LookVector
+
+	-- Get direction from defender to attacker
+	local directionToAttacker = (attackerRootPart.Position - defenderRootPart.Position).Unit
+
+	-- Calculate dot product (1 = facing directly, 0 = perpendicular, -1 = facing away)
+	local dotProduct = defenderLookDirection:Dot(directionToAttacker)
+
+	-- Defender must be facing attacker within the block angle threshold
+	return dotProduct > BLOCK_ANGLE_THRESHOLD
+end
+
 -- Handle successful parry
 function Punch:_handleParry(defenderWCSCharacter)
+	-- Reset parry cooldown as reward for successful parry
+	-- This allows immediate re-parry after a successful parry
+	local Block = require(ReplicatedStorage.Shared.skills.block)
+	local blockSkill = defenderWCSCharacter:GetSkillFromConstructor(Block)
+	if blockSkill then
+		blockSkill.lastBlockEndTime = 0
+		blockSkill.parryOnCooldown = false
+		print(`[Punch] Reset parry cooldown for {defenderWCSCharacter.Instance.Name} - Parry reward`)
+	end
+
 	-- Apply Autoparry status to defender for 0.4s
 	local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 	local autoparryEffect = Autoparry.new(defenderWCSCharacter)

@@ -549,18 +549,37 @@ function Dodge:_attemptCancel()
 		end
 	end
 
-	-- Cleanup roll VFX on cancel
+	-- Cleanup roll VFX on cancel (fade out like normal roll finish)
 	if self.rollVFXAttachment then
-		-- Disable emitters
-		for _, child in ipairs(self.rollVFXAttachment:GetChildren()) do
+		local rollVFXClone = self.rollVFXAttachment
+		self.rollVFXAttachment = nil -- Clear reference immediately
+
+		-- Disable emitters so they stop spawning new particles
+		for _, child in ipairs(rollVFXClone:GetChildren()) do
 			if child:IsA("ParticleEmitter") then
 				child.Enabled = false
 			end
 		end
-		-- Destroy the clone
-		self.rollVFXAttachment:Destroy()
-		self.rollVFXAttachment = nil
-		print("[Dodge] Client: Cleaned up roll VFX clone on cancel")
+		print("[Dodge] Client: Disabled roll VFX emitters on cancel (fading out)")
+
+		-- Calculate max particle lifetime to know when to destroy
+		local maxLifetime = 0
+		for _, child in ipairs(rollVFXClone:GetChildren()) do
+			if child:IsA("ParticleEmitter") then
+				local lifetime = child.Lifetime.Max
+				if lifetime > maxLifetime then
+					maxLifetime = lifetime
+				end
+			end
+		end
+
+		-- Destroy after all particles have faded out
+		task.delay(maxLifetime + 0.5, function()
+			if rollVFXClone and rollVFXClone.Parent then
+				rollVFXClone:Destroy()
+				print("[Dodge] Client: Destroyed roll VFX clone after cancel fade")
+			end
+		end)
 	end
 
 	-- Disconnect M2 listener
