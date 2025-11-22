@@ -19,9 +19,8 @@ if blockingDummy then
 	local blockingDummyWcsChar = WCS.Character.new(blockingDummy)
 	blockingDummyWcsChar.EquipmentManager = EquipmentManager.new(blockingDummyWcsChar)
 
-	-- Equip fists and apply moveset
+	-- Equip fists (this applies the Unarmed moveset automatically)
 	blockingDummyWcsChar.EquipmentManager:equip("fists")
-	blockingDummyWcsChar:ApplyMoveset("Unarmed")
 
 	-- Get and start block skill
 	local Block = require(ReplicatedStorage.Shared.skills.block)
@@ -39,9 +38,8 @@ if parryingDummy then
 	local parryingDummyWcsChar = WCS.Character.new(parryingDummy)
 	parryingDummyWcsChar.EquipmentManager = EquipmentManager.new(parryingDummyWcsChar)
 
-	-- Equip fists and apply moveset
+	-- Equip fists (this applies the Unarmed moveset automatically)
 	parryingDummyWcsChar.EquipmentManager:equip("fists")
-	parryingDummyWcsChar:ApplyMoveset("Unarmed")
 
 	-- Apply permanent Autoparry status (infinite parry window, no cooldown)
 	local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
@@ -59,9 +57,8 @@ if missParryDummy then
 	local missParryDummyWcsChar = WCS.Character.new(missParryDummy)
 	missParryDummyWcsChar.EquipmentManager = EquipmentManager.new(missParryDummyWcsChar)
 
-	-- Equip fists and apply moveset
+	-- Equip fists (this applies the Unarmed moveset automatically)
 	missParryDummyWcsChar.EquipmentManager:equip("fists")
-	missParryDummyWcsChar:ApplyMoveset("Unarmed")
 
 	-- Listen for health changes and apply Blocking status AFTER taking damage
 	local humanoid = missParryDummy:FindFirstChild("Humanoid")
@@ -94,9 +91,8 @@ if dodgingDummy then
 	local dodgingDummyWcsChar = WCS.Character.new(dodgingDummy)
 	dodgingDummyWcsChar.EquipmentManager = EquipmentManager.new(dodgingDummyWcsChar)
 
-	-- Equip fists and apply moveset
+	-- Equip fists (this applies the Unarmed moveset automatically)
 	dodgingDummyWcsChar.EquipmentManager:equip("fists")
-	dodgingDummyWcsChar:ApplyMoveset("Unarmed")
 
 	-- Apply permanent Iframes (infinite duration)
 	-- This makes the dummy invulnerable like during a dodge
