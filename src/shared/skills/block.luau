@@ -132,6 +132,17 @@ function Block:OnStartServer()
 		return
 	end
 
+	-- Check if player is sprinting (can't block while sprinting)
+	local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
+	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
+	if sprintSkill then
+		local sprintState = sprintSkill:GetState()
+		if sprintState.IsActive then
+			print("[Block] Server: Blocked - Player is sprinting")
+			return
+		end
+	end
+
 	print("[Block] Server: Block started - Startup phase")
 
 	self.blockActive = true
@@ -196,6 +207,17 @@ function Block:OnStartClient()
 	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned }) then
 		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery")
 		return
+	end
+
+	-- Check if player is sprinting (can't block while sprinting)
+	local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
+	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
+	if sprintSkill then
+		local sprintState = sprintSkill:GetState()
+		if sprintState.IsActive then
+			print("[Block] Client: Blocked - Player is sprinting")
+			return
+		end
 	end
 
 	self.blockActive = true

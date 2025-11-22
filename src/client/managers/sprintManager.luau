@@ -20,7 +20,7 @@ local MIN_SPRINT_VELOCITY = 3 -- Minimum velocity to maintain sprint - lowered f
 local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after sprint starts
 
 -- Animation
-local SPRINT_ANIMATION_ID = "rbxassetid://104453488066690"
+local SPRINT_ANIMATION_ID = "rbxassetid://94461174611915"
 
 -- Movement keys for double-tap detection
 local MOVEMENT_KEYS = {
@@ -180,9 +180,9 @@ end
 -- Punch animation IDs to check against
 local PUNCH_ANIMATION_IDS = {
 	["rbxassetid://100518847191051"] = true, -- M1 phase 1
-	["rbxassetid://76103103515407"] = true,  -- M1 phase 2
+	["rbxassetid://76103103515407"] = true, -- M1 phase 2
 	["rbxassetid://128845445156895"] = true, -- M1 phase 3
-	["rbxassetid://77003004079538"] = true,  -- Flourish (phase 4)
+	["rbxassetid://77003004079538"] = true, -- Flourish (phase 4)
 }
 
 -- Check if player is currently in a punch animation
@@ -441,7 +441,8 @@ function SprintManager:_shouldCancelSprint(): boolean
 	-- Check if player stopped moving (only after grace period)
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if humanoidRootPart then
-		local velocity = Vector3.new(humanoidRootPart.AssemblyLinearVelocity.X, 0, humanoidRootPart.AssemblyLinearVelocity.Z)
+		local velocity =
+			Vector3.new(humanoidRootPart.AssemblyLinearVelocity.X, 0, humanoidRootPart.AssemblyLinearVelocity.Z)
 		if velocity.Magnitude < MIN_SPRINT_VELOCITY then
 			return true
 		end

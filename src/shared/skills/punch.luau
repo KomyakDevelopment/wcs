@@ -40,6 +40,9 @@ local DAMAGE_DELAYS = {
 	[4] = 0.45, -- Flourish damage delay
 }
 
+-- Animation transition configuration
+local ANIM_WEIGHT_FADE_TIME = 0.05 -- Time to fade animation weight (lower = snappier transitions)
+
 function Punch:OnConstructServer()
 	-- Setup server-side skill data
 	self.hitTargets = {}
@@ -233,6 +236,15 @@ function Punch:OnStartClient()
 	-- Stop any movement animations before playing punch animation (prevents overlap)
 	self:_stopMovementAnimations()
 
+	-- Stop any rollcancel animation that might be playing (roll cancel into M1)
+	local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
+	local dodgeSkill = self.Character:GetSkillFromConstructor(Dodge)
+	if dodgeSkill and dodgeSkill.rollCancelTrack and dodgeSkill.rollCancelTrack.IsPlaying then
+		dodgeSkill.rollCancelTrack:Stop(0.05)
+		dodgeSkill.rollCancelTrack = nil
+		print("[Punch] Client: Cancelled rollcancel animation for M1")
+	end
+
 	-- Reset combo timer on client
 	if self.comboResetTimer then
 		task.cancel(self.comboResetTimer)
@@ -247,6 +259,8 @@ function Punch:OnStartClient()
 		-- Set high priority to override any other animations
 		animTrack.Priority = Enum.AnimationPriority.Action
 		animTrack:Play()
+		-- Snap to full weight quickly for snappier transitions
+		animTrack:AdjustWeight(1, ANIM_WEIGHT_FADE_TIME)
 		print(`[Punch] Client: Playing combo phase {currentPhase} animation`)
 
 		-- Apply fists trail VFX when animation starts, remove when it ends

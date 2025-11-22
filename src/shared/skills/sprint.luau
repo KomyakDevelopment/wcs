@@ -65,9 +65,10 @@ function Sprint:OnStartClient()
 	local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 	local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 	local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+	local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
-		print("[Sprint] Client: Blocked - Player is in hitstun/stun")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Blocking }) then
+		print("[Sprint] Client: Blocked - Player is in hitstun/stun/blocking")
 		return
 	end
 
