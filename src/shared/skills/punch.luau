@@ -28,7 +28,7 @@ local COMBO_ANIMATIONS = {
 	[1] = "rbxassetid://100518847191051",
 	[2] = "rbxassetid://76103103515407",
 	[3] = "rbxassetid://128845445156895",
-	[4] = "rbxassetid://77003004079538", -- Flourish uses 2_m1 temporarily
+	[4] = "rbxassetid://107842696934406", -- Flourish uses 2_m1 temporarily
 }
 
 -- Damage delays for each combo phase (in seconds)
@@ -46,6 +46,7 @@ function Punch:OnConstructServer()
 	self.comboPhase = 1
 	self.comboResetTimer = nil
 	self.currentAttackPhase = 1 -- Track which phase is currently executing
+	self.attackingEffect = nil
 end
 
 function Punch:OnConstructClient()
@@ -104,6 +105,19 @@ function Punch:OnStartServer()
 
 	-- Apply cooldown
 	self:ApplyCooldown(PUNCH_COOLDOWN)
+
+	-- Apply Attacking status effect (prevents dodging and slows movement during attack)
+	local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+	end
+	self.attackingEffect = Attacking.new(self.Character)
+	if self.attackingEffect then
+		-- Duration matches the damage delay (when attack animation is active)
+		local attackDuration = DAMAGE_DELAYS[self.currentAttackPhase] or 0.45
+		self.attackingEffect:Start(attackDuration)
+		print(`[Punch] Applied Attacking status for {attackDuration}s`)
+	end
 
 	-- Perform hitbox detection with delay based on animation timing
 	local damageDelay = DAMAGE_DELAYS[self.currentAttackPhase] or 0.1

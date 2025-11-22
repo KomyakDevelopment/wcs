@@ -10,7 +10,7 @@ local Dodge = WCS.RegisterSkill("Dodge")
 local DODGE_DISTANCE = 17 -- Studs to travel (slightly longer than 16)
 local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)
 local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
-local MAX_CANCELS = 2 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
+local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
 -- Iframes configuration
 local IFRAME_START = 0.1 -- Iframes start 0.1 seconds into dodge
@@ -601,11 +601,10 @@ function Dodge:OnEndServer()
 
 	-- Cancelling gives one more dodge (unless already used)
 	if self.cancelCountRef.Value < MAX_CANCELS then
-		-- First cancel - 0.2s delay before next roll
+		-- First cancel - no cooldown, can dodge again immediately
 		self.cancelCountRef.Value = self.cancelCountRef.Value + 1
-		self:ApplyCooldown(0.2)
 		print(
-			`[Dodge] Server: Dodge cancelled - 0.2s delay before next dodge (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
+			`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
 		)
 	else
 		-- Already used the cancel - apply full cooldown and reset

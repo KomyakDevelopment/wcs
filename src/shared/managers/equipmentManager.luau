@@ -51,8 +51,8 @@ function EquipmentManager:equip(weaponId: string): boolean
 
 	print(`[EquipmentManager] Equipping {weapon.Name} for {self.character.Instance.Name}`)
 
-	-- Apply moveset (weapon-specific skills like Punch, Block)
-	-- Base moveset (Dodge) should already be applied from character spawn
+	-- Apply weapon moveset (Unarmed includes Dodge, Punch, Block)
+	-- This replaces any existing moveset
 	self.character:ApplyMoveset(weapon.Moveset)
 
 	-- Play idle animation (server-side, replicates to all clients)
@@ -85,15 +85,13 @@ function EquipmentManager:unequip()
 		self.idleAnimation = nil
 	end
 
-	-- Remove only the weapon's moveset, keep Base (Dodge)
-	local weapon = EQUIPMENT[self.equipped]
-	if weapon then
-		self.character:RemoveMoveset(weapon.Moveset)
-	end
+	-- Clear weapon moveset and reapply Base (Dodge only)
+	self.character:ClearMoveset()
+	self.character:ApplyMoveset("Base")
 
 	self.equipped = nil
 
-	print(`[EquipmentManager] Weapon unequipped - Unarmed moveset removed, Base (Dodge) remains`)
+	print(`[EquipmentManager] Weapon unequipped - Base moveset (Dodge) restored`)
 end
 
 -- Check if player has a weapon equipped

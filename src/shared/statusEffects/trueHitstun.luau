@@ -4,8 +4,8 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local TrueHitstun = WCS.RegisterStatusEffect("TrueHitstun")
 
--- Movement reduction: player moves at 15% of their normal speed
-local SPEED_MULTIPLIER = 0.15
+-- Movement reduction: player moves at 32.5% of their normal speed (50% less punishing)
+local SPEED_MULTIPLIER = 0.325
 
 function TrueHitstun:OnConstructServer()
 	-- Store reference to this status effect on the character

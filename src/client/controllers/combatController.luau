@@ -21,6 +21,9 @@ function CombatController.new()
 	self.equipmentController = nil
 	self.sprintManager = nil
 
+	-- Client-side debounce to prevent dodge spam
+	self.dodgeDebounce = false
+
 	return self
 end
 
@@ -135,6 +138,11 @@ end
 
 -- Perform dodge action
 function CombatController:performDodge()
+	-- Client-side debounce to prevent rapid spam before server state updates
+	if self.dodgeDebounce then
+		return
+	end
+
 	local character = self:getCharacter()
 	if not character then
 		print("[CombatController] performDodge: No character found")
@@ -154,6 +162,12 @@ function CombatController:performDodge()
 		print("[CombatController] performDodge: Dodge is on cooldown")
 		return
 	end
+
+	-- Set client-side debounce immediately
+	self.dodgeDebounce = true
+	task.delay(0.5, function()
+		self.dodgeDebounce = false
+	end)
 
 	-- Cancel sprint if active (AFTER validation)
 	if self.sprintManager then
