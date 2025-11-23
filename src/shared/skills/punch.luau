@@ -40,12 +40,12 @@ Punch.CheckOthersActive = false -- Don't check if other skills are active (we ha
 
 -- Configuration
 local PUNCH_DAMAGE = 10
-local PUNCH_RANGE = 8 -- Increased for better hit registration
-local PUNCH_COOLDOWN = 0.75
+local PUNCH_RANGE = 10 -- Increased for better hit registration
+local PUNCH_COOLDOWN = 0.65 -- 0.75
 
 -- Hitbox configuration
 local HIT_ANGLE_THRESHOLD = 0.3 -- Dot product threshold for hit detection (~72 degrees in front)
-local BLOCK_ANGLE_THRESHOLD = 0.3 -- Must face attacker to block/parry
+local BLOCK_ANGLE_THRESHOLD = 0 -- 180 degree block arc (90 degrees each side)
 
 -- Hitstun duration for unarmed attacks
 local SOFT_HITSTUN_DURATION = 0.6
@@ -306,8 +306,11 @@ function Punch:OnStartClient()
 	-- Apply VFX and SFX
 	if animTrack then
 		self:_applyFistsTrail(animTrack, currentPhase)
+		self:_playSwingSFX(animTrack)
 	end
-	self:_playSwingSFX()
+
+	-- Client-side prediction: check for nearby targets with iframes and play rollcancel immediately
+	self:_predictRollCancel()
 
 	-- Advance combo phase
 	if self.comboPhase < MAX_COMBO_PHASE then
@@ -399,6 +402,13 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	if targetWCSCharacter then
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
+
+			-- Fire rollcancel effect on the target (plays cancel animation/sound)
+			local rollCancelRemote = ReplicatedStorage:FindFirstChild("PlayRollCancel")
+			if rollCancelRemote then
+				rollCancelRemote:FireAllClients(targetModel)
+			end
+
 			return false
 		end
 
@@ -676,58 +686,68 @@ function Punch:_applyFistsTrail(animTrack: AnimationTrack, currentPhase: number)
 	end)
 end
 
--- Play swing SFX (client-only)
-function Punch:_playSwingSFX()
+-- Play swing SFX (client-only) - delayed to 3/4 of animation duration
+function Punch:_playSwingSFX(animTrack: AnimationTrack?)
 	if not RunService:IsClient() then
 		return
 	end
 
-	-- Get swing SFX folder
-	local swingSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.swings
-	if not swingSFXFolder then
-		warn("[Punch] Swing SFX folder not found")
-		return
-	end
+	-- Calculate delay (1/4 of animation duration - early in the swing)
+	local animLength = if animTrack then animTrack.Length else 0.5
+	local sfxDelay = animLength * 0.25
 
-	-- Get all Sound instances from folder
-	local sounds = {}
-	for _, child in ipairs(swingSFXFolder:GetChildren()) do
-		if child:IsA("Sound") then
-			table.insert(sounds, child)
+	-- Delay the sound to match animation timing
+	task.delay(sfxDelay, function()
+		-- Get swing SFX folder
+		local swingSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.swings
+		if not swingSFXFolder then
+			warn("[Punch] Swing SFX folder not found")
+			return
 		end
-	end
 
-	if #sounds == 0 then
-		warn("[Punch] No swing sounds found in folder")
-		return
-	end
-
-	-- Select random sound
-	local randomSound = sounds[math.random(1, #sounds)]
-
-	-- Find the character's HumanoidRootPart for spatial audio
-	local character = self.Character.Instance
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then
-		warn("[Punch] No HumanoidRootPart found")
-		return
-	end
-
-	-- Clone the sound and parent it to the root part for spatial audio
-	local soundClone = randomSound:Clone()
-	soundClone.Parent = rootPart
-
-	-- Play the sound
-	soundClone:Play()
-
-	-- Clean up after sound finishes
-	task.delay(soundClone.TimeLength + 0.1, function()
-		if soundClone and soundClone.Parent then
-			soundClone:Destroy()
+		-- Get all Sound instances from folder
+		local sounds = {}
+		for _, child in ipairs(swingSFXFolder:GetChildren()) do
+			if child:IsA("Sound") then
+				table.insert(sounds, child)
+			end
 		end
+
+		if #sounds == 0 then
+			warn("[Punch] No swing sounds found in folder")
+			return
+		end
+
+		-- Select random sound
+		local randomSound = sounds[math.random(1, #sounds)]
+
+		-- Find the character's HumanoidRootPart for spatial audio
+		local character = self.Character.Instance
+		if not character then
+			return
+		end
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then
+			warn("[Punch] No HumanoidRootPart found")
+			return
+		end
+
+		-- Clone the sound and parent it to the root part for spatial audio
+		local soundClone = randomSound:Clone()
+		soundClone.Parent = rootPart
+
+		-- Play the sound
+		soundClone:Play()
+
+		-- Clean up after sound finishes
+		task.delay(soundClone.TimeLength + 0.1, function()
+			if soundClone and soundClone.Parent then
+				soundClone:Destroy()
+			end
+		end)
+
+		print(`[Punch] Playing swing SFX: {randomSound.Name}`)
 	end)
-
-	print(`[Punch] Playing swing SFX: {randomSound.Name}`)
 end
 
 function Punch:OnEndServer()
@@ -753,6 +773,90 @@ function Punch:OnEndClient()
 		end
 	end
 	-- Otherwise let animations finish naturally - don't stop them
+end
+
+-- Client-side prediction for rollcancel (plays sound immediately when detecting iframe targets)
+function Punch:_predictRollCancel()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local myPosition = rootPart.Position
+	local myLookVector = rootPart.CFrame.LookVector
+
+	-- Check nearby characters for iframes
+	for _, otherCharacter in ipairs(workspace:GetChildren()) do
+		if otherCharacter:IsA("Model") and otherCharacter ~= character then
+			local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
+			local otherRootPart = otherCharacter:FindFirstChild("HumanoidRootPart")
+
+			if otherHumanoid and otherRootPart and otherHumanoid.Health > 0 then
+				-- Check distance
+				local distance = (otherRootPart.Position - myPosition).Magnitude
+				if distance <= PUNCH_RANGE then
+					-- Check angle (in front of attacker)
+					local directionToTarget = (otherRootPart.Position - myPosition).Unit
+					local dotProduct = myLookVector:Dot(directionToTarget)
+
+					if dotProduct > HIT_ANGLE_THRESHOLD then
+						-- Target is in range and in front - check for iframes
+						local wcsCharacter = WCS.Character.GetCharacterFromInstance(otherCharacter)
+						if wcsCharacter and wcsCharacter:HasStatusEffects({ Iframes }) then
+							-- Play rollcancel sound immediately (client prediction)
+							self:_playPredictedRollCancelSound(otherCharacter)
+							print(`[Punch] Client prediction: Rollcancel on {otherCharacter.Name}`)
+							return -- Only trigger once per punch
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Play predicted rollcancel sound (client-side, before server confirmation)
+function Punch:_playPredictedRollCancelSound(targetModel: Model)
+	-- Set debounce attribute so hitEffectsManager won't play duplicate sound
+	targetModel:SetAttribute("_RollCancelTime", tick())
+
+	local cancelSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("SFX")
+		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
+		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Dodges")
+		and ReplicatedStorage.Assets.SFX.Movement.Dodges:FindFirstChild("Cancel")
+
+	if not cancelSFXFolder then
+		return -- Silently fail - folder might not exist yet
+	end
+
+	local sounds = {}
+	for _, child in ipairs(cancelSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		return
+	end
+
+	local randomSound = sounds[math.random(1, #sounds)]
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
+	soundClone:Play()
+
+	-- Cleanup
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
 end
 
 return Punch

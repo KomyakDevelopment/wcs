@@ -4,8 +4,8 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local SoftHitstun = WCS.RegisterStatusEffect("SoftHitstun")
 
--- Movement reduction: player moves at 20% of their normal speed
-local SPEED_MULTIPLIER = 0.375
+-- Movement reduction: player moves at reduced speed (40% less slowdown than before)
+local SPEED_MULTIPLIER = 0.625
 
 function SoftHitstun:OnConstructServer()
 	-- Store reference to this status effect on the character

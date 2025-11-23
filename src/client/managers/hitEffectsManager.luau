@@ -16,6 +16,9 @@ local WEAPON_EFFECTS = {
 	},
 }
 
+-- Debounce for rollcancel sounds (prevents double sounds from client prediction + server)
+local ROLLCANCEL_DEBOUNCE = 0.3 -- seconds
+
 function HitEffectsManager.new()
 	local self = setmetatable({}, HitEffectsManager)
 
@@ -26,6 +29,22 @@ function HitEffectsManager.new()
 	hitEffectsRemote.OnClientEvent:Connect(function(targetModel: Model, weaponClass: string)
 		print(`[HitEffectsManager] Received hit effect event - Target: {if targetModel then targetModel.Name else "nil"}, Weapon: {weaponClass}`)
 		self:playHitEffects(targetModel, weaponClass)
+	end)
+
+	-- Listen for rollcancel effects from server (when attack hits during iframes)
+	local rollCancelRemote = ReplicatedStorage:WaitForChild("PlayRollCancel") :: RemoteEvent
+	rollCancelRemote.OnClientEvent:Connect(function(targetModel: Model)
+		-- Check debounce via attribute (client prediction may have already played the sound)
+		if targetModel then
+			local lastRollCancelTime = targetModel:GetAttribute("_RollCancelTime")
+			if lastRollCancelTime and (tick() - lastRollCancelTime) < ROLLCANCEL_DEBOUNCE then
+				print(`[HitEffectsManager] Roll cancel debounced for {targetModel.Name} (client predicted)`)
+				return
+			end
+		end
+
+		print(`[HitEffectsManager] Roll cancel triggered on {if targetModel then targetModel.Name else "nil"}`)
+		self:playRollCancelEffects(targetModel)
 	end)
 
 	print("[HitEffectsManager] Initialized - Listening for hit effects")
@@ -146,6 +165,83 @@ function HitEffectsManager:_playHitVFX(targetModel: Model, pathArray: { string }
 	end
 
 	Debris:AddItem(attachmentClone, maxLifetime + 0.5)
+end
+
+-- Play roll cancel effects (sound + animation when hit during iframes)
+function HitEffectsManager:playRollCancelEffects(targetModel: Model)
+	if not targetModel or not targetModel:IsA("Model") then
+		warn("[HitEffectsManager] Invalid target model for roll cancel")
+		return
+	end
+
+	-- Play roll cancel sound
+	self:_playRollCancelSound(targetModel)
+
+	-- Play roll cancel animation
+	self:_playRollCancelAnimation(targetModel)
+end
+
+-- Play roll cancel sound effect
+function HitEffectsManager:_playRollCancelSound(targetModel: Model)
+	local cancelSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("SFX")
+		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
+		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Dodges")
+		and ReplicatedStorage.Assets.SFX.Movement.Dodges:FindFirstChild("Cancel")
+
+	if not cancelSFXFolder then
+		warn("[HitEffectsManager] Roll cancel SFX folder not found at Assets.SFX.Movement.Dodges.Cancel")
+		return
+	end
+
+	-- Get all sounds
+	local sounds = {}
+	for _, child in ipairs(cancelSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		warn("[HitEffectsManager] No roll cancel sounds found")
+		return
+	end
+
+	-- Pick random sound
+	local randomSound = sounds[math.random(1, #sounds)]
+
+	-- Clone and play at target position
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
+
+	soundClone:Play()
+	print(`[HitEffectsManager] Playing roll cancel sound: {randomSound.Name} at {targetModel.Name}`)
+
+	-- Cleanup after sound finishes
+	Debris:AddItem(soundClone, soundClone.TimeLength + 0.1)
+end
+
+-- Play roll cancel animation
+function HitEffectsManager:_playRollCancelAnimation(targetModel: Model)
+	local humanoid = targetModel:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Stop any current dodge/roll animations by stopping action-priority tracks
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		local priority = track.Priority
+		if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
+			track:Stop(0.1)
+		end
+	end
+
+	print(`[HitEffectsManager] Roll cancel animation triggered for {targetModel.Name}`)
 end
 
 return HitEffectsManager

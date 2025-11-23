@@ -18,6 +18,7 @@ local REQUIRED_REMOTES = {
 	"PlayBlockHitAnimation",
 	"PlayParriedAnimation",
 	"PlayerDeath",
+	"PlayRollCancel",
 }
 
 -- Assets to preload (animation IDs, sounds, etc.)

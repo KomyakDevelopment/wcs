@@ -48,6 +48,10 @@ local playerDeathRemote = Instance.new("RemoteEvent")
 playerDeathRemote.Name = "PlayerDeath"
 playerDeathRemote.Parent = ReplicatedStorage
 
+local rollCancelRemote = Instance.new("RemoteEvent")
+rollCancelRemote.Name = "PlayRollCancel"
+rollCancelRemote.Parent = ReplicatedStorage
+
 -- Initialize managers (after remotes are created)
 local stunIndicatorManager = StunIndicatorManager.new()
 local postureManager = PostureManager.new()

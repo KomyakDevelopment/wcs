@@ -25,14 +25,14 @@ local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
 local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
 -- Air dash configuration
-local AIR_DASH_DISTANCE = 16 -- Slightly shorter than ground dodge
-local AIR_DASH_DURATION = 0.2 -- Faster than ground dodge
-local AIR_DASH_HEIGHT_LOCK_TIME = 0.2 -- Time to keep height locked at start
+local AIR_DASH_DISTANCE = 17 -- Slightly shorter than ground dodge
+local AIR_DASH_DURATION = 0.285 -- Faster than ground dodge
+local AIR_DASH_HEIGHT_LOCK_TIME = 0.15 -- Time to keep height locked at start
 local AIR_DASH_ANIMATION = "rbxassetid://96765830085186" -- Different animation for air dash
 
 -- Iframes configuration
-local IFRAME_START = 0.1 -- Iframes start 0.1 seconds into dodge
-local IFRAME_END = 0.345 -- Iframes end right before dodge completes
+local IFRAME_START = 0.05 -- Iframes start 0.05 seconds into dodge
+local IFRAME_END = 0.45 -- Iframes end right before dodge completes
 
 -- Animation IDs for each direction
 local DODGE_ANIMATIONS = {
