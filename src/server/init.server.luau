@@ -43,6 +43,10 @@ local blockHitAnimRemote = Instance.new("RemoteEvent")
 blockHitAnimRemote.Name = "PlayBlockHitAnimation"
 blockHitAnimRemote.Parent = ReplicatedStorage
 
+local parriedAnimRemote = Instance.new("RemoteEvent")
+parriedAnimRemote.Name = "PlayParriedAnimation"
+parriedAnimRemote.Parent = ReplicatedStorage
+
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)
 	local character = player.Character

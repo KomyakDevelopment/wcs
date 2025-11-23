@@ -24,6 +24,12 @@ local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 *
 local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
 local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
+-- Air dash configuration
+local AIR_DASH_DISTANCE = 16 -- Slightly shorter than ground dodge
+local AIR_DASH_DURATION = 0.2 -- Faster than ground dodge
+local AIR_DASH_HEIGHT_LOCK_TIME = 0.2 -- Time to keep height locked at start
+local AIR_DASH_ANIMATION = "rbxassetid://96765830085186" -- Different animation for air dash
+
 -- Iframes configuration
 local IFRAME_START = 0.1 -- Iframes start 0.1 seconds into dodge
 local IFRAME_END = 0.345 -- Iframes end right before dodge completes
@@ -41,6 +47,9 @@ function Dodge:OnConstructServer()
 	self.dashingEffect = nil
 	self.bodyVelocity = nil
 	self.iframesEffect = nil
+	self.isAirDash = false
+	self.landedConnection = nil
+	self.completedNaturally = false -- Track if skill completed naturally vs cancelled
 
 	-- Retrieve persistent cancel count from character instance
 	-- Store it in the character model itself for persistence across skill instances
@@ -65,6 +74,8 @@ function Dodge:OnConstructClient()
 	self.m2Connection = nil
 	self.rollVFXAttachment = nil
 	self.dodgeSFX = nil
+	self.isAirDash = false
+	self.airDashAnimation = nil
 
 	-- Preload all dodge animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -76,6 +87,11 @@ function Dodge:OnConstructClient()
 				animation.AnimationId = animId
 				self.loadedAnimations[direction] = animator:LoadAnimation(animation)
 			end
+
+			-- Preload air dash animation
+			local airDashAnim = Instance.new("Animation")
+			airDashAnim.AnimationId = AIR_DASH_ANIMATION
+			self.airDashAnimation = animator:LoadAnimation(airDashAnim)
 		end
 	end
 end
@@ -97,19 +113,39 @@ function Dodge:OnStartServer()
 		return
 	end
 
-	-- Check if character is grounded (raycast down)
+	-- Check if character is grounded using humanoid state (more reliable than raycast alone)
+	local humanoidState = humanoid:GetState()
+	local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
+		or humanoidState == Enum.HumanoidStateType.Jumping
+
+	-- Also do a short raycast as backup check
 	local rayOrigin = humanoidRootPart.Position
-	local rayDirection = Vector3.new(0, -4, 0)
+	local rayDirection = Vector3.new(0, -3.5, 0) -- Slightly shorter to better detect air
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterDescendantsInstances = { character }
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
 	local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-	if not raycastResult then
-		print("[Dodge] Server: Cannot dodge - Not grounded")
-		return
-	end
+	local isGroundedByRaycast = raycastResult ~= nil
 
+	-- Player is in air if EITHER humanoid says so OR raycast doesn't hit ground
+	local isGrounded = not isInAirState and isGroundedByRaycast
+
+	-- Determine if this is an air dash or ground dodge
+	self.isAirDash = not isGrounded
+	print(
+		`[Dodge] Server: Grounded check - State: {humanoidState.Name}, InAirState: {isInAirState}, RayHit: {isGroundedByRaycast}, IsAirDash: {self.isAirDash}`
+	)
+
+	if self.isAirDash then
+		self:_performAirDash(humanoid, humanoidRootPart)
+	else
+		self:_performGroundDodge(humanoid, humanoidRootPart)
+	end
+end
+
+-- Perform ground dodge (original behavior)
+function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePart)
 	-- Apply Dashing status effect to block attacks
 	self.dashingEffect = Dashing.new(self.Character)
 	if self.dashingEffect then
@@ -121,7 +157,7 @@ function Dodge:OnStartServer()
 	local dashStrength = DODGE_DISTANCE / DODGE_DURATION
 	local rate = 0.0167
 
-	print(`[Dodge] Server: Starting dash - Strength: {dashStrength}`)
+	print(`[Dodge] Server: Starting ground dodge - Strength: {dashStrength}`)
 
 	-- Create BodyVelocity for smooth movement
 	local bodyVelocity = Instance.new("BodyVelocity")
@@ -173,7 +209,7 @@ function Dodge:OnStartServer()
 		elapsed = elapsed + rate
 	end
 
-	print("[Dodge] Loop completed - Cleaning up")
+	print("[Dodge] Ground dodge loop completed - Cleaning up")
 
 	-- Clean up BodyVelocity
 	if self.bodyVelocity then
@@ -182,11 +218,134 @@ function Dodge:OnStartServer()
 	end
 
 	self.dodgeActive = false
+	self.completedNaturally = true
 
-	-- Normal completion always applies full cooldown and resets cancel count
-	self:ApplyCooldown(DODGE_COOLDOWN)
-	self.cancelCountRef.Value = 0
-	print("[Dodge] Server: Dodge completed - Cooldown applied, cancel count reset")
+	-- End the skill properly (OnEndServer will handle cooldown/cancel logic)
+	self:End()
+end
+
+-- Perform air dash (new behavior)
+function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
+	-- Apply Dashing status effect
+	self.dashingEffect = Dashing.new(self.Character)
+	if self.dashingEffect then
+		self.dashingEffect:Start(AIR_DASH_DURATION)
+		print("[Dodge] Server: Applied Dashing status effect (air dash)")
+	end
+
+	-- Calculate dash direction and strength - LOCKED at start (no control during air dash)
+	local dashStrength = AIR_DASH_DISTANCE / AIR_DASH_DURATION
+	local lockedDirection = self:_calculateDashDirection(humanoid, humanoidRootPart)
+	local rate = 0.0167
+
+	print(`[Dodge] Server: Starting air dash - Strength: {dashStrength}, Direction: {lockedDirection}`)
+
+	-- Create BodyVelocity for movement
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000) -- Include Y for height lock
+	bodyVelocity.P = 10000 -- Higher P value for more responsive velocity control
+	bodyVelocity.Parent = humanoidRootPart
+
+	self.bodyVelocity = bodyVelocity
+	self.dodgeActive = true
+
+	-- Schedule iframes
+	task.delay(IFRAME_START, function()
+		if not self.dodgeActive then
+			return
+		end
+
+		self.iframesEffect = Iframes.new(self.Character)
+		if self.iframesEffect then
+			local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
+			self.iframesEffect:Start(iframeDuration)
+			print(`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash)`)
+		end
+	end)
+
+	-- Listen for landing to cancel air dash (with small delay to prevent false positives)
+	task.delay(0.05, function()
+		if not self.dodgeActive then
+			return
+		end
+		self.landedConnection = humanoid.StateChanged:Connect(function(_, newState)
+			if newState == Enum.HumanoidStateType.Landed then
+				print("[Dodge] Server: Air dash cancelled - Player landed")
+				self.dodgeActive = false
+			end
+		end)
+	end)
+
+	-- Apply velocity with locked direction
+	-- Use direct velocity control for more reliable air dash
+	local elapsed = 0
+	local heightLockEnded = false
+	while elapsed < AIR_DASH_DURATION do
+		if not self.dodgeActive then
+			-- Cancelled (landed or other reason)
+			break
+		end
+
+		-- Apply subtle easing at the end
+		local progress = elapsed / AIR_DASH_DURATION
+		local speedMultiplier = 1
+
+		if progress > 0.8 then
+			local easeProgress = (progress - 0.8) / 0.2
+			speedMultiplier = 1 - (easeProgress * 0.175)
+		end
+
+		-- Calculate horizontal velocity
+		local horizontalVelocity = Vector3.new(
+			lockedDirection.X * dashStrength * speedMultiplier,
+			0,
+			lockedDirection.Z * dashStrength * speedMultiplier
+		)
+
+		-- Height lock for first 0.2 seconds
+		if elapsed < AIR_DASH_HEIGHT_LOCK_TIME then
+			-- During height lock: use direct velocity control to maintain height
+			-- Set Y velocity to 0 directly on the HumanoidRootPart
+			humanoidRootPart.AssemblyLinearVelocity = Vector3.new(
+				horizontalVelocity.X,
+				0, -- Lock Y velocity at 0
+				horizontalVelocity.Z
+			)
+			-- Also set BodyVelocity for smoother control
+			bodyVelocity.Velocity = Vector3.new(horizontalVelocity.X, 0, horizontalVelocity.Z)
+		else
+			-- After height lock, only apply horizontal velocity (let gravity work)
+			if not heightLockEnded then
+				heightLockEnded = true
+				bodyVelocity.MaxForce = Vector3.new(100000, 0, 100000)
+				print("[Dodge] Server: Air dash height lock ended, gravity enabled")
+			end
+			bodyVelocity.Velocity = horizontalVelocity
+		end
+
+		task.wait(rate)
+		elapsed = elapsed + rate
+	end
+
+	print("[Dodge] Air dash loop completed - Cleaning up")
+
+	-- Clean up
+	if self.landedConnection then
+		self.landedConnection:Disconnect()
+		self.landedConnection = nil
+	end
+
+	if self.bodyVelocity then
+		self.bodyVelocity:Destroy()
+		self.bodyVelocity = nil
+	end
+
+	self.dodgeActive = false
+	self.completedNaturally = true
+	-- Keep isAirDash = true so OnEndServer knows this was an air dash
+
+	-- End the skill properly (OnEndServer will handle cooldown)
+	self:End()
 end
 
 function Dodge:OnStartClient()
@@ -220,59 +379,93 @@ function Dodge:OnStartClient()
 		end
 	end
 
-	-- Get the actual movement direction (camera-relative) for animation
+	-- Check if grounded for air dash detection (matching server logic)
 	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
+	local isGrounded = true
+	if hrp and humanoid then
+		-- Check humanoid state first
+		local humanoidState = humanoid:GetState()
+		local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
+			or humanoidState == Enum.HumanoidStateType.Jumping
 
-	local animDirection = "Forward" -- Default
-	if humanoid and hrp then
-		local moveDir = humanoid.MoveDirection
+		-- Also do raycast
+		local rayOrigin = hrp.Position
+		local rayDirection = Vector3.new(0, -3.5, 0)
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterDescendantsInstances = { character }
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+		local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+		local isGroundedByRaycast = raycastResult ~= nil
 
-		if moveDir.Magnitude > 0.1 then
-			-- Calculate animation direction based on movement relative to character facing
-			local lookVector = hrp.CFrame.LookVector
-			local rightVector = hrp.CFrame.RightVector
-
-			-- Project movement onto character's forward and right vectors
-			local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
-			local rightDot = moveDir:Dot(Vector3.new(rightVector.X, 0, rightVector.Z).Unit)
-
-			-- Determine primary direction based on which component is stronger
-			if math.abs(forwardDot) > math.abs(rightDot) then
-				-- Moving primarily forward/backward
-				animDirection = forwardDot > 0 and "Forward" or "Backward"
-			else
-				-- Moving primarily left/right
-				animDirection = rightDot > 0 and "Right" or "Left"
-			end
-		end
+		-- Player is in air if EITHER humanoid says so OR raycast doesn't hit ground
+		isGrounded = not isInAirState and isGroundedByRaycast
 	end
 
-	-- Play animation for dodge direction immediately (don't wait)
-	local animTrack = self.loadedAnimations[animDirection]
-	if animTrack then
-		self.currentAnimTrack = animTrack
-		local animLength = animTrack.Length
+	self.isAirDash = not isGrounded
+	print(`[Dodge] Client: Air dash detection - IsAirDash: {self.isAirDash}`)
+	local activeDuration = self.isAirDash and AIR_DASH_DURATION or DODGE_DURATION
 
-		-- Play with adjusted speed to match dodge duration
-		if animLength and animLength > 0 then
-			-- Calculate speed but find middle ground between default and matched speed, 40% faster
-			local perfectSpeed = animLength / DODGE_DURATION
-			local speedMultiplier = 1 + ((perfectSpeed - 1) * 0.6) -- 60% toward perfect speed
-			speedMultiplier = speedMultiplier * 0.8 -- Make it 40% faster
-
-			animTrack:Play(0.05) -- Quick fade-in (0.05s)
-			animTrack:AdjustSpeed(speedMultiplier) -- Adjust speed after playing
-			print(
-				`[Dodge] Client: Playing {animDirection} dodge animation - Length: {animLength}s, Perfect: {perfectSpeed}x, Using: {speedMultiplier}x`
-			)
-		else
-			-- Fallback if length not available - 40% faster than before
-			animTrack:Play(0.05)
-			animTrack:AdjustSpeed(1.96) -- 1.4 * 1.4 = 1.96
-			print(`[Dodge] Client: Playing {animDirection} dodge animation - Using default speed 1.96x`)
+	if self.isAirDash then
+		-- Air dash: use air dash animation
+		if self.airDashAnimation then
+			self.currentAnimTrack = self.airDashAnimation
+			self.airDashAnimation:Play(0.05)
+			self.airDashAnimation.Priority = Enum.AnimationPriority.Action2
+			print("[Dodge] Client: Playing air dash animation")
 		end
 	else
-		warn(`[Dodge] Client: No animation loaded for direction: {animDirection}`)
+		-- Ground dodge: determine direction and play appropriate animation
+		local animDirection = "Forward" -- Default
+		if humanoid and hrp then
+			local moveDir = humanoid.MoveDirection
+
+			if moveDir.Magnitude > 0.1 then
+				-- Calculate animation direction based on movement relative to character facing
+				local lookVector = hrp.CFrame.LookVector
+				local rightVector = hrp.CFrame.RightVector
+
+				-- Project movement onto character's forward and right vectors
+				local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
+				local rightDot = moveDir:Dot(Vector3.new(rightVector.X, 0, rightVector.Z).Unit)
+
+				-- Determine primary direction based on which component is stronger
+				if math.abs(forwardDot) > math.abs(rightDot) then
+					-- Moving primarily forward/backward
+					animDirection = forwardDot > 0 and "Forward" or "Backward"
+				else
+					-- Moving primarily left/right
+					animDirection = rightDot > 0 and "Right" or "Left"
+				end
+			end
+		end
+
+		-- Play animation for dodge direction immediately (don't wait)
+		local animTrack = self.loadedAnimations[animDirection]
+		if animTrack then
+			self.currentAnimTrack = animTrack
+			local animLength = animTrack.Length
+
+			-- Play with adjusted speed to match dodge duration
+			if animLength and animLength > 0 then
+				-- Calculate speed but find middle ground between default and matched speed, 40% faster
+				local perfectSpeed = animLength / DODGE_DURATION
+				local speedMultiplier = 1 + ((perfectSpeed - 1) * 0.6) -- 60% toward perfect speed
+				speedMultiplier = speedMultiplier * 0.8 -- Make it 40% faster
+
+				animTrack:Play(0.05) -- Quick fade-in (0.05s)
+				animTrack:AdjustSpeed(speedMultiplier) -- Adjust speed after playing
+				print(
+					`[Dodge] Client: Playing {animDirection} dodge animation - Length: {animLength}s, Perfect: {perfectSpeed}x, Using: {speedMultiplier}x`
+				)
+			else
+				-- Fallback if length not available - 40% faster than before
+				animTrack:Play(0.05)
+				animTrack:AdjustSpeed(1.96) -- 1.4 * 1.4 = 1.96
+				print(`[Dodge] Client: Playing {animDirection} dodge animation - Using default speed 1.96x`)
+			end
+		else
+			warn(`[Dodge] Client: No animation loaded for direction: {animDirection}`)
+		end
 	end
 
 	-- Setup roll VFX
@@ -294,7 +487,7 @@ function Dodge:OnStartClient()
 		end
 
 		-- Schedule disabling emitters when dodge ends (let particles fade out naturally)
-		task.delay(DODGE_DURATION, function()
+		task.delay(activeDuration, function()
 			if rollVFXClone and rollVFXClone.Parent then
 				-- Disable emitters so they stop spawning new particles
 				for _, child in ipairs(rollVFXClone:GetChildren()) do
@@ -332,25 +525,29 @@ function Dodge:OnStartClient()
 	-- Play dodge roll SFX
 	self:_playDodgeSFX()
 
-	-- Setup M2 listener for canceling (extended window for easier cancelling)
-	self.m2Connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
+	-- Setup M2 listener for canceling (ONLY for ground dodge, not air dash)
+	if not self.isAirDash then
+		self.m2Connection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed then
+				return
+			end
 
-		-- Check for M2 (right mouse button)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			self:_attemptCancel()
-		end
-	end)
+			-- Check for M2 (right mouse button)
+			if input.UserInputType == Enum.UserInputType.MouseButton2 then
+				self:_attemptCancel()
+			end
+		end)
 
-	-- Auto-disconnect M2 listener after a generous window (50% longer than dodge duration)
-	task.delay(DODGE_DURATION * 1.5, function()
-		if self.m2Connection then
-			self.m2Connection:Disconnect()
-			self.m2Connection = nil
-		end
-	end)
+		-- Auto-disconnect M2 listener after a generous window (50% longer than dodge duration)
+		task.delay(activeDuration * 1.5, function()
+			if self.m2Connection then
+				self.m2Connection:Disconnect()
+				self.m2Connection = nil
+			end
+		end)
+	else
+		print("[Dodge] Client: Air dash - Roll cancel disabled")
+	end
 end
 
 -- Play dodge roll SFX
@@ -596,10 +793,14 @@ function Dodge:_attemptCancel()
 end
 
 function Dodge:OnEndServer()
-	print("[Dodge] Server: Skill ended (cancelled by client)")
-
-	-- Cancel-specific cleanup
+	-- Common cleanup
 	self.dodgeActive = false
+
+	-- Clean up landed connection (air dash)
+	if self.landedConnection then
+		self.landedConnection:Disconnect()
+		self.landedConnection = nil
+	end
 
 	-- Remove BodyVelocity
 	if self.bodyVelocity then
@@ -611,29 +812,46 @@ function Dodge:OnEndServer()
 	if self.dashingEffect then
 		self.dashingEffect:End()
 		self.dashingEffect = nil
-		print("[Dodge] Server: Ended Dashing status effect to release controls")
+		print("[Dodge] Server: Ended Dashing status effect")
 	end
 
 	-- End iframes if active
 	if self.iframesEffect then
 		self.iframesEffect:End()
 		self.iframesEffect = nil
-		print("[Dodge] Server: Ended iframes (cancelled)")
+		print("[Dodge] Server: Ended iframes")
 	end
 
-	-- Cancelling gives one more dodge (unless already used)
-	if self.cancelCountRef.Value < MAX_CANCELS then
-		-- First cancel - no cooldown, can dodge again immediately
-		self.cancelCountRef.Value = self.cancelCountRef.Value + 1
-		print(
-			`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
-		)
-	else
-		-- Already used the cancel - apply full cooldown and reset
+	-- Handle cooldown/cancel logic based on how skill ended
+	if self.isAirDash then
+		-- Air dash completed (or ended by landing) - always apply full cooldown, no cancel
 		self:ApplyCooldown(DODGE_COOLDOWN)
 		self.cancelCountRef.Value = 0
-		print("[Dodge] Server: Second dodge cancelled - Cooldown applied, cancel count reset")
+		self.isAirDash = false
+		print("[Dodge] Server: Air dash ended - Cooldown applied")
+	elseif self.completedNaturally then
+		-- Ground dodge completed naturally - apply full cooldown
+		self:ApplyCooldown(DODGE_COOLDOWN)
+		self.cancelCountRef.Value = 0
+		print("[Dodge] Server: Ground dodge completed - Cooldown applied")
+	else
+		-- Ground dodge cancelled by player (M2) - run cancel logic
+		if self.cancelCountRef.Value < MAX_CANCELS then
+			-- First cancel - no cooldown, can dodge again immediately
+			self.cancelCountRef.Value = self.cancelCountRef.Value + 1
+			print(
+				`[Dodge] Server: Dodge cancelled - Can dodge again immediately (cancel {self.cancelCountRef.Value}/{MAX_CANCELS})`
+			)
+		else
+			-- Already used the cancel - apply full cooldown and reset
+			self:ApplyCooldown(DODGE_COOLDOWN)
+			self.cancelCountRef.Value = 0
+			print("[Dodge] Server: Second dodge cancelled - Cooldown applied, cancel count reset")
+		end
 	end
+
+	-- Reset completion flag for next use
+	self.completedNaturally = false
 end
 
 function Dodge:OnEndClient()

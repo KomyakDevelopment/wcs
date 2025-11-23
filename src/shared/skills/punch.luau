@@ -562,6 +562,12 @@ function Punch:_handleParry(defenderWCSCharacter)
 		parryVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
 	end
 
+	-- Fire parried animation event on ATTACKER (stagger animation when getting parried)
+	local parriedAnimRemote = ReplicatedStorage:FindFirstChild("PlayParriedAnimation")
+	if parriedAnimRemote then
+		parriedAnimRemote:FireAllClients(self.Character.Instance)
+	end
+
 	-- TODO: Apply posture changes (defender -30%, attacker +30%)
 	print("[Punch] TODO: Apply posture changes for parry")
 end

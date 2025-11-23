@@ -9,6 +9,9 @@ local Players = game:GetService("Players")
 local BlockVFXManager = {}
 BlockVFXManager.__index = BlockVFXManager
 
+-- Animation IDs
+local PARRIED_ANIMATION_ID = "rbxassetid://111980304628577"
+
 function BlockVFXManager.new()
 	local self = setmetatable({}, BlockVFXManager)
 
@@ -48,6 +51,11 @@ function BlockVFXManager:_setupRemotes()
 	local blockHitVFXRemote = ReplicatedStorage:WaitForChild("PlayBlockHitVFX") :: RemoteEvent
 	blockHitVFXRemote.OnClientEvent:Connect(function(targetCharacter)
 		self:playBlockHitVFX(targetCharacter)
+	end)
+
+	local parriedAnimRemote = ReplicatedStorage:WaitForChild("PlayParriedAnimation") :: RemoteEvent
+	parriedAnimRemote.OnClientEvent:Connect(function(targetCharacter)
+		self:playParriedAnimation(targetCharacter)
 	end)
 
 	print("[BlockVFXManager] Remote events setup complete")
@@ -187,6 +195,76 @@ function BlockVFXManager:playParryVFX(character: Model)
 
 	-- Play parry SFX
 	self:_playSFXFromFolder(self.parrySFXFolder, character)
+end
+
+-- Play parried animation on attacker (stagger when getting parried)
+function BlockVFXManager:playParriedAnimation(character: Model)
+	if not character then
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
+	if not humanoid then
+		warn(`[BlockVFXManager] Humanoid not found on {character.Name}`)
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		warn(`[BlockVFXManager] Animator not found on {character.Name}`)
+		return
+	end
+
+	-- Create a fresh animation each time (don't cache to avoid looping issues)
+	local animation = Instance.new("Animation")
+	animation.AnimationId = PARRIED_ANIMATION_ID
+	local animTrack = animator:LoadAnimation(animation)
+
+	-- Stop any currently playing M1/attack animations immediately with zero weight
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		if track ~= animTrack then
+			local priority = track.Priority
+			-- Stop Action and Action2 priority animations (combat animations like M1)
+			if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
+				track:AdjustWeight(0, 0) -- Instant zero weight
+				track:Stop(0) -- Then stop
+			end
+		end
+	end
+
+	-- Configure and play
+	animTrack.Looped = false
+	animTrack.Priority = Enum.AnimationPriority.Action4 -- Higher priority to override any remaining animations
+	animTrack:Play(0) -- Instant start, no fade
+	--animTrack:AdjustWeight(2.5, 2)
+
+	-- Protect the animation from being cancelled by stopping competing animations
+	local protectionActive = true
+	local protectionConnection = animator.AnimationPlayed:Connect(function(newTrack)
+		if not protectionActive then
+			return
+		end
+		-- Stop any new Action/Action2 animations that try to play
+		local priority = newTrack.Priority
+		if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
+			newTrack:AdjustWeight(0, 0) -- Instant zero weight
+			newTrack:Stop(0)
+		end
+	end)
+
+	-- Let the animation play fully, then clean up
+	task.delay(0.7, function()
+		protectionActive = false
+		if protectionConnection then
+			protectionConnection:Disconnect()
+		end
+		if animTrack then
+			animTrack:Stop(0.1)
+		end
+		if animation and animation.Parent then
+			animation:Destroy()
+		end
+	end)
 end
 
 -- Play block hit VFX (block effect on torso + highlight outline)

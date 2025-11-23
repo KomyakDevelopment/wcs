@@ -17,7 +17,7 @@ local DOUBLE_JUMP_POWER = 85 -- Upward velocity for air jumps
 local JUMP_COOLDOWN = 0.1 -- Small cooldown to prevent spam
 
 -- Animation ID for air jump (flip/boost animation)
-local AIR_JUMP_ANIMATION = "rbxassetid://96765830085186"
+local AIR_JUMP_ANIMATION = "rbxassetid://76293994701034"
 
 -- Store connections and non-serializable data outside of self to avoid WCS sync issues
 -- Keyed by skill instance (not character) to prevent race conditions during moveset transitions
