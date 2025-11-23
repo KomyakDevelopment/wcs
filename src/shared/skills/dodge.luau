@@ -522,8 +522,12 @@ function Dodge:OnStartClient()
 		warn("[Dodge] Client: Roll VFX attachment not found")
 	end
 
-	-- Play dodge roll SFX
-	self:_playDodgeSFX()
+	-- Play appropriate SFX based on dodge type
+	if self.isAirDash then
+		self:_playAirDashSFX()
+	else
+		self:_playDodgeSFX()
+	end
 
 	-- Setup M2 listener for canceling (ONLY for ground dodge, not air dash)
 	if not self.isAirDash then
@@ -548,6 +552,54 @@ function Dodge:OnStartClient()
 	else
 		print("[Dodge] Client: Air dash - Roll cancel disabled")
 	end
+end
+
+-- Play air dash SFX
+function Dodge:_playAirDashSFX()
+	local airDashSFXFolder = ReplicatedStorage.Assets.SFX.Movement.Airdash
+	if not airDashSFXFolder then
+		warn("[Dodge] Air dash SFX folder not found")
+		return
+	end
+
+	local character = self.Character.Instance
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+
+	-- Get all Sound instances from folder
+	local sounds = {}
+	for _, child in ipairs(airDashSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		warn("[Dodge] No air dash sounds found")
+		return
+	end
+
+	-- Select random sound
+	local randomSound = sounds[math.random(1, #sounds)]
+
+	-- Clone and play with spatial audio
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = hrp
+	soundClone:Play()
+
+	-- Store reference for potential cleanup
+	self.dodgeSFX = soundClone
+
+	-- Clean up after sound finishes
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
+
+	print(`[Dodge] Playing air dash SFX: {randomSound.Name}`)
 end
 
 -- Play dodge roll SFX

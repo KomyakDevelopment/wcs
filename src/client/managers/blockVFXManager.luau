@@ -9,8 +9,12 @@ local Players = game:GetService("Players")
 local BlockVFXManager = {}
 BlockVFXManager.__index = BlockVFXManager
 
--- Animation IDs
-local PARRIED_ANIMATION_ID = "rbxassetid://120994424404934"
+-- Animation IDs (random selection from pool)
+local PARRIED_ANIMATION_IDS = {
+	"rbxassetid://120994424404934",
+	"rbxassetid://121143763249322",
+	"rbxassetid://131265897792522",
+}
 
 function BlockVFXManager.new()
 	local self = setmetatable({}, BlockVFXManager)
@@ -216,8 +220,9 @@ function BlockVFXManager:playParriedAnimation(character: Model)
 	end
 
 	-- Create a fresh animation each time (don't cache to avoid looping issues)
+	-- Randomly select from pool of parried animations
 	local animation = Instance.new("Animation")
-	animation.AnimationId = PARRIED_ANIMATION_ID
+	animation.AnimationId = PARRIED_ANIMATION_IDS[math.random(1, #PARRIED_ANIMATION_IDS)]
 	local animTrack = animator:LoadAnimation(animation)
 
 	-- Stop only Action priority animations to prevent blending with parried anim

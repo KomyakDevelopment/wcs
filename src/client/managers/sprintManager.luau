@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 
 local SprintManager = {}
 SprintManager.__index = SprintManager
@@ -172,6 +173,12 @@ end
 
 -- Handle double-tap sprint activation
 function SprintManager:_handleDoubleTap(direction: string)
+	-- Check if player is blocking - don't start sprint while blocking
+	if self:_isBlocking() then
+		print("[SprintManager] Double-tap ignored - Player is blocking")
+		return
+	end
+
 	-- Check if punch animation is playing - don't start sprint (animation priority)
 	if self:_isPunchAnimationPlaying() then
 		print("[SprintManager] Double-tap ignored - Punch animation playing")
@@ -238,6 +245,22 @@ function SprintManager:_isPunchAnimationPlaying(): boolean
 	end
 
 	return false
+end
+
+-- Check if player is currently blocking
+function SprintManager:_isBlocking(): boolean
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return false
+	end
+
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if not wcsCharacter then
+		return false
+	end
+
+	return wcsCharacter:HasStatusEffects({ Blocking })
 end
 
 -- Start sprint

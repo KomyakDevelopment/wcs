@@ -21,6 +21,14 @@ function EquipmentController.new()
 	self.selectedSlot = nil -- Currently selected hotbar slot
 	self.equipped = nil -- Currently equipped weapon ID
 
+	-- Reset equipment state on respawn (new character has no weapon equipped)
+	local player = Players.LocalPlayer
+	player.CharacterAdded:Connect(function()
+		self.equipped = nil
+		self.selectedSlot = nil
+		print("[EquipmentController] Reset equipment state on respawn")
+	end)
+
 	return self
 end
 
