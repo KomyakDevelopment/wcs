@@ -10,6 +10,7 @@ local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 
 local Block = WCS.RegisterSkill("Block")
@@ -134,10 +135,10 @@ function Block:OnStartServer()
 		self.parryOnCooldown = false
 	end
 
-	-- Check if player is in hitstun or dashing
+	-- Check if player is in hitstun or dashing or guardbroken
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned }) then
-		print("[Block] Server: Blocked - Player is in true hitstun/stun/dashing/block recovery")
+	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned, Guardbroken }) then
+		print("[Block] Server: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken")
 		return
 	end
 
@@ -205,8 +206,8 @@ function Block:OnStartClient()
 
 	-- Check if player has any status effects that prevent blocking
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned }) then
-		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery")
+	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken }) then
+		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken")
 		return
 	end
 

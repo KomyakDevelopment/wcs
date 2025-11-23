@@ -22,6 +22,15 @@ local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 
+-- Posture system (lazy loaded to avoid circular dependencies)
+local PostureManager = nil
+local function getPostureManager()
+	if not PostureManager then
+		PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
+	end
+	return PostureManager
+end
+
 local Punch = WCS.RegisterSkill("Punch")
 
 -- WCS Client Prediction Configuration
@@ -568,8 +577,12 @@ function Punch:_handleParry(defenderWCSCharacter)
 		parriedAnimRemote:FireAllClients(self.Character.Instance)
 	end
 
-	-- TODO: Apply posture changes (defender -30%, attacker +30%)
-	print("[Punch] TODO: Apply posture changes for parry")
+	-- Apply posture changes
+	local postureManager = getPostureManager()
+	-- Attacker gains posture (capped at 99% - can never guardbreak from parry alone)
+	postureManager.addPostureCapped(self.Character.Instance, postureManager.getParriedPostureDamage())
+	-- Defender loses posture (reward for successful parry)
+	postureManager.removePosture(defenderWCSCharacter.Instance, postureManager.getParryPostureReward())
 end
 
 -- Handle successful block (not a parry)
@@ -593,8 +606,9 @@ function Punch:_handleBlock(defenderWCSCharacter)
 		blockHitVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
 	end
 
-	-- TODO: Apply posture damage (defender +24%)
-	print("[Punch] TODO: Apply posture damage for block")
+	-- Apply posture damage to defender for blocking
+	local postureManager = getPostureManager()
+	postureManager.addPosture(defenderWCSCharacter.Instance, postureManager.getBlockPostureDamage())
 end
 
 -- Apply fists trail VFX to specific arm based on combo phase (client-only)

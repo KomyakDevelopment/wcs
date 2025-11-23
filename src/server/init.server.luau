@@ -4,6 +4,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local StunIndicatorManager = require(ReplicatedStorage.Shared.managers.stunIndicatorManager)
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
+local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 
 local Server = WCS.CreateServer()
 
@@ -15,6 +16,9 @@ Server:Start()
 
 -- Initialize stun indicator manager (server-side)
 local stunIndicatorManager = StunIndicatorManager.new()
+
+-- Initialize posture manager (handles posture damage, recovery, and guardbreak)
+local postureManager = PostureManager.new()
 
 -- Create RemoteEvent for equipment requests
 local equipRemote = Instance.new("RemoteEvent")
@@ -75,6 +79,9 @@ local dummyWcsChar = WCS.Character.new(dummy)
 -- Attach equipment manager to dummy (no weapon equipped by default)
 dummyWcsChar.EquipmentManager = EquipmentManager.new(dummyWcsChar)
 
+-- Initialize posture for dummy
+PostureManager.initializeCharacter(dummy, dummyWcsChar)
+
 -- Note: Test dummies (BlockingDummy, ParryingDummy, MissParryDummy, DodgingDummy)
 -- are initialized in testDummies.server.luau
 
@@ -91,6 +98,9 @@ Players.PlayerAdded:Connect(function(player)
 
 		-- Attach equipment manager (no weapon equipped by default)
 		wcsCharacter.EquipmentManager = EquipmentManager.new(wcsCharacter)
+
+		-- Initialize posture for this character (pass WCS character to avoid lookup)
+		PostureManager.initializeCharacter(character, wcsCharacter)
 
 		humanoid.Died:Once(function()
 			-- Cleanup equipment manager

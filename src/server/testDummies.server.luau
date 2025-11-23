@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
+local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 
 -- Wait for server to be ready
 task.wait(1)
@@ -18,6 +19,7 @@ local blockingDummy = workspace:FindFirstChild("BlockingDummy")
 if blockingDummy then
 	local blockingDummyWcsChar = WCS.Character.new(blockingDummy)
 	blockingDummyWcsChar.EquipmentManager = EquipmentManager.new(blockingDummyWcsChar)
+	PostureManager.initializeCharacter(blockingDummy, blockingDummyWcsChar)
 
 	-- Equip fists (this applies the Unarmed moveset automatically)
 	blockingDummyWcsChar.EquipmentManager:equip("fists")
@@ -37,6 +39,7 @@ local parryingDummy = workspace:FindFirstChild("ParryingDummy")
 if parryingDummy then
 	local parryingDummyWcsChar = WCS.Character.new(parryingDummy)
 	parryingDummyWcsChar.EquipmentManager = EquipmentManager.new(parryingDummyWcsChar)
+	PostureManager.initializeCharacter(parryingDummy, parryingDummyWcsChar)
 
 	-- Equip fists (this applies the Unarmed moveset automatically)
 	parryingDummyWcsChar.EquipmentManager:equip("fists")
@@ -56,6 +59,7 @@ local missParryDummy = workspace:FindFirstChild("MissParryDummy")
 if missParryDummy then
 	local missParryDummyWcsChar = WCS.Character.new(missParryDummy)
 	missParryDummyWcsChar.EquipmentManager = EquipmentManager.new(missParryDummyWcsChar)
+	PostureManager.initializeCharacter(missParryDummy, missParryDummyWcsChar)
 
 	-- Equip fists (this applies the Unarmed moveset automatically)
 	missParryDummyWcsChar.EquipmentManager:equip("fists")
@@ -90,6 +94,7 @@ local dodgingDummy = workspace:FindFirstChild("DodgingDummy")
 if dodgingDummy then
 	local dodgingDummyWcsChar = WCS.Character.new(dodgingDummy)
 	dodgingDummyWcsChar.EquipmentManager = EquipmentManager.new(dodgingDummyWcsChar)
+	PostureManager.initializeCharacter(dodgingDummy, dodgingDummyWcsChar)
 
 	-- Equip fists (this applies the Unarmed moveset automatically)
 	dodgingDummyWcsChar.EquipmentManager:equip("fists")

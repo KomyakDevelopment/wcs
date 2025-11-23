@@ -10,6 +10,7 @@ local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
 local HitEffectsManager = require(ReplicatedStorage.Client.managers.hitEffectsManager)
 local BlockVFXManager = require(ReplicatedStorage.Client.managers.blockVFXManager)
 local DoubleJumpManager = require(ReplicatedStorage.Client.managers.doubleJumpManager)
+local PostureUIManager = require(ReplicatedStorage.Client.managers.postureUIManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -28,6 +29,7 @@ local sprintManager = SprintManager.new()
 local hitEffectsManager = HitEffectsManager.new() -- Handles client-side hit effects replication
 local blockVFXManager = BlockVFXManager.new() -- Handles block/parry VFX
 local doubleJumpManager = DoubleJumpManager.new() -- Handles double jump (independent of WCS)
+local postureUIManager = PostureUIManager.new() -- Handles posture UI display
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
