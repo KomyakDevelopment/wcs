@@ -166,9 +166,16 @@ function StunIndicatorManager:_startUpdating()
 		local WCS = require(ReplicatedStorage.Packages.wcs)
 
 		for _, character in pairs(Workspace:GetChildren()) do
-			if character:IsA("Model") and character:FindFirstChild("Humanoid") then
-				local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
-				self:_updateIndicator(character, wcsCharacter)
+			-- Check if character is fully loaded (has both Humanoid and Head)
+			if character:IsA("Model") then
+				local humanoid = character:FindFirstChild("Humanoid")
+				local head = character:FindFirstChild("Head")
+
+				-- Only process if character is fully loaded
+				if humanoid and head then
+					local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+					self:_updateIndicator(character, wcsCharacter)
+				end
 			end
 		end
 	end)

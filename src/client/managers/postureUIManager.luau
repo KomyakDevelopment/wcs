@@ -55,8 +55,25 @@ function PostureUIManager:_setupCharacter(character: Model)
 		self.attributeConnection = nil
 	end
 
-	-- Wait a moment for attributes to be set by server
-	task.defer(function()
+	-- Wait for server to set posture attributes (with timeout)
+	task.spawn(function()
+		local timeout = 5
+		local startTime = tick()
+
+		-- Wait for MaxPosture attribute to exist (indicates server initialized posture)
+		while character.Parent and not character:GetAttribute("MaxPosture") do
+			if tick() - startTime > timeout then
+				warn("[PostureUIManager] Timeout waiting for posture attributes")
+				return
+			end
+			task.wait(0.1)
+		end
+
+		-- Character might have been destroyed while waiting
+		if not character.Parent then
+			return
+		end
+
 		-- Update UI immediately
 		self:_updateUI(character)
 
@@ -64,6 +81,8 @@ function PostureUIManager:_setupCharacter(character: Model)
 		self.attributeConnection = character:GetAttributeChangedSignal("Posture"):Connect(function()
 			self:_updateUI(character)
 		end)
+
+		print("[PostureUIManager] Setup complete for character")
 	end)
 end
 

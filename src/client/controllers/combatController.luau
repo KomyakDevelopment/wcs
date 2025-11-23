@@ -24,11 +24,8 @@ function CombatController.new()
 	-- Client-side debounce to prevent dodge spam
 	self.dodgeDebounce = false
 
-	-- Cached skill references (set on first use for faster subsequent lookups)
+	-- Cached character reference (cleared on respawn)
 	self._cachedCharacter = nil
-	self._cachedPunchSkill = nil
-	self._cachedBlockSkill = nil
-	self._cachedDodgeSkill = nil
 
 	return self
 end
@@ -56,44 +53,35 @@ function CombatController:getCharacter()
 		return self._cachedCharacter
 	end
 
-	-- Cache new character and clear skill caches
+	-- Cache new character
 	self._cachedCharacter = WCS.Character.GetCharacterFromInstance(characterModel)
-	self._cachedPunchSkill = nil
-	self._cachedBlockSkill = nil
-	self._cachedDodgeSkill = nil
 
 	return self._cachedCharacter
 end
 
--- Get punch skill (cached for performance)
+-- Get punch skill (fresh lookup - moveset changes can add/remove skills)
 function CombatController:getPunchSkill()
 	local character = self:getCharacter()
 	if not character then
 		return nil
 	end
 
-	if not self._cachedPunchSkill then
-		self._cachedPunchSkill = character:GetSkillFromConstructor(Punch)
-	end
-
-	return self._cachedPunchSkill
+	-- Always get fresh reference since moveset changes destroy/recreate skills
+	return character:GetSkillFromConstructor(Punch)
 end
 
--- Get block skill (cached for performance)
+-- Get block skill (fresh lookup - moveset changes can add/remove skills)
 function CombatController:getBlockSkill()
 	local character = self:getCharacter()
 	if not character then
 		return nil
 	end
 
-	if not self._cachedBlockSkill then
-		self._cachedBlockSkill = character:GetSkillFromConstructor(Block)
-	end
-
-	return self._cachedBlockSkill
+	-- Always get fresh reference since moveset changes destroy/recreate skills
+	return character:GetSkillFromConstructor(Block)
 end
 
--- Get dodge skill (fresh lookup to handle moveset changes)
+-- Get dodge skill (fresh lookup - moveset changes can add/remove skills)
 function CombatController:getDodgeSkill()
 	local character = self:getCharacter()
 	if not character then

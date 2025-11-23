@@ -4,6 +4,16 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- Load loading manager FIRST (shows black screen immediately)
+local LoadingManager = require(ReplicatedStorage.Client.managers.loadingManager)
+local loadingManager = LoadingManager.new()
+
+-- Wait for server to be ready (remotes, character, etc.)
+if not loadingManager:load() then
+	warn("[Client] Failed to load - some resources not available")
+end
+
+-- Now safe to require modules that depend on remotes
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
@@ -11,6 +21,7 @@ local HitEffectsManager = require(ReplicatedStorage.Client.managers.hitEffectsMa
 local BlockVFXManager = require(ReplicatedStorage.Client.managers.blockVFXManager)
 local DoubleJumpManager = require(ReplicatedStorage.Client.managers.doubleJumpManager)
 local PostureUIManager = require(ReplicatedStorage.Client.managers.postureUIManager)
+local DeathEffectsManager = require(ReplicatedStorage.Client.managers.deathEffectsManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -23,13 +34,14 @@ Client:RegisterDirectory(ReplicatedStorage.Shared.statusEffects)
 
 Client:Start()
 
--- Initialize managers and controllers
+-- Initialize managers and controllers (remotes are guaranteed to exist now)
 local inputManager = InputManager.new()
 local sprintManager = SprintManager.new()
-local hitEffectsManager = HitEffectsManager.new() -- Handles client-side hit effects replication
-local blockVFXManager = BlockVFXManager.new() -- Handles block/parry VFX
-local doubleJumpManager = DoubleJumpManager.new() -- Handles double jump (independent of WCS)
-local postureUIManager = PostureUIManager.new() -- Handles posture UI display
+local hitEffectsManager = HitEffectsManager.new()
+local blockVFXManager = BlockVFXManager.new()
+local doubleJumpManager = DoubleJumpManager.new()
+local postureUIManager = PostureUIManager.new()
+local deathEffectsManager = DeathEffectsManager.new()
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
@@ -104,5 +116,8 @@ inputManager:bindAction("UI.ToggleMap", function(actionName, state, input)
 		print("[Client] Toggle Map - Not implemented yet")
 	end
 end)
+
+-- Fade out loading screen now that everything is ready
+loadingManager:fadeOut()
 
 print("[Client] Initialization complete - Input manager, combat controller, and equipment ready")

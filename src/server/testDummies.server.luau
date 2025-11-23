@@ -8,8 +8,8 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
 local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 
--- Wait for server to be ready
-task.wait(1)
+-- Wait for WCS server to be ready (wait for a remote that's created after Server:Start())
+ReplicatedStorage:WaitForChild("EquipWeapon", 30)
 
 print("[TestDummies] Initializing test dummies...")
 

@@ -52,40 +52,26 @@ function SprintManager.new()
 end
 
 function SprintManager:_initialize()
-	-- Wait for character
 	local player = Players.LocalPlayer
-	local character = player.Character or player.CharacterAdded:Wait()
 
-	-- Preload sprint animation
-	local humanoid = character:FindFirstChild("Humanoid")
-	if humanoid then
-		self.baseWalkSpeed = humanoid.WalkSpeed
-
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			local animation = Instance.new("Animation")
-			animation.AnimationId = SPRINT_ANIMATION_ID
-			self.loadedAnimation = animator:LoadAnimation(animation)
-		end
-
-		-- Monitor WalkSpeed changes to prevent animations/equipment from overriding sprint
-		humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-			if self.sprintActive then
-				-- Sprint is active - restore sprint speed if something changed it
-				local expectedSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
-				if math.abs(humanoid.WalkSpeed - expectedSpeed) > 0.1 then
-					-- Something else changed speed - restore sprint multiplier
-					task.defer(function()
-						humanoid.WalkSpeed = expectedSpeed
-						print(`[SprintManager] Sprint speed restored: {expectedSpeed}`)
-					end)
-				end
-			else
-				-- Not sprinting - track base speed changes
-				self.baseWalkSpeed = humanoid.WalkSpeed
-			end
-		end)
+	-- Setup character (current and future)
+	if player.Character then
+		self:_setupCharacter(player.Character)
 	end
+
+	-- Handle respawns - reinitialize for each new character
+	player.CharacterAdded:Connect(function(character)
+		-- Stop any active sprint from old character
+		self.sprintActive = false
+		self.loadedAnimation = nil
+		self.currentAnimTrack = nil
+
+		-- Wait for character to be fully loaded
+		character:WaitForChild("Humanoid", 10)
+
+		self:_setupCharacter(character)
+		print("[SprintManager] Reinitialized for new character")
+	end)
 
 	-- Setup double-tap detection
 	self:_setupDoubleTapDetection()
@@ -94,6 +80,47 @@ function SprintManager:_initialize()
 	self:_monitorSprint()
 
 	print("[SprintManager] Initialized")
+end
+
+-- Setup sprint for a specific character
+function SprintManager:_setupCharacter(character: Model)
+	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
+	if not humanoid then
+		warn("[SprintManager] Humanoid not found")
+		return
+	end
+
+	self.baseWalkSpeed = humanoid.WalkSpeed
+
+	-- Load sprint animation for this character's animator
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		local animation = Instance.new("Animation")
+		animation.AnimationId = SPRINT_ANIMATION_ID
+		self.loadedAnimation = animator:LoadAnimation(animation)
+		print("[SprintManager] Sprint animation loaded for character")
+	else
+		warn("[SprintManager] Animator not found")
+	end
+
+	-- Monitor WalkSpeed changes to prevent animations/equipment from overriding sprint
+	humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+		if self.sprintActive then
+			-- Sprint is active - restore sprint speed if something changed it
+			local expectedSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
+			if math.abs(humanoid.WalkSpeed - expectedSpeed) > 0.1 then
+				-- Something else changed speed - restore sprint multiplier
+				task.defer(function()
+					if humanoid and humanoid.Parent then
+						humanoid.WalkSpeed = expectedSpeed
+					end
+				end)
+			end
+		else
+			-- Not sprinting - track base speed changes
+			self.baseWalkSpeed = humanoid.WalkSpeed
+		end
+	end)
 end
 
 -- Setup double-tap detection for movement keys
