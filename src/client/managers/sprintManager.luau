@@ -14,7 +14,7 @@ local SprintManager = {}
 SprintManager.__index = SprintManager
 
 -- Configuration
-local SPRINT_SPEED_MULTIPLIER = 1.5 -- 150% of normal walk speed
+local SPRINT_SPEED_MULTIPLIER = 1.75 -- 175% of normal walk speed (16 -> 28)
 local DOUBLE_TAP_WINDOW = 0.4 -- Time window to detect double tap (seconds) - increased for better detection
 local MIN_SPRINT_VELOCITY = 3 -- Minimum velocity to maintain sprint - lowered for better fluidity
 local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after sprint starts
