@@ -79,8 +79,7 @@ function DoubleJumpManager:_setupCharacter(character: Model)
 				task.delay(0.15, function()
 					self.airJumpDebounce = false
 				end)
-				-- Play SFX for ground jump
-				self:_playJumpSFX(character)
+				-- Ground jump uses default Roblox jump sound, no custom SFX
 			end
 		elseif newState == Enum.HumanoidStateType.Freefall then
 			self.isGrounded = false
