@@ -10,7 +10,7 @@ local BlockVFXManager = {}
 BlockVFXManager.__index = BlockVFXManager
 
 -- Animation IDs
-local PARRIED_ANIMATION_ID = "rbxassetid://111980304628577"
+local PARRIED_ANIMATION_ID = "rbxassetid://120994424404934"
 
 function BlockVFXManager.new()
 	local self = setmetatable({}, BlockVFXManager)
@@ -220,23 +220,30 @@ function BlockVFXManager:playParriedAnimation(character: Model)
 	animation.AnimationId = PARRIED_ANIMATION_ID
 	local animTrack = animator:LoadAnimation(animation)
 
-	-- Stop any currently playing M1/attack animations immediately with zero weight
+	-- Stop only Action priority animations to prevent blending with parried anim
+	-- Leave Movement/Idle animations alone so legs keep animating
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		if track ~= animTrack then
 			local priority = track.Priority
-			-- Stop Action and Action2 priority animations (combat animations like M1)
-			if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
-				track:AdjustWeight(0, 0) -- Instant zero weight
-				track:Stop(0) -- Then stop
+			-- Only stop combat/action animations, not movement
+			if
+				priority == Enum.AnimationPriority.Action
+				or priority == Enum.AnimationPriority.Action2
+				or priority == Enum.AnimationPriority.Action3
+				or priority == Enum.AnimationPriority.Action4
+			then
+				track:AdjustSpeed(0) -- Freeze immediately
+				track:AdjustWeight(0, 0.1) -- Quick fade out
+				track:Stop(0.1) -- Quick stop
 			end
 		end
 	end
 
-	-- Configure and play
+	-- Configure and play with quick but visible transition
 	animTrack.Looped = false
 	animTrack.Priority = Enum.AnimationPriority.Action4 -- Higher priority to override any remaining animations
-	animTrack:Play(0) -- Instant start, no fade
-	--animTrack:AdjustWeight(2.5, 2)
+	animTrack:Play(0.1) -- Quick fade in - visible but fast
+	animTrack:AdjustWeight(1, 0.1) -- Quick weight ramp up
 
 	-- Protect the animation from being cancelled by stopping competing animations
 	local protectionActive = true
@@ -244,22 +251,29 @@ function BlockVFXManager:playParriedAnimation(character: Model)
 		if not protectionActive then
 			return
 		end
-		-- Stop any new Action/Action2 animations that try to play
+		-- Stop any new Action/Action2/Action3 animations that try to play
 		local priority = newTrack.Priority
-		if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
-			newTrack:AdjustWeight(0, 0) -- Instant zero weight
-			newTrack:Stop(0)
+		if
+			priority == Enum.AnimationPriority.Action
+			or priority == Enum.AnimationPriority.Action2
+			or priority == Enum.AnimationPriority.Action3
+		then
+			-- Multi-step instant kill approach
+			newTrack:AdjustSpeed(0) -- Freeze immediately
+			newTrack:AdjustWeight(0, 0.000000001) -- Instant zero weight
+			newTrack.TimePosition = newTrack.Length -- Jump to end
+			newTrack:Stop(0.000000001) -- Use tiny value for true instant stop
 		end
 	end)
 
 	-- Let the animation play fully, then clean up
-	task.delay(0.7, function()
+	task.delay(0.5, function()
 		protectionActive = false
 		if protectionConnection then
 			protectionConnection:Disconnect()
 		end
 		if animTrack then
-			animTrack:Stop(0.1)
+			animTrack:Stop(0.2)
 		end
 		if animation and animation.Parent then
 			animation:Destroy()
