@@ -1,5 +1,4 @@
 --!strict
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -18,28 +17,17 @@ local DOUBLE_JUMP_POWER = 85 -- Upward velocity for air jumps
 local JUMP_COOLDOWN = 0.1 -- Small cooldown to prevent spam
 
 -- Animation ID for air jump (flip/boost animation)
-local AIR_JUMP_ANIMATION = "rbxassetid://96765830085186" -- TODO: Replace with actual animation ID
+local AIR_JUMP_ANIMATION = "rbxassetid://96765830085186"
+
+-- Store connections and non-serializable data outside of self to avoid WCS sync issues
+-- Keyed by skill instance (not character) to prevent race conditions during moveset transitions
+local clientConnections: { [any]: { state: RBXScriptConnection?, jumpRequest: RBXScriptConnection? } } = {}
+local loadedAnimations: { [any]: AnimationTrack? } = {}
 
 function Jump:OnConstructServer()
 	-- Server tracks max jumps (can be upgraded via skills/perks)
 	self.maxJumps = DEFAULT_MAX_JUMPS
-	self.currentJumpCount = 0
-	self.serverStateConnection = nil
-
-	-- Track landing on server to reset jump count
-	local humanoid = self.Character.Instance:FindFirstChild("Humanoid") :: Humanoid?
-	if humanoid then
-		self.serverStateConnection = humanoid.StateChanged:Connect(function(_, newState)
-			if newState == Enum.HumanoidStateType.Landed then
-				self.currentJumpCount = 0
-			elseif newState == Enum.HumanoidStateType.Jumping then
-				-- Ground jump counts as jump 1
-				if self.currentJumpCount == 0 then
-					self.currentJumpCount = 1
-				end
-			end
-		end)
-	end
+	-- Server doesn't track jump count - relies on raycast validation in OnStartServer
 end
 
 function Jump:OnConstructClient()
@@ -47,18 +35,16 @@ function Jump:OnConstructClient()
 	self.currentJumpCount = 0
 	self.isGrounded = true
 	self.airJumpDebounce = false -- Prevents rapid multi-trigger from JumpRequest
-	self.stateConnection = nil
-	self.jumpRequestConnection = nil
-	self.loadedAnimation = nil
 
-	-- Preload air jump animation
-	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
+	-- Preload air jump animation (stored outside self to avoid sync issues)
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid")
 	if humanoid then
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if animator and AIR_JUMP_ANIMATION ~= "rbxassetid://0" then
 			local animation = Instance.new("Animation")
 			animation.AnimationId = AIR_JUMP_ANIMATION
-			self.loadedAnimation = animator:LoadAnimation(animation)
+			loadedAnimations[self] = animator:LoadAnimation(animation)
 		end
 	end
 
@@ -80,8 +66,11 @@ function Jump:_setupJumpSystem()
 		return
 	end
 
+	-- Initialize connections table for this skill instance
+	clientConnections[self] = {}
+
 	-- Track grounded state via Humanoid.StateChanged
-	self.stateConnection = humanoid.StateChanged:Connect(function(_, newState)
+	clientConnections[self].state = humanoid.StateChanged:Connect(function(_, newState)
 		if newState == Enum.HumanoidStateType.Landed then
 			-- Reset everything on landing
 			self.currentJumpCount = 0
@@ -107,7 +96,7 @@ function Jump:_setupJumpSystem()
 	end)
 
 	-- Listen for jump input to handle air jumps
-	self.jumpRequestConnection = UserInputService.JumpRequest:Connect(function()
+	clientConnections[self].jumpRequest = UserInputService.JumpRequest:Connect(function()
 		self:_handleJumpRequest()
 	end)
 
@@ -169,6 +158,7 @@ function Jump:OnStartServer()
 	end
 
 	-- Check if player is actually in the air (not grounded)
+	-- This is the primary validation - if they're on the ground, reject the air jump
 	local rayOrigin = humanoidRootPart.Position
 	local rayDirection = Vector3.new(0, -3.5, 0)
 	local raycastParams = RaycastParams.new()
@@ -177,15 +167,7 @@ function Jump:OnStartServer()
 
 	local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
 	if raycastResult then
-		-- Player is grounded, don't allow air jump (but don't spam log)
-		return
-	end
-
-	-- Increment server-side jump count
-	self.currentJumpCount = self.currentJumpCount + 1
-
-	-- Validate jump count
-	if self.currentJumpCount > self.maxJumps then
+		-- Player is grounded, don't allow air jump
 		return
 	end
 
@@ -193,10 +175,10 @@ function Jump:OnStartServer()
 	local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
 	humanoidRootPart.AssemblyLinearVelocity = Vector3.new(currentVelocity.X, DOUBLE_JUMP_POWER, currentVelocity.Z)
 
-	-- Apply cooldown
+	-- Apply cooldown to prevent spam
 	self:ApplyCooldown(JUMP_COOLDOWN)
 
-	print(`[Jump] Server: Air jump ({self.currentJumpCount}/{self.maxJumps})`)
+	print("[Jump] Server: Air jump performed")
 end
 
 function Jump:OnStartClient()
@@ -212,9 +194,10 @@ function Jump:OnStartClient()
 	end
 
 	-- Play animation
-	if self.loadedAnimation then
-		self.loadedAnimation:Play(0.05)
-		self.loadedAnimation.Priority = Enum.AnimationPriority.Action2
+	local animTrack = loadedAnimations[self]
+	if animTrack then
+		animTrack:Play(0.05)
+		animTrack.Priority = Enum.AnimationPriority.Action2
 	end
 
 	-- Play VFX
@@ -281,8 +264,6 @@ function Jump:_playJumpSFX()
 			soundClone:Destroy()
 		end
 	end)
-
-	print(`[Jump] Playing jump SFX: {randomSound.Name}`)
 end
 
 -- Play air jump VFX (only on air jumps, not ground jumps)
@@ -325,8 +306,6 @@ function Jump:_playAirJumpVFX()
 	local vfxClone = vfxAttachment:Clone()
 	vfxClone.Parent = hrp
 
-	print("[Jump] Cloned and parented jump VFX to HumanoidRootPart")
-
 	-- Emit particles based on each emitter's properties
 	local maxLifetime = 0
 	for _, child in ipairs(vfxClone:GetChildren()) do
@@ -341,8 +320,6 @@ function Jump:_playAirJumpVFX()
 			if lifetime > maxLifetime then
 				maxLifetime = lifetime
 			end
-
-			print(`[Jump] Emitted {emitCount} particles from {child.Name}`)
 		end
 	end
 
@@ -350,7 +327,6 @@ function Jump:_playAirJumpVFX()
 	task.delay(maxLifetime + 0.5, function()
 		if vfxClone and vfxClone.Parent then
 			vfxClone:Destroy()
-			print("[Jump] Destroyed jump VFX clone after fade")
 		end
 	end)
 end
@@ -374,24 +350,22 @@ function Jump:OnEndClient()
 	-- Nothing to clean up per-use
 end
 
--- Cleanup connections when character is destroyed
+-- Cleanup connections when skill is destroyed
 function Jump:Destroy()
-	if self.stateConnection then
-		self.stateConnection:Disconnect()
-		self.stateConnection = nil
+	-- Clean up client connections (keyed by self to avoid race conditions)
+	local clientConn = clientConnections[self]
+	if clientConn then
+		if clientConn.state then
+			clientConn.state:Disconnect()
+		end
+		if clientConn.jumpRequest then
+			clientConn.jumpRequest:Disconnect()
+		end
+		clientConnections[self] = nil
 	end
 
-	if self.jumpRequestConnection then
-		self.jumpRequestConnection:Disconnect()
-		self.jumpRequestConnection = nil
-	end
-
-	if self.serverStateConnection then
-		self.serverStateConnection:Disconnect()
-		self.serverStateConnection = nil
-	end
-
-	print("[Jump] Jump system cleaned up")
+	-- Clean up loaded animation
+	loadedAnimations[self] = nil
 end
 
 return Jump

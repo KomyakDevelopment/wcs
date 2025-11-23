@@ -51,8 +51,11 @@ function EquipmentManager:equip(weaponId: string): boolean
 
 	print(`[EquipmentManager] Equipping {weapon.Name} for {self.character.Instance.Name}`)
 
-	-- Apply weapon moveset (Unarmed includes Dodge, Punch, Block)
-	-- This replaces any existing moveset
+	-- Clear existing moveset first to ensure clean transition
+	-- This prevents conflicts when skills exist in multiple movesets
+	self.character:ClearMoveset()
+
+	-- Apply weapon moveset (Unarmed includes Dodge, Jump, Punch, Block)
 	self.character:ApplyMoveset(weapon.Moveset)
 
 	-- Play idle animation (server-side, replicates to all clients)

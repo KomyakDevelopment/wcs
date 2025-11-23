@@ -5,6 +5,6 @@ local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 
--- Unarmed moveset contains all combat skills including Dodge
--- When equipped, this replaces the Base moveset entirely
+-- Unarmed moveset contains combat skills
+-- Double jump is handled by DoubleJumpManager (independent of WCS)
 return WCS.CreateMoveset("Unarmed", { Dodge, Punch, Block })

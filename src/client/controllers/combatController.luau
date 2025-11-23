@@ -93,18 +93,15 @@ function CombatController:getBlockSkill()
 	return self._cachedBlockSkill
 end
 
--- Get dodge skill (cached for performance)
+-- Get dodge skill (fresh lookup to handle moveset changes)
 function CombatController:getDodgeSkill()
 	local character = self:getCharacter()
 	if not character then
 		return nil
 	end
 
-	if not self._cachedDodgeSkill then
-		self._cachedDodgeSkill = character:GetSkillFromConstructor(Dodge)
-	end
-
-	return self._cachedDodgeSkill
+	-- Always get fresh reference since moveset changes destroy/recreate skills
+	return character:GetSkillFromConstructor(Dodge)
 end
 
 -- Perform primary attack (M1)
