@@ -37,14 +37,14 @@ end
 
 -- Configuration
 local DEFAULT_MAX_POSTURE = 100
-local RECOVERY_DELAY = 1.0 -- Seconds before recovery starts
+local RECOVERY_DELAY = 3.0 -- Seconds before recovery starts
 local RECOVERY_RATE = 0.02 -- 2% of max per second
 local RECOVERY_RATE_BLOCKING = 0.01 -- 1% while blocking (50% slower)
 local GUARDBREAK_DURATION = 1.5
 
 -- Posture damage values (placeholders until stats system)
 local BLOCK_POSTURE_DAMAGE = 15 -- Per blocked M1
-local PARRY_POSTURE_REWARD = 20 -- Defender gains on successful parry (negative = reduction)
+local PARRY_POSTURE_MULTIPLIER = 1.15 -- Defender gains 115% of block damage on successful parry
 local PARRIED_POSTURE_DAMAGE = 30 -- Attacker loses when parried (capped at 99%)
 
 export type PostureData = {
@@ -325,7 +325,7 @@ function PostureManager.getBlockPostureDamage(): number
 end
 
 function PostureManager.getParryPostureReward(): number
-	return PARRY_POSTURE_REWARD
+	return BLOCK_POSTURE_DAMAGE * PARRY_POSTURE_MULTIPLIER
 end
 
 function PostureManager.getParriedPostureDamage(): number
