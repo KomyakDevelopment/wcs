@@ -10,6 +10,7 @@ local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
+local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 
 local Dodge = WCS.RegisterSkill("Dodge")
 
@@ -28,7 +29,7 @@ local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 to
 local AIR_DASH_DISTANCE = 17 -- Slightly shorter than ground dodge
 local AIR_DASH_DURATION = 0.285 -- Faster than ground dodge
 local AIR_DASH_HEIGHT_LOCK_TIME = 0.15 -- Time to keep height locked at start
-local AIR_DASH_ANIMATION = "rbxassetid://96765830085186" -- Different animation for air dash
+local AIR_DASH_ANIMATION = "rbxassetid://79892666286494" -- Different animation for air dash 96765830085186
 
 -- Iframes configuration
 local IFRAME_START = 0.05 -- Iframes start 0.05 seconds into dodge
@@ -97,9 +98,9 @@ function Dodge:OnConstructClient()
 end
 
 function Dodge:OnStartServer()
-	-- Check if player is in hitstun (soft or true)
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun }) then
-		print("[Dodge] Server: Cannot dodge - Player is in hitstun")
+	-- Check if player is in hitstun (soft or true) or guardbroken
+	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun }) then
+		print("[Dodge] Server: Cannot dodge - Player is in hitstun or guardbroken")
 		return
 	end
 
@@ -349,9 +350,9 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 end
 
 function Dodge:OnStartClient()
-	-- Check if player has any hitstun status effects active or is dashing
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing }) then
-		print("[Dodge] Client: Blocked - Player is in hitstun/stun/dashing")
+	-- Check if player has any hitstun status effects active, is guardbroken, or is dashing
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken }) then
+		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing")
 		return
 	end
 

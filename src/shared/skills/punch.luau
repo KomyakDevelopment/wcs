@@ -17,6 +17,7 @@ local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -136,9 +137,9 @@ function Punch:OnStartServer()
 		return
 	end
 
-	-- Check if player is in hitstun, dashing, or blocking/parrying
-	if self.Character.IsInHitstun or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying }) then
-		print("[Punch] Blocked - Player is in hitstun, dashing, or blocking/parrying")
+	-- Check if player is in hitstun, guardbroken, dashing, or blocking/parrying
+	if self.Character.IsInHitstun or self.Character.IsGuardbroken or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying }) then
+		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, or blocking/parrying")
 		return
 	end
 
@@ -266,8 +267,8 @@ function Punch:_restoreMovementAnimations()
 end
 
 function Punch:OnStartClient()
-	-- Check if player has any hitstun status effects active, is dashing, or is blocking/parrying
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying }) then
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or is blocking/parrying
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken }) then
 		return
 	end
 

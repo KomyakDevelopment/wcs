@@ -24,6 +24,7 @@ function BlockVFXManager.new()
 	self.blockAttachment = ReplicatedStorage.Assets.VFX.General_Combat.block.Attachment
 	self.parryAttachment = ReplicatedStorage.Assets.VFX.General_Combat.parry.Attachment
 	self.blockHighlight = ReplicatedStorage.Assets.VFX.General_Combat.block.Highlight
+	self.parryHighlight = ReplicatedStorage.Assets.VFX.General_Combat.parry.Highlight
 
 	-- SFX folder paths
 	self.blockSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.block
@@ -197,6 +198,9 @@ function BlockVFXManager:playParryVFX(character: Model)
 		warn(`[BlockVFXManager] Torso not found on {character.Name}`)
 	end
 
+	-- Play parry highlight outline effect
+	self:_playParryHighlight(character)
+
 	-- Play parry SFX
 	self:_playSFXFromFolder(self.parrySFXFolder, character)
 end
@@ -357,6 +361,56 @@ function BlockVFXManager:_playBlockHighlight(character: Model)
 	end)
 
 	print(`[BlockVFXManager] Playing block highlight for {character.Name}`)
+end
+
+-- Play parry highlight outline effect (flash on successful parry)
+function BlockVFXManager:_playParryHighlight(character: Model)
+	if not self.parryHighlight then
+		warn("[BlockVFXManager] Parry highlight template not found")
+		return
+	end
+
+	-- Clone the highlight and parent to character
+	local highlightClone = self.parryHighlight:Clone() :: Highlight
+	highlightClone.Parent = character
+	highlightClone.Adornee = character
+
+	-- Start fully transparent
+	highlightClone.FillTransparency = 1
+	highlightClone.OutlineTransparency = 1
+
+	-- Tween settings (same as block highlight)
+	local flashInTime = 0.08
+	local flashOutTime = 0.15
+
+	-- Tween in (flash visible)
+	local tweenInInfo = TweenInfo.new(flashInTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tweenIn = TweenService:Create(highlightClone, tweenInInfo, {
+		FillTransparency = 0.8,
+		OutlineTransparency = 0.9,
+	})
+
+	-- Tween out (fade back to invisible)
+	local tweenOutInfo = TweenInfo.new(flashOutTime, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	local tweenOut = TweenService:Create(highlightClone, tweenOutInfo, {
+		FillTransparency = 1,
+		OutlineTransparency = 1,
+	})
+
+	-- Play tween sequence
+	tweenIn:Play()
+	tweenIn.Completed:Once(function()
+		tweenOut:Play()
+	end)
+
+	-- Cleanup after tweens complete
+	tweenOut.Completed:Once(function()
+		if highlightClone and highlightClone.Parent then
+			highlightClone:Destroy()
+		end
+	end)
+
+	print(`[BlockVFXManager] Playing parry highlight for {character.Name}`)
 end
 
 -- Emit VFX at a specific attachment's location (parents to body part, positioned at attachment)

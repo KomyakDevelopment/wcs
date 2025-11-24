@@ -11,6 +11,9 @@ local Punch = require(ReplicatedStorage.Shared.skills.punch)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 
+-- Status effects for validation
+local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+
 local CombatController = {}
 CombatController.__index = CombatController
 
@@ -122,6 +125,13 @@ function CombatController:performPrimaryAttack()
 		return
 	end
 
+	-- Check if character is guardbroken (completely stunned)
+	local character = self:getCharacter()
+	if character and character:HasStatusEffects({ Guardbroken }) then
+		print("[CombatController] Cannot attack - Player is guardbroken")
+		return
+	end
+
 	-- Check if skill is on cooldown
 	local state = punchSkill:GetState()
 	if state.Debounce then
@@ -182,6 +192,13 @@ function CombatController:performDodge()
 	local dodgeSkill = self:getDodgeSkill()
 	if not dodgeSkill then
 		print("[CombatController] performDodge: No dodge skill found on character")
+		return
+	end
+
+	-- Check if character is guardbroken (completely stunned)
+	local character = self:getCharacter()
+	if character and character:HasStatusEffects({ Guardbroken }) then
+		print("[CombatController] Cannot dodge - Player is guardbroken")
 		return
 	end
 
