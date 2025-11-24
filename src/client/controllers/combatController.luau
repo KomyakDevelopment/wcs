@@ -220,6 +220,44 @@ function CombatController:performDodge()
 		self.sprintManager:stopSprint()
 	end
 
+	-- Send camera direction to server BEFORE starting skill (for airdash)
+	local player = game:GetService("Players").LocalPlayer
+	if player and player.Character then
+		local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+		local humanoid = player.Character:FindFirstChild("Humanoid")
+
+		if hrp and humanoid then
+			-- Check if in air (same logic as dodge skill)
+			local humanoidState = humanoid:GetState()
+			local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
+				or humanoidState == Enum.HumanoidStateType.Jumping
+
+			-- Also do raycast to check height
+			local rayOrigin = hrp.Position
+			local rayDirection = Vector3.new(0, -5, 0)
+			local raycastParams = RaycastParams.new()
+			raycastParams.FilterDescendantsInstances = { player.Character }
+			raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+			local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+			local isGroundedByRaycast = raycastResult ~= nil
+
+			local isGrounded = not isInAirState and isGroundedByRaycast
+
+			-- If in air, send camera direction to server NOW (before skill activation)
+			if not isGrounded then
+				local camera = workspace.CurrentCamera
+				if camera then
+					local cameraLook = camera.CFrame.LookVector
+					local airdashRemote = ReplicatedStorage:FindFirstChild("SetAirdashCamera")
+					if airdashRemote then
+						airdashRemote:FireServer(cameraLook)
+						print(`[CombatController] Sent camera direction to server for airdash: {cameraLook}`)
+					end
+				end
+			end
+		end
+	end
+
 	print("[CombatController] performDodge: Starting dodge skill")
 	-- Execute the dodge skill
 	dodgeSkill:Start()

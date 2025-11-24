@@ -22,18 +22,18 @@ Dodge.CheckOthersActive = false -- Don't check if other skills are active (we ha
 -- Configuration
 local DODGE_DISTANCE = 17 -- Studs to travel (slightly longer than 16)
 local DODGE_DURATION = 0.345 -- Seconds for dodge to complete (15% slower: 0.3 * 1.15 = 0.345)
-local DODGE_COOLDOWN = 1.5 -- Cooldown after dodge completes
+local DODGE_COOLDOWN = 1 -- Cooldown after dodge completes
 local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 total rolls)
 
 -- Air dash configuration
-local AIR_DASH_DISTANCE = 17 -- Slightly shorter than ground dodge
-local AIR_DASH_DURATION = 0.285 -- Faster than ground dodge
-local AIR_DASH_HEIGHT_LOCK_TIME = 0.15 -- Time to keep height locked at start
+local AIR_DASH_DISTANCE = 17 -- Same distance as ground dodge
+local AIR_DASH_DURATION = 0.295 -- Faster than ground dodge
 local AIR_DASH_ANIMATION = "rbxassetid://79892666286494" -- Different animation for air dash 96765830085186
+local AIR_DASH_Y_INFLUENCE = 0.3 -- How much camera pitch tilts the dash direction (0 = horizontal only, 1 = full camera direction)
 
 -- Iframes configuration
 local IFRAME_START = 0 -- Iframes start immediately when dodge begins
-local IFRAME_END = 0.45 -- Iframes end right before dodge completes
+local IFRAME_END = 0.55 -- Iframes end right before dodge completes (increased for better dodge window)
 
 -- Animation IDs for each direction
 local DODGE_ANIMATIONS = {
@@ -119,9 +119,9 @@ function Dodge:OnStartServer()
 	local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
 		or humanoidState == Enum.HumanoidStateType.Jumping
 
-	-- Also do a short raycast as backup check
+	-- Also do a short raycast as backup check (requires at least 5 studs height for airdash)
 	local rayOrigin = humanoidRootPart.Position
-	local rayDirection = Vector3.new(0, -3.5, 0) -- Slightly shorter to better detect air
+	local rayDirection = Vector3.new(0, -5, 0) -- Require 5 studs height minimum for airdash
 	local raycastParams = RaycastParams.new()
 	raycastParams.FilterDescendantsInstances = { character }
 	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -246,16 +246,17 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 	end
 
 	-- Calculate dash direction and strength - LOCKED at start (no control during air dash)
+	-- For air dash, use camera direction with Y-axis component
 	local dashStrength = AIR_DASH_DISTANCE / AIR_DASH_DURATION
-	local lockedDirection = self:_calculateDashDirection(humanoid, humanoidRootPart)
+	local lockedDirection = self:_calculateDashDirection(humanoid, humanoidRootPart, true) -- true = isAirDash
 	local rate = 0.0167
 
 	print(`[Dodge] Server: Starting air dash - Strength: {dashStrength}, Direction: {lockedDirection}`)
 
 	-- Create BodyVelocity for movement
 	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000) -- Include Y for height lock
-	bodyVelocity.P = 10000 -- Higher P value for more responsive velocity control
+	bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000) -- Control all 3 axes
+	bodyVelocity.P = 20000 -- Very high P value for aggressive velocity control (fights gravity)
 	bodyVelocity.Parent = humanoidRootPart
 
 	self.bodyVelocity = bodyVelocity
@@ -299,10 +300,15 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 		end)
 	end)
 
-	-- Apply velocity with locked direction
-	-- Use direct velocity control for more reliable air dash
+	-- Apply velocity with locked direction (camera-based 3D direction maintained throughout)
 	local elapsed = 0
-	local heightLockEnded = false
+
+	-- Control all 3 axes (X, Y, Z) to maintain camera-based direction
+	bodyVelocity.MaxForce = Vector3.new(100000, 100000, 100000)
+
+	-- Apply initial velocity in 3D to override current velocity
+	humanoidRootPart.AssemblyLinearVelocity = lockedDirection * dashStrength
+
 	while elapsed < AIR_DASH_DURATION do
 		if not self.dodgeActive then
 			-- Cancelled (landed or other reason)
@@ -318,33 +324,10 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 			speedMultiplier = 1 - (easeProgress * 0.175)
 		end
 
-		-- Calculate horizontal velocity
-		local horizontalVelocity = Vector3.new(
-			lockedDirection.X * dashStrength * speedMultiplier,
-			0,
-			lockedDirection.Z * dashStrength * speedMultiplier
-		)
+		-- Apply full 3D velocity to maintain camera-based direction
+		local dashVelocity = lockedDirection * dashStrength * speedMultiplier
 
-		-- Height lock for first 0.2 seconds
-		if elapsed < AIR_DASH_HEIGHT_LOCK_TIME then
-			-- During height lock: use direct velocity control to maintain height
-			-- Set Y velocity to 0 directly on the HumanoidRootPart
-			humanoidRootPart.AssemblyLinearVelocity = Vector3.new(
-				horizontalVelocity.X,
-				0, -- Lock Y velocity at 0
-				horizontalVelocity.Z
-			)
-			-- Also set BodyVelocity for smoother control
-			bodyVelocity.Velocity = Vector3.new(horizontalVelocity.X, 0, horizontalVelocity.Z)
-		else
-			-- After height lock, only apply horizontal velocity (let gravity work)
-			if not heightLockEnded then
-				heightLockEnded = true
-				bodyVelocity.MaxForce = Vector3.new(100000, 0, 100000)
-				print("[Dodge] Server: Air dash height lock ended, gravity enabled")
-			end
-			bodyVelocity.Velocity = horizontalVelocity
-		end
+		bodyVelocity.Velocity = dashVelocity
 
 		task.wait(rate)
 		elapsed = elapsed + rate
@@ -411,9 +394,9 @@ function Dodge:OnStartClient()
 		local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
 			or humanoidState == Enum.HumanoidStateType.Jumping
 
-		-- Also do raycast
+		-- Also do raycast (requires at least 5 studs height for airdash)
 		local rayOrigin = hrp.Position
-		local rayDirection = Vector3.new(0, -3.5, 0)
+		local rayDirection = Vector3.new(0, -5, 0) -- Require 5 studs height minimum for airdash
 		local raycastParams = RaycastParams.new()
 		raycastParams.FilterDescendantsInstances = { character }
 		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -426,6 +409,10 @@ function Dodge:OnStartClient()
 
 	self.isAirDash = not isGrounded
 	print(`[Dodge] Client: Air dash detection - IsAirDash: {self.isAirDash}`)
+
+	-- Camera direction is now stored in combatController BEFORE skill activation
+	-- This eliminates replication delay issues
+
 	local activeDuration = self.isAirDash and AIR_DASH_DURATION or DODGE_DURATION
 
 	if self.isAirDash then
@@ -491,58 +478,101 @@ function Dodge:OnStartClient()
 		end
 	end
 
-	-- Setup roll VFX
-	local rollVFXSource = ReplicatedStorage.Assets.VFX.Movement.roll.Attachment
-	if rollVFXSource and hrp then
-		-- CLONE the attachment so each client has their own copy
-		local rollVFXClone = rollVFXSource:Clone()
-		rollVFXClone.Parent = hrp
-		self.rollVFXAttachment = rollVFXClone
+	-- Setup VFX (different for ground dodge vs air dash)
+	if self.isAirDash then
+		-- Setup air dash VFX (emit once at start)
+		local airDashVFXSource = ReplicatedStorage.Assets.VFX.Movement.air_dash.smoke
+		if airDashVFXSource and hrp then
+			-- CLONE the attachment so each client has their own copy
+			local airDashVFXClone = airDashVFXSource:Clone()
+			airDashVFXClone.Parent = hrp
 
-		print("[Dodge] Client: Cloned and parented roll VFX to HumanoidRootPart")
+			print("[Dodge] Client: Cloned and parented air dash VFX to HumanoidRootPart")
 
-		-- Enable all ParticleEmitters
-		for _, child in ipairs(rollVFXClone:GetChildren()) do
-			if child:IsA("ParticleEmitter") then
-				child.Enabled = true
-				print(`[Dodge] Client: Enabled {child.Name} particle emitter`)
+			-- Emit particles once (burst emission at air dash start)
+			for _, child in ipairs(airDashVFXClone:GetChildren()) do
+				if child:IsA("ParticleEmitter") then
+					local emitCount = child:GetAttribute("EmitCount") or child.Rate
+					child:Emit(emitCount)
+					print(`[Dodge] Client: Emitted {emitCount} particles from {child.Name}`)
+				end
 			end
-		end
 
-		-- Schedule disabling emitters when dodge ends (let particles fade out naturally)
-		task.delay(activeDuration, function()
-			if rollVFXClone and rollVFXClone.Parent then
-				-- Disable emitters so they stop spawning new particles
-				for _, child in ipairs(rollVFXClone:GetChildren()) do
-					if child:IsA("ParticleEmitter") then
-						child.Enabled = false
+			-- Calculate max particle lifetime to know when to destroy
+			local maxLifetime = 0
+			for _, child in ipairs(airDashVFXClone:GetChildren()) do
+				if child:IsA("ParticleEmitter") then
+					local lifetime = child.Lifetime.Max
+					if lifetime > maxLifetime then
+						maxLifetime = lifetime
 					end
 				end
-				print("[Dodge] Client: Disabled roll VFX emitters (fading out)")
+			end
 
-				-- Calculate max particle lifetime to know when to destroy
-				local maxLifetime = 0
-				for _, child in ipairs(rollVFXClone:GetChildren()) do
-					if child:IsA("ParticleEmitter") then
-						local lifetime = child.Lifetime.Max
-						if lifetime > maxLifetime then
-							maxLifetime = lifetime
+			-- Destroy after all particles have faded out
+			task.delay(maxLifetime + 0.5, function()
+				if airDashVFXClone and airDashVFXClone.Parent then
+					airDashVFXClone:Destroy()
+					print("[Dodge] Client: Destroyed air dash VFX clone after fade")
+				end
+			end)
+		else
+			warn("[Dodge] Client: Air dash VFX attachment not found")
+		end
+	else
+		-- Setup roll VFX (ground dodge)
+		local rollVFXSource = ReplicatedStorage.Assets.VFX.Movement.roll.Attachment
+		if rollVFXSource and hrp then
+			-- CLONE the attachment so each client has their own copy
+			local rollVFXClone = rollVFXSource:Clone()
+			rollVFXClone.Parent = hrp
+			self.rollVFXAttachment = rollVFXClone
+
+			print("[Dodge] Client: Cloned and parented roll VFX to HumanoidRootPart")
+
+			-- Enable all ParticleEmitters
+			for _, child in ipairs(rollVFXClone:GetChildren()) do
+				if child:IsA("ParticleEmitter") then
+					child.Enabled = true
+					print(`[Dodge] Client: Enabled {child.Name} particle emitter`)
+				end
+			end
+
+			-- Schedule disabling emitters when dodge ends (let particles fade out naturally)
+			task.delay(activeDuration, function()
+				if rollVFXClone and rollVFXClone.Parent then
+					-- Disable emitters so they stop spawning new particles
+					for _, child in ipairs(rollVFXClone:GetChildren()) do
+						if child:IsA("ParticleEmitter") then
+							child.Enabled = false
 						end
 					end
-				end
+					print("[Dodge] Client: Disabled roll VFX emitters (fading out)")
 
-				-- Destroy after all particles have faded out
-				task.delay(maxLifetime + 0.5, function()
-					if rollVFXClone and rollVFXClone.Parent then
-						rollVFXClone:Destroy()
-						self.rollVFXAttachment = nil
-						print("[Dodge] Client: Destroyed roll VFX clone after fade")
+					-- Calculate max particle lifetime to know when to destroy
+					local maxLifetime = 0
+					for _, child in ipairs(rollVFXClone:GetChildren()) do
+						if child:IsA("ParticleEmitter") then
+							local lifetime = child.Lifetime.Max
+							if lifetime > maxLifetime then
+								maxLifetime = lifetime
+							end
+						end
 					end
-				end)
-			end
-		end)
-	else
-		warn("[Dodge] Client: Roll VFX attachment not found")
+
+					-- Destroy after all particles have faded out
+					task.delay(maxLifetime + 0.5, function()
+						if rollVFXClone and rollVFXClone.Parent then
+							rollVFXClone:Destroy()
+							self.rollVFXAttachment = nil
+							print("[Dodge] Client: Destroyed roll VFX clone after fade")
+						end
+					end)
+				end
+			end)
+		else
+			warn("[Dodge] Client: Roll VFX attachment not found")
+		end
 	end
 
 	-- Play appropriate SFX based on dodge type
@@ -743,9 +773,40 @@ function Dodge:_playRollCancelSFX()
 	print(`[Dodge] Playing rollcancel SFX: {randomSound.Name}`)
 end
 
--- Calculate dash direction using Humanoid.MoveDirection (industry standard)
-function Dodge:_calculateDashDirection(humanoid: Humanoid, hrp: BasePart): Vector3
-	-- Use MoveDirection for camera-relative directional dashing (like Deepwoken)
+-- Calculate dash direction using Humanoid.MoveDirection (industry standard) or camera for airdash
+function Dodge:_calculateDashDirection(humanoid: Humanoid, hrp: BasePart, isAirDash: boolean?): Vector3
+	-- For air dash, use camera direction only with Y-axis aiming
+	if isAirDash then
+		-- Get camera direction from server storage (sent via RemoteEvent)
+		local Players = game:GetService("Players")
+		local player = Players:GetPlayerFromCharacter(self.Character.Instance)
+
+		if player and _G.AirdashCameraStore then
+			local cameraLook = _G.AirdashCameraStore.get(player)
+
+			if cameraLook then
+				-- Lerp between horizontal direction and full camera direction
+				-- This preserves the tilt better than scaling Y directly
+				local horizontalDirection = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+				local fullCameraDirection = cameraLook
+
+				-- Blend based on influence: 0 = horizontal, 1 = full camera direction
+				local direction = horizontalDirection:Lerp(fullCameraDirection, AIR_DASH_Y_INFLUENCE)
+
+				print(
+					`[Dodge] Air dash direction - Camera Y: {cameraLook.Y}, Final Y: {direction.Y}, Direction: {direction}, Influence: {AIR_DASH_Y_INFLUENCE}`
+				)
+				return direction
+			end
+		end
+
+		-- Fallback to horizontal forward if camera direction not available
+		warn("[Dodge] Camera direction not available for air dash, using fallback")
+		local lookVector = hrp.CFrame.LookVector
+		return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+	end
+
+	-- Ground dodge: use MoveDirection for camera-relative directional dashing (like Deepwoken)
 	local moveDir = humanoid.MoveDirection
 
 	-- If not moving, use character's forward direction

@@ -6,6 +6,7 @@ local StunIndicatorManager = require(ReplicatedStorage.Shared.managers.stunIndic
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
 local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 local DeathManager = require(script.managers.deathManager)
+local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
 
@@ -55,6 +56,21 @@ rollCancelRemote.Parent = ReplicatedStorage
 local guardbreakRemote = Instance.new("RemoteEvent")
 guardbreakRemote.Name = "PlayGuardbreak"
 guardbreakRemote.Parent = ReplicatedStorage
+
+local airdashCameraRemote = Instance.new("RemoteEvent")
+airdashCameraRemote.Name = "SetAirdashCamera"
+airdashCameraRemote.Parent = ReplicatedStorage
+
+-- Expose AirdashCameraStore to dodge skill (shared module needs access)
+_G.AirdashCameraStore = AirdashCameraStore
+
+-- Handle airdash camera direction from client
+airdashCameraRemote.OnServerEvent:Connect(function(player, cameraDirection)
+	if typeof(cameraDirection) == "Vector3" then
+		AirdashCameraStore.set(player, cameraDirection)
+		print(`[Server] Stored airdash camera for {player.Name}: {cameraDirection}`)
+	end
+end)
 
 -- Initialize managers (after remotes are created)
 local stunIndicatorManager = StunIndicatorManager.new()

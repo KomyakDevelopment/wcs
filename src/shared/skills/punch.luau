@@ -62,10 +62,10 @@ local FLOURISH_KNOCKBACK_DURATION = 0.18
 
 -- Animation IDs for each combo phase
 local COMBO_ANIMATIONS = {
-	[1] = "rbxassetid://95618907841454",
-	[2] = "rbxassetid://126552545189412",
-	[3] = "rbxassetid://72345778790227",
-	[4] = "rbxassetid://139971702607493", -- Flourish uses 2_m1 temporarily
+	[1] = "rbxassetid://71814602910988",
+	[2] = "rbxassetid://83691540313756",
+	[3] = "rbxassetid://118980540226262",
+	[4] = "rbxassetid://128565870055276", -- Flourish uses 2_m1 temporarily
 }
 
 -- Damage delays for each combo phase (in seconds)
@@ -138,7 +138,11 @@ function Punch:OnStartServer()
 	end
 
 	-- Check if player is in hitstun, guardbroken, dashing, or blocking/parrying
-	if self.Character.IsInHitstun or self.Character.IsGuardbroken or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying }) then
+	if
+		self.Character.IsInHitstun
+		or self.Character.IsGuardbroken
+		or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying })
+	then
 		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, or blocking/parrying")
 		return
 	end
@@ -268,7 +272,9 @@ end
 
 function Punch:OnStartClient()
 	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or is blocking/parrying
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken }) then
+	if
+		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken })
+	then
 		return
 	end
 
