@@ -32,7 +32,7 @@ local AIR_DASH_HEIGHT_LOCK_TIME = 0.15 -- Time to keep height locked at start
 local AIR_DASH_ANIMATION = "rbxassetid://79892666286494" -- Different animation for air dash 96765830085186
 
 -- Iframes configuration
-local IFRAME_START = 0.05 -- Iframes start 0.05 seconds into dodge
+local IFRAME_START = 0 -- Iframes start immediately when dodge begins
 local IFRAME_END = 0.45 -- Iframes end right before dodge completes
 
 -- Animation IDs for each direction
@@ -169,19 +169,30 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 	self.bodyVelocity = bodyVelocity
 	self.dodgeActive = true
 
-	-- Schedule iframes to start after IFRAME_START delay
-	task.delay(IFRAME_START, function()
-		if not self.dodgeActive then
-			return -- Dodge was cancelled
-		end
-
+	-- Apply iframes immediately if IFRAME_START is 0, otherwise schedule for later
+	if IFRAME_START == 0 then
+		-- Immediate iframe application (no delay)
 		self.iframesEffect = Iframes.new(self.Character)
 		if self.iframesEffect then
 			local iframeDuration = IFRAME_END - IFRAME_START
 			self.iframesEffect:Start(iframeDuration)
-			print(`[Dodge] Server: Applied iframes for {iframeDuration}s`)
+			print(`[Dodge] Server: Applied iframes immediately for {iframeDuration}s`)
 		end
-	end)
+	else
+		-- Schedule iframes to start after IFRAME_START delay
+		task.delay(IFRAME_START, function()
+			if not self.dodgeActive then
+				return -- Dodge was cancelled
+			end
+
+			self.iframesEffect = Iframes.new(self.Character)
+			if self.iframesEffect then
+				local iframeDuration = IFRAME_END - IFRAME_START
+				self.iframesEffect:Start(iframeDuration)
+				print(`[Dodge] Server: Applied iframes for {iframeDuration}s`)
+			end
+		end)
+	end
 
 	-- Apply velocity with direction updates for control
 	local elapsed = 0
@@ -250,19 +261,30 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 	self.bodyVelocity = bodyVelocity
 	self.dodgeActive = true
 
-	-- Schedule iframes
-	task.delay(IFRAME_START, function()
-		if not self.dodgeActive then
-			return
-		end
-
+	-- Apply iframes immediately if IFRAME_START is 0, otherwise schedule for later
+	if IFRAME_START == 0 then
+		-- Immediate iframe application (no delay)
 		self.iframesEffect = Iframes.new(self.Character)
 		if self.iframesEffect then
 			local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
 			self.iframesEffect:Start(iframeDuration)
-			print(`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash)`)
+			print(`[Dodge] Server: Applied iframes immediately for {iframeDuration}s (air dash)`)
 		end
-	end)
+	else
+		-- Schedule iframes
+		task.delay(IFRAME_START, function()
+			if not self.dodgeActive then
+				return
+			end
+
+			self.iframesEffect = Iframes.new(self.Character)
+			if self.iframesEffect then
+				local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
+				self.iframesEffect:Start(iframeDuration)
+				print(`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash)`)
+			end
+		end)
+	end
 
 	-- Listen for landing to cancel air dash (with small delay to prevent false positives)
 	task.delay(0.05, function()

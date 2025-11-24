@@ -52,6 +52,10 @@ local rollCancelRemote = Instance.new("RemoteEvent")
 rollCancelRemote.Name = "PlayRollCancel"
 rollCancelRemote.Parent = ReplicatedStorage
 
+local guardbreakRemote = Instance.new("RemoteEvent")
+guardbreakRemote.Name = "PlayGuardbreak"
+guardbreakRemote.Parent = ReplicatedStorage
+
 -- Initialize managers (after remotes are created)
 local stunIndicatorManager = StunIndicatorManager.new()
 local postureManager = PostureManager.new()

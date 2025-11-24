@@ -22,7 +22,7 @@ Block.CheckOthersActive = false -- Don't check if other skills are active (we ha
 
 -- Configuration
 local BLOCK_STARTUP_TIME = 0.03 -- Windup before block becomes active
-local PARRY_WINDOW_DURATION = 0.35 -- Perfect parry window at start of block (0.2 * 1.35)
+local PARRY_WINDOW_DURATION = 0.2975 -- Perfect parry window at start of block (0.2 * 1.35)
 local BLOCK_COOLDOWN = 0.5 -- Cooldown after releasing block to prevent spam parrying
 
 -- Animation IDs

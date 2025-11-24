@@ -404,11 +404,24 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
 
-			-- Fire rollcancel effect on the target (plays cancel animation/sound)
+			-- End target's dodge skill (cancel the roll)
+			local targetDodgeSkill = targetWCSCharacter:GetSkillFromConstructor(Dodge)
+			if targetDodgeSkill then
+				local dodgeState = targetDodgeSkill:GetState()
+				if dodgeState.IsActive then
+					targetDodgeSkill:End()
+					print(`[Punch] Ended dodge skill for {targetModel.Name} - Rollcancel`)
+				end
+			end
+
+			-- Fire rollcancel effect on the target (plays cancel animation/sound/VFX)
 			local rollCancelRemote = ReplicatedStorage:FindFirstChild("PlayRollCancel")
 			if rollCancelRemote then
 				rollCancelRemote:FireAllClients(targetModel)
 			end
+
+			-- Cancel attacker's momentum and attack
+			self:_cancelAttackMomentum()
 
 			return false
 		end
@@ -858,6 +871,46 @@ function Punch:_playPredictedRollCancelSound(targetModel: Model)
 			soundClone:Destroy()
 		end
 	end)
+end
+
+-- Cancel attacker's momentum when hitting iframes (rollcancel punishment)
+function Punch:_cancelAttackMomentum()
+	if not RunService:IsServer() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	-- Cancel any velocity/momentum by removing BodyVelocity or similar movers
+	for _, child in ipairs(rootPart:GetChildren()) do
+		if child:IsA("BodyVelocity") or child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+			child:Destroy()
+		end
+	end
+
+	-- Reset velocity to zero
+	if rootPart:IsA("BasePart") then
+		rootPart.AssemblyLinearVelocity = Vector3.new(0, rootPart.AssemblyLinearVelocity.Y, 0)
+	end
+
+	-- End attacking status to allow dodging/movement
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+		self.attackingEffect = nil
+	end
+
+	-- Apply very brief stun (0.15s) to create a punish window
+	local stunEffect = Stun.new(self.Character)
+	if stunEffect then
+		stunEffect:Start(0.15)
+		print(`[Punch] Applied rollcancel stun (0.15s) to attacker {character.Name}`)
+	end
+
+	print(`[Punch] Cancelled attack momentum for {character.Name} - Hit iframes`)
 end
 
 return Punch

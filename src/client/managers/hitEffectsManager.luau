@@ -4,6 +4,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
 
 local HitEffectsManager = {}
 HitEffectsManager.__index = HitEffectsManager
@@ -179,6 +180,12 @@ function HitEffectsManager:playRollCancelEffects(targetModel: Model)
 
 	-- Play roll cancel animation
 	self:_playRollCancelAnimation(targetModel)
+
+	-- Play successful dodge VFX
+	self:_playSuccessfulDodgeVFX(targetModel)
+
+	-- Play successful dodge highlight
+	self:_playSuccessfulDodgeHighlight(targetModel)
 end
 
 -- Play roll cancel sound effect
@@ -233,15 +240,150 @@ function HitEffectsManager:_playRollCancelAnimation(targetModel: Model)
 		return
 	end
 
+	local hrp = targetModel:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not hrp then
+		return
+	end
+
 	-- Stop any current dodge/roll animations by stopping action-priority tracks
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		local priority = track.Priority
 		if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
-			track:Stop(0.1)
+			track:Stop(0.05)
 		end
 	end
 
-	print(`[HitEffectsManager] Roll cancel animation triggered for {targetModel.Name}`)
+	-- Determine rollcancel direction based on movement
+	local rollCancelAnimId = "rbxassetid://96765830085186" -- Default to right
+	local moveDir = humanoid.MoveDirection
+
+	if moveDir.Magnitude > 0.1 then
+		local lookVector = hrp.CFrame.LookVector
+		local rightVector = hrp.CFrame.RightVector
+
+		-- Project movement onto character's forward and right vectors
+		local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
+		local rightDot = moveDir:Dot(Vector3.new(rightVector.X, 0, rightVector.Z).Unit)
+
+		-- Determine primary direction
+		if math.abs(forwardDot) > math.abs(rightDot) then
+			-- Moving primarily forward/backward
+			if forwardDot > 0 then
+				rollCancelAnimId = "rbxassetid://96765830085186" -- Forward = right anim
+			else
+				rollCancelAnimId = "rbxassetid://135861148893814" -- Backward = left anim
+			end
+		else
+			-- Moving primarily left/right
+			if rightDot > 0 then
+				rollCancelAnimId = "rbxassetid://96765830085186" -- Right = right anim
+			else
+				rollCancelAnimId = "rbxassetid://135861148893814" -- Left = left anim
+			end
+		end
+	end
+
+	-- Play rollcancel animation with highest priority to prevent interruption
+	local rollCancelAnim = Instance.new("Animation")
+	rollCancelAnim.AnimationId = rollCancelAnimId
+	local rollCancelTrack = animator:LoadAnimation(rollCancelAnim)
+
+	-- Use Action4 priority (highest) to ensure it doesn't get interrupted
+	rollCancelTrack.Priority = Enum.AnimationPriority.Action4
+	rollCancelTrack:Play(0.05)
+
+	print(`[HitEffectsManager] Playing rollcancel animation ({rollCancelAnimId}) for {targetModel.Name}`)
+end
+
+-- Play successful dodge VFX particle effect
+function HitEffectsManager:_playSuccessfulDodgeVFX(targetModel: Model)
+	local rootPart = targetModel:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	-- Get successful dodge VFX template
+	local dodgeVFXPart = ReplicatedStorage.Assets.VFX.General_Combat.successful_dodge
+	if not dodgeVFXPart then
+		warn("[HitEffectsManager] Successful dodge VFX part not found")
+		return
+	end
+
+	local vfxAttachment = dodgeVFXPart:FindFirstChild("Attachment")
+	if not vfxAttachment then
+		warn("[HitEffectsManager] Successful dodge VFX attachment not found")
+		return
+	end
+
+	-- Clone attachment to player's root part
+	local attachmentClone = vfxAttachment:Clone()
+	attachmentClone.Parent = rootPart
+
+	-- Emit particles
+	for _, child in ipairs(attachmentClone:GetChildren()) do
+		if child:IsA("ParticleEmitter") then
+			child:Emit(child:GetAttribute("EmitCount") or child.Rate)
+		end
+	end
+
+	-- Clean up after particles finish
+	task.delay(3, function()
+		if attachmentClone and attachmentClone.Parent then
+			attachmentClone:Destroy()
+		end
+	end)
+
+	print(`[HitEffectsManager] Playing successful dodge VFX on {targetModel.Name}`)
+end
+
+-- Play successful dodge highlight effect
+function HitEffectsManager:_playSuccessfulDodgeHighlight(targetModel: Model)
+	-- Get highlight template
+	local dodgeVFXPart = ReplicatedStorage.Assets.VFX.General_Combat.successful_dodge
+	if not dodgeVFXPart then
+		warn("[HitEffectsManager] Successful dodge VFX part not found")
+		return
+	end
+
+	local highlightTemplate = dodgeVFXPart:FindFirstChild("Highlight")
+	if not highlightTemplate then
+		warn("[HitEffectsManager] Successful dodge highlight not found")
+		return
+	end
+
+	-- Clone highlight to character
+	local highlightClone = highlightTemplate:Clone() :: Highlight
+	highlightClone.Parent = targetModel
+	highlightClone.Adornee = targetModel
+	highlightClone.FillTransparency = 1
+	highlightClone.OutlineTransparency = 1
+
+	-- Tween to visible state
+	local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween = TweenService:Create(highlightClone, tweenInfo, {
+		FillTransparency = 0.8,
+		OutlineTransparency = 0.9,
+	})
+
+	tween:Play()
+
+	-- Fade out and cleanup
+	tween.Completed:Once(function()
+		task.wait(0.2) -- Hold the highlight briefly
+		local fadeOutInfo = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+		local fadeOut = TweenService:Create(highlightClone, fadeOutInfo, {
+			FillTransparency = 1,
+			OutlineTransparency = 1,
+		})
+		fadeOut:Play()
+		fadeOut.Completed:Once(function()
+			if highlightClone and highlightClone.Parent then
+				highlightClone:Destroy()
+			end
+		end)
+	end)
+
+	print(`[HitEffectsManager] Playing successful dodge highlight on {targetModel.Name}`)
 end
 
 return HitEffectsManager
