@@ -11,7 +11,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local Guardbroken = WCS.RegisterStatusEffect("Guardbroken")
 
 -- Configuration
-local GUARDBROKEN_ANIMATION_ID = "rbxassetid://120994424404934"
+local GUARDBROKEN_ANIMATION_ID = "rbxassetid://78365067000333"
 
 function Guardbroken:OnConstructServer()
 	-- Store reference to prevent duplicate guardbreaks

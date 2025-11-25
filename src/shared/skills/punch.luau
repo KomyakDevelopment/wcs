@@ -617,6 +617,18 @@ end
 
 -- Handle successful block (not a parry)
 function Punch:_handleBlock(defenderWCSCharacter)
+	-- Apply posture damage to defender for blocking FIRST (to check for guardbreak)
+	local postureManager = getPostureManager()
+	postureManager.addPosture(defenderWCSCharacter.Instance, postureManager.getBlockPostureDamage())
+
+	-- Check if this block resulted in a guardbreak
+	if defenderWCSCharacter.IsGuardbroken then
+		print(`[Punch] Defender {defenderWCSCharacter.Instance.Name} guardbroken - Skipping block VFX (only guardbreak VFX will play)`)
+		-- Don't play block VFX or block stun - guardbreak handles everything
+		return
+	end
+
+	-- Normal block (no guardbreak) - apply block effects
 	-- Apply BlockStunned status to defender for 0.1s
 	local blockStunnedEffect = BlockStunned.new(defenderWCSCharacter)
 	if blockStunnedEffect then
@@ -630,15 +642,11 @@ function Punch:_handleBlock(defenderWCSCharacter)
 		blockHitAnimRemote:FireAllClients(defenderWCSCharacter.Instance)
 	end
 
-	-- Fire block hit VFX event
+	-- Fire block hit VFX event (only if not guardbroken)
 	local blockHitVFXRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitVFX")
 	if blockHitVFXRemote then
 		blockHitVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
 	end
-
-	-- Apply posture damage to defender for blocking
-	local postureManager = getPostureManager()
-	postureManager.addPosture(defenderWCSCharacter.Instance, postureManager.getBlockPostureDamage())
 end
 
 -- Apply fists trail VFX to specific arm based on combo phase (client-only)
