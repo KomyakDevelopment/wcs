@@ -23,6 +23,8 @@ function Attacking:OnStartServer()
 		local reducedSpeed = humanoid.WalkSpeed * ATTACK_SPEED_MULTIPLIER
 		self:SetHumanoidData({
 			WalkSpeed = { reducedSpeed, "Set" },
+			JumpPower = { 0, "Set" },
+			JumpHeight = { 0, "Set" },
 		})
 	end
 end

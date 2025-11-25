@@ -1,9 +1,8 @@
 --!strict
 -- Posture UI Manager
--- Client-side manager that updates the posture UI based on character attributes
+-- Client-side manager that updates the posture bar based on character attributes
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 
 local PostureUIManager = {}
 PostureUIManager.__index = PostureUIManager
@@ -12,7 +11,8 @@ function PostureUIManager.new()
 	local self = setmetatable({}, PostureUIManager)
 
 	self.player = Players.LocalPlayer
-	self.postureLabel = nil
+	self.postureBar = nil
+	self.posturePercentageLabel = nil
 	self.attributeConnection = nil
 	self.characterConnection = nil
 
@@ -23,18 +23,25 @@ function PostureUIManager.new()
 end
 
 function PostureUIManager:_setup()
-	-- Find the placeholder UI
+	-- Find the posture bar UI
 	local playerGui = self.player:WaitForChild("PlayerGui")
-	local testingGui = playerGui:WaitForChild("Testing", 5)
-	if testingGui then
-		local frame = testingGui:FindFirstChild("Frame")
-		if frame then
-			self.postureLabel = frame:FindFirstChild("Posture")
+	local mainGui = playerGui:WaitForChild("Main", 5)
+	if mainGui then
+		local postureGUI = mainGui:FindFirstChild("PostureGUI")
+		if postureGUI then
+			local posture = postureGUI:FindFirstChild("Posture")
+			if posture then
+				self.postureBar = posture:FindFirstChild("Bar")
+				self.posturePercentageLabel = posture:FindFirstChild("Percentage")
+			end
 		end
 	end
 
-	if not self.postureLabel then
-		warn("[PostureUIManager] Posture label not found at StarterGui.Testing.Frame.Posture")
+	if not self.postureBar then
+		warn("[PostureUIManager] Posture bar not found at StarterGui.Main.PostureGUI.Posture.Bar")
+	end
+	if not self.posturePercentageLabel then
+		warn("[PostureUIManager] Posture percentage label not found at StarterGui.Main.PostureGUI.Posture.Percentage")
 	end
 
 	-- Setup for current character
@@ -87,15 +94,22 @@ function PostureUIManager:_setupCharacter(character: Model)
 end
 
 function PostureUIManager:_updateUI(character: Model)
-	if not self.postureLabel then
-		return
+	local posture = (character:GetAttribute("Posture") or 0) :: number
+	local maxPosture = (character:GetAttribute("MaxPosture") or 100) :: number
+
+	-- Calculate percentage (0 to 1)
+	local percentage = posture / maxPosture
+
+	-- Update the bar size (only X size, keep Y at {1, 0})
+	if self.postureBar then
+		self.postureBar.Size = UDim2.fromScale(percentage, 1)
 	end
 
-	local posture = character:GetAttribute("Posture") or 0
-	local maxPosture = character:GetAttribute("MaxPosture") or 100
-
-	-- Update the text label
-	self.postureLabel.Text = string.format("P: %d/%d", math.floor(posture), math.floor(maxPosture))
+	-- Update percentage text (e.g., "58%")
+	if self.posturePercentageLabel then
+		local percentageText = math.floor(percentage * 100)
+		self.posturePercentageLabel.Text = `{percentageText}%`
+	end
 end
 
 function PostureUIManager:destroy()

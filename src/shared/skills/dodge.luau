@@ -196,6 +196,7 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 
 	-- Apply velocity with direction updates for control
 	local elapsed = 0
+
 	while elapsed < DODGE_DURATION do
 		if not self.dodgeActive then
 			-- Cancelled early
@@ -216,6 +217,17 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 		end
 
 		bodyVelocity.Velocity = direction * dashStrength * speedMultiplier
+
+		-- Check for wall collision (velocity suddenly drops)
+		local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
+		local expectedSpeed = dashStrength * speedMultiplier
+
+		-- If actual speed is much lower than expected, we hit a wall
+		if currentVelocity.Magnitude < expectedSpeed * 0.3 and elapsed > 0.1 then
+			print("[Dodge] Wall collision detected - Stopping dodge")
+			self.dodgeActive = false
+			break
+		end
 
 		task.wait(rate)
 		elapsed = elapsed + rate
@@ -328,6 +340,17 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 		local dashVelocity = lockedDirection * dashStrength * speedMultiplier
 
 		bodyVelocity.Velocity = dashVelocity
+
+		-- Check for wall collision (velocity suddenly drops)
+		local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
+		local expectedSpeed = dashStrength * speedMultiplier
+
+		-- If actual speed is much lower than expected, we hit a wall
+		if currentVelocity.Magnitude < expectedSpeed * 0.3 and elapsed > 0.1 then
+			print("[Dodge] Air dash wall collision detected - Stopping dash")
+			self.dodgeActive = false
+			break
+		end
 
 		task.wait(rate)
 		elapsed = elapsed + rate
