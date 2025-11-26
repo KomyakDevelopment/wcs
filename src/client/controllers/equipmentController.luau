@@ -1,6 +1,6 @@
 --!strict
 -- Equipment Controller (Client)
--- Handles weapon selection, equip/unequip logic with fixed 2-slot hotbar
+-- Handles weapon selection, equip/unequip logic with dynamic 2-slot hotbar
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,12 +13,6 @@ EquipmentController.__index = EquipmentController
 -- Remote events for equip requests (will be created by server)
 local EquipRemote: RemoteEvent
 local ToggleWeaponInHandRemote: RemoteEvent
-
--- Fixed slot definitions (slot 1 = fists, slot 2 = kunai)
-local SLOT_WEAPONS = {
-	[1] = "fists",
-	[2] = "kunai",
-}
 
 -- Track which weapons are physical (have a model that needs to be in hand)
 local PHYSICAL_WEAPONS = {
@@ -34,7 +28,6 @@ function EquipmentController.new()
 
 	-- Track selected slot and equipped state
 	self.selectedSlot = nil :: number? -- Currently selected hotbar slot (waiting for confirm)
-	self.equippedSlot = nil :: number? -- Currently equipped slot
 	self.equipped = nil :: string? -- Currently equipped weapon ID
 	self.weaponInHand = false -- Is weapon in hand (for physical weapons)
 
@@ -51,7 +44,6 @@ function EquipmentController.new()
 	player.CharacterAdded:Connect(function()
 		self.equipped = nil
 		self.selectedSlot = nil
-		self.equippedSlot = nil
 		self.weaponInHand = false
 
 		-- Reset UI
@@ -66,86 +58,119 @@ function EquipmentController.new()
 end
 
 -- Select a hotbar slot
--- If slot is already equipped: toggle draw/sheath for physical weapons
--- If slot is different: select it for equipping via M1
+-- If slot is already selected: unselect it (toggle off, sheath physical weapon)
+-- Otherwise: select the slot (draw physical weapon if equipped)
 function EquipmentController:selectSlot(slotNumber: number)
-	local slotWeapon = SLOT_WEAPONS[slotNumber]
+	local slotWeapon = self.hotbarUI:getSlotWeapon(slotNumber)
 
 	if not slotWeapon then
 		print(`[EquipmentController] Slot {slotNumber} is empty`)
 		return
 	end
 
-	-- Check if this slot is already equipped
-	if self.equippedSlot == slotNumber then
-		-- Same weapon equipped - toggle draw/sheath for physical weapons
-		if PHYSICAL_WEAPONS[slotWeapon] then
-			self:toggleWeaponInHand()
-			-- Update UI to show drawn/sheathed state
-			self.hotbarUI:updateSlot(slotNumber, "equipped", self.weaponInHand)
-			return
+	-- Check if this slot is already selected - toggle it off
+	if self.hotbarUI:isSlotSelected(slotNumber) then
+		self.hotbarUI:updateSlot(slotNumber, "none")
+		self.selectedSlot = nil
+
+		-- For physical weapons that are equipped, sheath (put back on back)
+		if self.equipped == slotWeapon and PHYSICAL_WEAPONS[slotWeapon] and self.weaponInHand then
+			self.weaponInHand = false
+			if ToggleWeaponInHandRemote then
+				ToggleWeaponInHandRemote:FireServer()
+			end
 		end
-		-- Non-physical weapons (fists) - already equipped, nothing to do
-		print(`[EquipmentController] {slotWeapon} already equipped`)
+
+		print(`[EquipmentController] Unselected slot {slotNumber}`)
 		return
 	end
 
-	-- Different slot - clear previous selection and select this one
+	-- Clear previous selection if any (and sheath previous weapon if physical)
 	if self.selectedSlot and self.selectedSlot ~= slotNumber then
-		-- Clear old selection visual (unless it's the equipped slot)
-		if self.selectedSlot ~= self.equippedSlot then
-			self.hotbarUI:updateSlot(self.selectedSlot, "none")
-		else
-			self.hotbarUI:updateSlot(self.selectedSlot, "equipped", self.weaponInHand)
+		local prevWeapon = self.hotbarUI:getSlotWeapon(self.selectedSlot)
+		-- Sheath previous physical weapon if it was in hand
+		if self.equipped == prevWeapon and PHYSICAL_WEAPONS[prevWeapon] and self.weaponInHand then
+			self.weaponInHand = false
+			if ToggleWeaponInHandRemote then
+				ToggleWeaponInHandRemote:FireServer()
+			end
 		end
+		self.hotbarUI:updateSlot(self.selectedSlot, "none")
 	end
 
+	-- Select this slot
 	self.selectedSlot = slotNumber
 	self.hotbarUI:updateSlot(slotNumber, "selected")
+
+	-- If this weapon is already equipped and physical, draw it (put in hand)
+	if self.equipped == slotWeapon and PHYSICAL_WEAPONS[slotWeapon] and not self.weaponInHand then
+		self.weaponInHand = true
+		if ToggleWeaponInHandRemote then
+			ToggleWeaponInHandRemote:FireServer()
+		end
+	end
 
 	print(`[EquipmentController] Selected slot {slotNumber} ({slotWeapon})`)
 end
 
 -- Confirm action: equip weapon from selected slot
-function EquipmentController:confirmAction()
+-- Returns true if weapon was just equipped, false if already equipped or nothing to do
+function EquipmentController:confirmAction(): boolean
+	-- Don't process M1 as equipment confirm if clicking on hotbar
+	if self.hotbarUI:isMouseOverHotbar() then
+		return false
+	end
+
 	if not EquipRemote then
 		warn("[EquipmentController] EquipWeapon remote not found")
-		return
+		return false
 	end
 
 	if not self.selectedSlot then
-		return -- No slot selected, nothing to confirm
+		return false -- No slot selected, nothing to confirm
 	end
 
-	local weaponId = SLOT_WEAPONS[self.selectedSlot]
+	local weaponId = self.hotbarUI:getSlotWeapon(self.selectedSlot)
 	if not weaponId then
-		self.selectedSlot = nil
-		return
+		return false
 	end
 
-	-- Clear old equipped slot visual
-	if self.equippedSlot and self.equippedSlot ~= self.selectedSlot then
-		self.hotbarUI:updateSlot(self.equippedSlot, "none")
+	-- If weapon already equipped, nothing to do (keep selection, allow attack)
+	if self.equipped == weaponId then
+		return false
 	end
 
-	-- Equip the weapon from the selected slot
-	print(`[EquipmentController] Equipping from slot {self.selectedSlot}: {weaponId}`)
+	-- Clear selection on old slot before moving
+	self.hotbarUI:updateSlot(self.selectedSlot, "none")
+
+	-- Move the weapon to slot 1 (swaps with whatever was there)
+	self.hotbarUI:moveWeaponToFirstSlot(weaponId)
+
+	-- Move selection to slot 1 (where the weapon now is)
+	self.selectedSlot = 1
+	self.hotbarUI:updateSlot(1, "selected")
+
+	-- Equip the weapon
+	print(`[EquipmentController] Equipping: {weaponId}`)
 	EquipRemote:FireServer(weaponId)
 	self.equipped = weaponId
-	self.equippedSlot = self.selectedSlot
 
-	-- Physical weapons start on back (not in hand)
-	-- Fists are always "in hand"
+	-- All weapons are ready to use immediately after equipping
+	-- Physical weapons: put in hand right away so player can attack
 	if PHYSICAL_WEAPONS[weaponId] then
-		self.weaponInHand = false
+		self.weaponInHand = true
+		-- Tell server to draw weapon into hand
+		if ToggleWeaponInHandRemote then
+			ToggleWeaponInHandRemote:FireServer()
+		end
 	else
 		self.weaponInHand = true
 	end
 
-	-- Update UI to show equipped state
-	self.hotbarUI:updateSlot(self.equippedSlot, "equipped", self.weaponInHand)
+	-- Keep selection frame visible (don't clear selection)
+	-- Player must click slot again to unselect
 
-	self.selectedSlot = nil -- Clear selection after equipping
+	return true
 end
 
 -- Get currently selected slot
@@ -165,7 +190,7 @@ end
 
 -- Get weapon assigned to a slot
 function EquipmentController:getSlotWeapon(slotNumber: number): string?
-	return SLOT_WEAPONS[slotNumber]
+	return self.hotbarUI:getSlotWeapon(slotNumber)
 end
 
 -- Toggle weapon in hand (for physical weapons)

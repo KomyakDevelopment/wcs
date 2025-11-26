@@ -133,14 +133,18 @@ end
 
 -- Perform primary attack (M1)
 function CombatController:performPrimaryAttack()
-	-- Check if player has a slot selected (waiting to confirm equip)
-	-- IMPORTANT: Check this BEFORE canceling sprint
+	-- If slot is selected, ensure equipment is ready first
 	if self.equipmentController and self.equipmentController:getSelectedSlot() then
-		-- Confirm the equip action (uses weapon from selected slot's inventory)
-		self.equipmentController:confirmAction()
+		-- Confirm equipment if needed (equips weapon, puts in hand, keeps selection)
+		-- Returns true if weapon was just equipped, false if already equipped
+		local justEquipped = self.equipmentController:confirmAction()
 
-		-- Don't cancel sprint or perform attack when confirming equipment
-		return
+		-- If we just equipped, moveset change is async - skills might not be ready yet
+		-- Continue to attack anyway - if skills aren't ready, attack will fail silently
+		if justEquipped and self.sprintManager then
+			self.sprintManager:stopSprint()
+		end
+		-- Continue to attack (don't return early)
 	end
 
 	-- Check if player has equipment equipped
