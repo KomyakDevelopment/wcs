@@ -18,6 +18,7 @@ local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -404,9 +405,27 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		return false
 	end
 
+	-- Track if target was in failed parry window or startup (for failed parry punishment)
+	local inFailedParryWindow = false
+
 	-- Check if target has iframes (invincibility)
 	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
+		-- Check if target is in failed parry window or startup phase (block skill active but no Parrying/Blocking status)
+		local targetBlockSkill = targetWCSCharacter:GetSkillFromConstructor(Block)
+		if targetBlockSkill then
+			local blockState = targetBlockSkill:GetState()
+			if blockState.IsActive then
+				-- Block skill is active - check if they're in the failed parry window or startup
+				local hasParryingOrBlocking = targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry, Blocking })
+				if not hasParryingOrBlocking then
+					-- They're holding block but have no parrying/blocking status = failed parry window OR startup
+					inFailedParryWindow = true
+					print(`[Punch] Target {targetModel.Name} is in failed parry window or startup phase!`)
+				end
+			end
+		end
+
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Punch] Target {targetModel.Name} has iframes - No damage`)
 
@@ -447,8 +466,8 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 				self:_handleBlock(targetWCSCharacter)
 				return false
 			else
-				print(`[Punch] Target {targetModel.Name} tried to block but wasn't facing attacker!`)
-				-- Fall through to damage
+				print(`[Punch] Target {targetModel.Name} tried to block but wasn't facing attacker`)
+				-- Fall through to damage (but no shakyblock - they're in blocking phase)
 			end
 		end
 	end
@@ -472,6 +491,17 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			print(`[Punch] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
 		else
 			warn(`[Punch] Failed to create SoftHitstun for {targetModel.Name}`)
+		end
+
+		-- Apply Shakyblock if target was in failed parry window (failed parry punishment)
+		if inFailedParryWindow then
+			local shakyblock = Shakyblock.new(targetWCSCharacter)
+			if shakyblock then
+				shakyblock:Start(0.8)
+				print(`[Punch] Applied Shakyblock (0.8s) to {targetModel.Name} - Failed parry punishment`)
+			else
+				warn(`[Punch] Failed to create Shakyblock for {targetModel.Name}`)
+			end
 		end
 
 		-- Cancel target's M1 if they were attacking (M1 cancellation on hit)
@@ -623,7 +653,9 @@ function Punch:_handleBlock(defenderWCSCharacter)
 
 	-- Check if this block resulted in a guardbreak
 	if defenderWCSCharacter.IsGuardbroken then
-		print(`[Punch] Defender {defenderWCSCharacter.Instance.Name} guardbroken - Skipping block VFX (only guardbreak VFX will play)`)
+		print(
+			`[Punch] Defender {defenderWCSCharacter.Instance.Name} guardbroken - Skipping block VFX (only guardbreak VFX will play)`
+		)
 		-- Don't play block VFX or block stun - guardbreak handles everything
 		return
 	end

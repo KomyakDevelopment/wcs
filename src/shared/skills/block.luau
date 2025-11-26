@@ -12,6 +12,7 @@ local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 
 local Block = WCS.RegisterSkill("Block")
@@ -126,12 +127,17 @@ function Block:OnStartServer()
 
 	print("[Block] Server: Weapon equipped, proceeding with block")
 
-	-- Check if parry is on cooldown (block is still allowed, just no parry window)
+	-- Check if parry is on cooldown or shakyblock is active (block is still allowed, just no parry window)
 	local currentTime = tick()
+	local hasShakyblock = self.Character:HasStatusEffects({ Shakyblock })
+
 	if currentTime - self.lastBlockEndTime < BLOCK_COOLDOWN then
 		local remainingCooldown = BLOCK_COOLDOWN - (currentTime - self.lastBlockEndTime)
 		self.parryOnCooldown = true
 		print(`[Block] Server: Parry on cooldown ({string.format("%.2f", remainingCooldown)}s remaining) - Block only`)
+	elseif hasShakyblock then
+		self.parryOnCooldown = true
+		print(`[Block] Server: Shakyblock active - Parrying disabled, block only`)
 	else
 		self.parryOnCooldown = false
 	end
@@ -164,16 +170,10 @@ function Block:OnStartServer()
 		end
 
 		self.startupComplete = true
-		print("[Block] Server: Startup complete - Block now active")
+		print("[Block] Server: Startup complete - Parry window starting")
 
-		-- Apply Blocking status effect
-		self.blockingEffect = Blocking.new(self.Character)
-		if self.blockingEffect then
-			self.blockingEffect:Start(-1) -- Infinite duration until cancelled
-			print("[Block] Server: Applied Blocking status")
-		end
-
-		-- Apply Parrying status effect for parry window (only if not on cooldown)
+		-- Apply ONLY Parrying status effect during parry window (only if not on cooldown)
+		-- Blocking status comes later after failed parry window
 		if not self.parryOnCooldown then
 			self.parryingEffect = Parrying.new(self.Character)
 			if self.parryingEffect then
@@ -182,6 +182,24 @@ function Block:OnStartServer()
 			end
 		else
 			print("[Block] Server: Skipping parry window - On cooldown")
+		end
+	end)
+
+	-- Apply Blocking status after failed parry window expires (0.5s total)
+	-- 0.03s startup + 0.2975s parry + 0.1725s failed parry window = 0.5s
+	local FAILED_PARRY_WINDOW = 0.1725
+	local blockingStartDelay = BLOCK_STARTUP_TIME + PARRY_WINDOW_DURATION + FAILED_PARRY_WINDOW
+
+	task.delay(blockingStartDelay, function()
+		if not self.blockActive then
+			return -- Block was cancelled before blocking phase
+		end
+
+		-- Apply Blocking status effect (infinite duration until cancelled)
+		self.blockingEffect = Blocking.new(self.Character)
+		if self.blockingEffect then
+			self.blockingEffect:Start(-1)
+			print("[Block] Server: Applied Blocking status (after failed parry window)")
 		end
 	end)
 
@@ -195,12 +213,17 @@ function Block:OnStartServer()
 end
 
 function Block:OnStartClient()
-	-- Check if parry is on cooldown (block is still allowed, just no parry window)
+	-- Check if parry is on cooldown or shakyblock is active (block is still allowed, just no parry window)
 	local currentTime = tick()
+	local hasShakyblock = self.Character:HasStatusEffects({ Shakyblock })
+
 	if currentTime - self.lastBlockEndTime < BLOCK_COOLDOWN then
 		local remainingCooldown = BLOCK_COOLDOWN - (currentTime - self.lastBlockEndTime)
 		self.parryOnCooldown = true
 		print(`[Block] Client: Parry on cooldown ({string.format("%.2f", remainingCooldown)}s remaining) - Block only`)
+	elseif hasShakyblock then
+		self.parryOnCooldown = true
+		print(`[Block] Client: Shakyblock active - Parrying disabled, block only`)
 	else
 		self.parryOnCooldown = false
 	end
