@@ -23,17 +23,20 @@ export type EquipmentManager = typeof(setmetatable(
 
 -- Equipment definitions
 -- Physical weapons have ModelPath for the weapon model location
+-- CriticalSkill defines which heavy attack skill this weapon uses
 local EQUIPMENT = {
 	fists = {
 		Name = "Fists",
 		IdleAnimationIds = { 115261994832101, 118333310231162 },
 		Moveset = "Unarmed",
+		CriticalSkill = "HeavyPunch", -- Heavy attack for fists
 		IsPhysical = false, -- Fists don't have a physical model
 	},
 	kunai = {
 		Name = "Kunai",
 		IdleAnimationIds = { 115261994832101, 114255160039855 }, -- torso, hands
 		Moveset = "Armed",
+		CriticalSkill = "HeavySlash", -- Heavy attack for light weapons
 		IsPhysical = true,
 		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Light_Weapons.Kunai", -- Path to weapon folder
 		BackAttachment = "Torso", -- Where to attach when on back
@@ -421,6 +424,18 @@ function EquipmentManager:getWeaponDefinition(weaponId: string?)
 	return EQUIPMENT[id]
 end
 
+-- Get the critical skill name for the currently equipped weapon
+function EquipmentManager:getCriticalSkill(): string?
+	if not self.equipped then
+		return nil
+	end
+	local weapon = EQUIPMENT[self.equipped]
+	if not weapon then
+		return nil
+	end
+	return weapon.CriticalSkill
+end
+
 -- Get all available weapon IDs
 function EquipmentManager.getAvailableWeapons(): { string }
 	local weapons = {}
@@ -428,6 +443,15 @@ function EquipmentManager.getAvailableWeapons(): { string }
 		table.insert(weapons, weaponId)
 	end
 	return weapons
+end
+
+-- Static: Get the critical skill name for a given weapon ID (callable from client)
+function EquipmentManager.getCriticalSkillForWeapon(weaponId: string): string?
+	local weapon = EQUIPMENT[weaponId]
+	if not weapon then
+		return nil
+	end
+	return weapon.CriticalSkill
 end
 
 -- Internal: Play idle animation (server-side, replicates to clients)

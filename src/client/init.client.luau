@@ -86,6 +86,12 @@ inputManager:bindAction("Combat.Dodge", function(actionName, state, input)
 	end
 end)
 
+inputManager:bindAction("Combat.CriticalAttack", function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		combatController:performCriticalAttack()
+	end
+end)
+
 -- Bind hotbar slots (1 = fists, 2 = kunai)
 inputManager:bindAction(`Abilities.Ability1`, function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then

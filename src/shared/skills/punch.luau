@@ -138,8 +138,8 @@ function Punch:OnStartServer()
 		return
 	end
 
-	-- Check if player is in hitstun, guardbroken, dashing, or blocking/parrying
-	-- Use HasStatusEffects to avoid flag race conditions between status effects
+	-- Check if player is in hitstun, guardbroken, dashing, blocking/parrying, or already attacking
+	-- Attacking check prevents move stacking with heavy attacks
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -149,9 +149,10 @@ function Punch:OnStartServer()
 			Dashing,
 			Blocking,
 			Parrying,
+			Attacking, -- Prevents stacking M1 with heavy attack
 		})
 	then
-		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, or blocking/parrying")
+		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, or attacking")
 		return
 	end
 
@@ -279,9 +280,10 @@ function Punch:_restoreMovementAnimations()
 end
 
 function Punch:OnStartClient()
-	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or is blocking/parrying
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, blocking/parrying, or attacking
+	-- Attacking check prevents move stacking with heavy attacks
 	if
-		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken })
+		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken, Attacking })
 	then
 		return
 	end

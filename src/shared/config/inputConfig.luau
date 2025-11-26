@@ -26,6 +26,11 @@ InputConfig.Combat = {
 		KeyCode = Enum.KeyCode.Q,
 		Description = "Dodge roll",
 	},
+	CriticalAttack = {
+		InputType = Enum.UserInputType.Keyboard,
+		KeyCode = Enum.KeyCode.R,
+		Description = "Critical attack (R)",
+	},
 }
 
 -- Movement Actions

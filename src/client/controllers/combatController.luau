@@ -11,9 +11,22 @@ local Punch = require(ReplicatedStorage.Shared.skills.punch)
 local Slash = require(ReplicatedStorage.Shared.skills.slash)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Block = require(ReplicatedStorage.Shared.skills.block)
+local HeavyPunch = require(ReplicatedStorage.Shared.skills.heavyPunch)
+local HeavySlash = require(ReplicatedStorage.Shared.skills.heavySlash)
+
+-- Equipment manager for looking up weapon configs
+local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
 
 -- Status effects for validation
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+
+-- Lookup table: maps CriticalSkill names to their constructors
+-- Add new heavy attacks here when creating them
+local CRITICAL_SKILLS = {
+	HeavyPunch = HeavyPunch,
+	HeavySlash = HeavySlash,
+	-- Future: HeavyGreatswordSpin = HeavyGreatswordSpin,
+}
 
 local CombatController = {}
 CombatController.__index = CombatController
@@ -129,6 +142,39 @@ function CombatController:getDodgeSkill()
 
 	-- Always get fresh reference since moveset changes destroy/recreate skills
 	return character:GetSkillFromConstructor(Dodge)
+end
+
+-- Get heavy attack skill based on equipped weapon's CriticalSkill config
+function CombatController:getHeavyAttackSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	if not self.equipmentController then
+		return nil
+	end
+
+	local equipped = self.equipmentController:getEquipped()
+	if not equipped then
+		return nil
+	end
+
+	-- Look up which critical skill this weapon uses from equipment config
+	local criticalSkillName = EquipmentManager.getCriticalSkillForWeapon(equipped)
+	if not criticalSkillName then
+		warn(`[CombatController] No CriticalSkill defined for weapon: {equipped}`)
+		return nil
+	end
+
+	-- Get the skill constructor from lookup table
+	local skillConstructor = CRITICAL_SKILLS[criticalSkillName]
+	if not skillConstructor then
+		warn(`[CombatController] Unknown CriticalSkill: {criticalSkillName} (add it to CRITICAL_SKILLS table)`)
+		return nil
+	end
+
+	return character:GetSkillFromConstructor(skillConstructor)
 end
 
 -- Perform primary attack (M1)
@@ -300,6 +346,52 @@ function CombatController:performDodge()
 	print("[CombatController] performDodge: Starting dodge skill")
 	-- Execute the dodge skill
 	dodgeSkill:Start()
+end
+
+-- Perform heavy attack (R key)
+function CombatController:performCriticalAttack()
+	-- Check if player has equipment equipped
+	if not self.equipmentController or not self.equipmentController:getEquipped() then
+		print("[CombatController] Cannot heavy attack - No weapon equipped")
+		return
+	end
+
+	-- For weapons (not fists), check if weapon is in hand
+	local equipped = self.equipmentController:getEquipped()
+	if equipped and equipped ~= "fists" and not self.equipmentController:isWeaponInHand() then
+		print("[CombatController] Cannot heavy attack - Weapon not in hand (press slot key to draw)")
+		return
+	end
+
+	-- Get the appropriate heavy attack skill (HeavyPunch for fists, HeavySlash for weapons)
+	local heavySkill = self:getHeavyAttackSkill()
+	if not heavySkill then
+		print("[CombatController] performCriticalAttack: No heavy attack skill found on character")
+		return
+	end
+
+	-- Check if character is guardbroken
+	local character = self:getCharacter()
+	if character and character:HasStatusEffects({ Guardbroken }) then
+		print("[CombatController] Cannot heavy attack - Player is guardbroken")
+		return
+	end
+
+	-- Check if skill is on cooldown
+	local state = heavySkill:GetState()
+	if state.Debounce then
+		print("[CombatController] performCriticalAttack: Heavy attack is on cooldown")
+		return
+	end
+
+	-- Cancel sprint if active
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
+	end
+
+	print("[CombatController] performCriticalAttack: Starting heavy attack!")
+	-- Execute the heavy attack skill
+	heavySkill:Start()
 end
 
 -- Use ability from hotbar slot
