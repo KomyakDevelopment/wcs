@@ -61,6 +61,9 @@ InputConfig.Abilities = {
 	},
 }
 
+-- Equipment Actions (reserved for future use)
+InputConfig.Equipment = {}
+
 -- UI Actions
 InputConfig.UI = {
 	ToggleInventory = {

@@ -86,15 +86,21 @@ inputManager:bindAction("Combat.Dodge", function(actionName, state, input)
 	end
 end)
 
--- Bind ability hotkeys (slot 1 now SELECTS fists, M1 to confirm)
+-- Bind hotbar slots (1 = fists, 2 = kunai)
 inputManager:bindAction(`Abilities.Ability1`, function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
 		equipmentController:selectSlot(1)
 	end
 end)
 
--- Slots 2-4 for future abilities
-for i = 2, 4 do
+inputManager:bindAction(`Abilities.Ability2`, function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		equipmentController:selectSlot(2)
+	end
+end)
+
+-- Slots 3-4 for future abilities
+for i = 3, 4 do
 	inputManager:bindAction(`Abilities.Ability{i}`, function(actionName, state, input)
 		if state == Enum.UserInputState.Begin then
 			combatController:useAbility(i)

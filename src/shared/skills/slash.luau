@@ -1,0 +1,1020 @@
+--!strict
+local ContentProvider = game:GetService("ContentProvider")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local WCS = require(ReplicatedStorage.Packages.wcs)
+
+-- Pre-cache status effects and skills at module load (avoid require() in hot paths)
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
+local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
+local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
+local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
+local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
+
+-- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
+local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
+local Block = require(ReplicatedStorage.Shared.skills.block)
+
+-- Posture system (lazy loaded to avoid circular dependencies)
+local PostureManager = nil
+local function getPostureManager()
+	if not PostureManager then
+		PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
+	end
+	return PostureManager
+end
+
+local Slash = WCS.RegisterSkill("Slash")
+
+-- WCS Client Prediction Configuration
+-- These settings make the skill feel responsive by not waiting for server validation
+Slash.CheckClientState = false -- Don't wait for server to validate before playing client effects
+Slash.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
+
+-- Configuration
+local SLASH_DAMAGE = 12 -- Slightly higher than fists
+local SLASH_RANGE = 11 -- Slightly longer range than fists
+local SLASH_COOLDOWN = 0.6
+
+-- Hitbox configuration
+local HIT_ANGLE_THRESHOLD = 0.3 -- Dot product threshold for hit detection (~72 degrees in front)
+local BLOCK_ANGLE_THRESHOLD = 0 -- 180 degree block arc (90 degrees each side)
+
+-- Hitstun duration for weapon attacks
+local SOFT_HITSTUN_DURATION = 0.65
+local FLOURISH_SELF_HITSTUN_DURATION = 0.5 -- Recovery time after landing flourish
+
+-- Combo system configuration
+local COMBO_RESET_TIME = 2.0 -- Time before combo resets to phase 1
+local MAX_COMBO_PHASE = 4 -- Total combo phases (1, 2, 3, flourish)
+
+-- Knockback configuration for flourish
+local FLOURISH_KNOCKBACK_POWER = 60
+local FLOURISH_KNOCKBACK_DURATION = 0.2
+
+-- Animation IDs for each combo phase (same as punch for now)
+local COMBO_ANIMATIONS = {
+	[1] = "rbxassetid://71814602910988",
+	[2] = "rbxassetid://83691540313756",
+	[3] = "rbxassetid://118980540226262",
+	[4] = "rbxassetid://128565870055276", -- Flourish
+}
+
+-- Damage delays for each combo phase (in seconds)
+-- Synced to when the weapon connects in each animation
+local DAMAGE_DELAYS = {
+	[1] = 0.38,
+	[2] = 0.38,
+	[3] = 0.38,
+	[4] = 0.48, -- Flourish takes slightly longer
+}
+
+function Slash:OnConstructServer()
+	-- Setup server-side skill data
+	self.hitTargets = {}
+	self.comboPhase = 1
+	self.comboResetTimer = nil
+	self.currentAttackPhase = 1 -- Track which phase is currently executing
+	self.attackingEffect = nil
+end
+
+function Slash:OnConstructClient()
+	-- Setup client-side skill data
+	self.comboPhase = 1
+	self.comboResetTimer = nil
+	self.loadedAnimations = {}
+	self.animationsReady = false
+
+	-- Preload all combo animations
+	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
+	if humanoid then
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			-- Create animation instances first
+			local animationInstances = {}
+			for phase, animId in pairs(COMBO_ANIMATIONS) do
+				local animation = Instance.new("Animation")
+				animation.AnimationId = animId
+				animationInstances[phase] = animation
+				-- Load into animator
+				self.loadedAnimations[phase] = animator:LoadAnimation(animation)
+			end
+
+			-- Mark as ready immediately (LoadAnimation is synchronous)
+			self.animationsReady = true
+
+			-- Preload in background via ContentProvider for smoother first play
+			task.spawn(function()
+				local animsToPreload = {}
+				for _, anim in pairs(animationInstances) do
+					table.insert(animsToPreload, anim)
+				end
+				ContentProvider:PreloadAsync(animsToPreload)
+				print("[Slash] Client: Animations preloaded via ContentProvider")
+			end)
+		end
+	end
+end
+
+function Slash:OnStartServer()
+	-- Check if player has equipment manager
+	if not self.Character.EquipmentManager then
+		warn("[Slash] No equipment manager found")
+		return
+	end
+
+	-- Check if player has a weapon equipped
+	if not self.Character.EquipmentManager:hasWeaponEquipped() then
+		print("[Slash] Blocked - No weapon equipped")
+		return
+	end
+
+	-- Check if weapon is in hand (not just on back)
+	if not self.Character.EquipmentManager:isWeaponInHand() then
+		print("[Slash] Blocked - Weapon not in hand")
+		return
+	end
+
+	-- Check if player is in hitstun, guardbroken, dashing, or blocking/parrying
+	-- Use HasStatusEffects to avoid flag race conditions between status effects
+	if
+		self.Character:HasStatusEffects({
+			SoftHitstun,
+			TrueHitstun,
+			Stun,
+			Guardbroken,
+			Dashing,
+			Blocking,
+			Parrying,
+		})
+	then
+		print("[Slash] Blocked - Player is in hitstun, guardbroken, dashing, or blocking/parrying")
+		return
+	end
+
+	-- Store the current attack phase before advancing
+	self.currentAttackPhase = self.comboPhase
+
+	print(`[Slash] Server: Slash activated - Phase {self.currentAttackPhase}`)
+
+	-- Apply cooldown
+	self:ApplyCooldown(SLASH_COOLDOWN)
+
+	-- Apply Attacking status effect FIRST (prevents dodging and slows movement during attack)
+	-- This MUST be applied before parry flash remote so clients can validate the status
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+	end
+	self.attackingEffect = Attacking.new(self.Character)
+	if self.attackingEffect then
+		-- Duration matches the damage delay (when attack animation is active)
+		local attackDuration = DAMAGE_DELAYS[self.currentAttackPhase] or 0.4
+		self.attackingEffect:Start(attackDuration)
+		print(`[Slash] Applied Attacking status for {attackDuration}s`)
+	end
+
+	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
+	-- NOTE: This is sent AFTER Attacking status is applied so clients can validate
+	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
+	if parryFlashRemote then
+		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase)
+		print(`[Slash] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}`)
+	end
+
+	-- Perform hitbox detection with delay based on animation timing
+	local damageDelay = DAMAGE_DELAYS[self.currentAttackPhase] or 0.1
+	task.delay(damageDelay, function()
+		self:_detectHit()
+	end)
+
+	-- Reset combo timer
+	if self.comboResetTimer then
+		task.cancel(self.comboResetTimer)
+	end
+
+	-- Advance combo phase for next attack
+	if self.comboPhase < MAX_COMBO_PHASE then
+		self.comboPhase = self.comboPhase + 1
+	else
+		self.comboPhase = 1 -- Reset to phase 1 after flourish
+	end
+
+	-- Set timer to reset combo if no input
+	self.comboResetTimer = task.delay(COMBO_RESET_TIME, function()
+		self.comboPhase = 1
+		print("[Slash] Combo reset to phase 1")
+	end)
+end
+
+-- Animation IDs that should be stopped when slashing (movement animations)
+local MOVEMENT_ANIMATION_IDS = {
+	["rbxassetid://104453488066690"] = true, -- Sprint animation
+}
+
+-- Walking animation speed multiplier during slash
+local WALK_ANIM_SPEED_DURING_SLASH = 0.5 -- 50% speed
+
+-- Stop sprint and slow walking animations during slash
+function Slash:_stopMovementAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Store original walk animation speeds for restoration later
+	self.originalWalkAnimSpeeds = self.originalWalkAnimSpeeds or {}
+
+	-- Process all playing animations
+	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+		if track.Animation then
+			local animId = track.Animation.AnimationId
+			-- Stop sprint animation completely
+			if MOVEMENT_ANIMATION_IDS[animId] then
+				track:Stop(0.1)
+			end
+		end
+
+		-- Slow down core movement animations (walk/run) by checking priority
+		if track.Priority == Enum.AnimationPriority.Core or track.Priority == Enum.AnimationPriority.Movement then
+			if not self.originalWalkAnimSpeeds[track] then
+				self.originalWalkAnimSpeeds[track] = track.Speed
+			end
+			track:AdjustSpeed(WALK_ANIM_SPEED_DURING_SLASH)
+		end
+	end
+end
+
+-- Restore walking animation speeds after slash
+function Slash:_restoreMovementAnimations()
+	if not RunService:IsClient() then
+		return
+	end
+
+	if not self.originalWalkAnimSpeeds then
+		return
+	end
+
+	-- Restore original speeds for all tracked animations
+	for track, originalSpeed in pairs(self.originalWalkAnimSpeeds) do
+		if track and track.IsPlaying then
+			track:AdjustSpeed(originalSpeed)
+		end
+	end
+
+	-- Clear the stored speeds
+	self.originalWalkAnimSpeeds = {}
+end
+
+function Slash:OnStartClient()
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or is blocking/parrying
+	if
+		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken })
+	then
+		return
+	end
+
+	-- Store current phase before advancing
+	local currentPhase = self.comboPhase
+
+	-- PRIORITY: Play animation FIRST for immediate visual feedback
+	local animTrack = self.loadedAnimations[currentPhase]
+	if animTrack then
+		animTrack:Play(0.05)
+		animTrack.Priority = Enum.AnimationPriority.Action4
+	end
+
+	-- Reset combo timer
+	if self.comboResetTimer then
+		task.cancel(self.comboResetTimer)
+	end
+
+	-- Stop any other slash animations that might be playing
+	for phase, track in pairs(self.loadedAnimations) do
+		if track and track.IsPlaying and phase ~= currentPhase then
+			track:Stop(0.05)
+		end
+	end
+
+	-- Stop movement animations (after slash anim starts)
+	self:_stopMovementAnimations()
+
+	-- Stop rollcancel animation if playing
+	local dodgeSkill = self.Character:GetSkillFromConstructor(Dodge)
+	if dodgeSkill and dodgeSkill.rollCancelTrack and dodgeSkill.rollCancelTrack.IsPlaying then
+		dodgeSkill.rollCancelTrack:Stop(0.05)
+		dodgeSkill.rollCancelTrack = nil
+	end
+
+	-- Apply VFX and SFX
+	if animTrack then
+		self:_applyWeaponTrail(animTrack, currentPhase)
+		self:_playSwingSFX(animTrack)
+	end
+
+	-- Client-side prediction: check for nearby targets with iframes and play rollcancel immediately
+	self:_predictRollCancel()
+
+	-- Advance combo phase
+	if self.comboPhase < MAX_COMBO_PHASE then
+		self.comboPhase = self.comboPhase + 1
+	else
+		self.comboPhase = 1
+	end
+
+	-- Set timer to reset combo
+	self.comboResetTimer = task.delay(COMBO_RESET_TIME, function()
+		self.comboPhase = 1
+	end)
+end
+
+-- Server-only hitbox detection
+function Slash:_detectHit()
+	if not RunService:IsServer() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+
+	if not humanoidRootPart then
+		warn("[Slash] HumanoidRootPart not found")
+		return
+	end
+
+	-- Get all potential targets in range
+	-- Origin is slightly behind the player so targets standing inside you still get hit
+	local lookDirection = humanoidRootPart.CFrame.LookVector
+	local origin = humanoidRootPart.Position - (lookDirection * 2)
+	local hitTargets = {}
+
+	-- Find all characters in workspace
+	for _, potentialTarget in ipairs(workspace:GetChildren()) do
+		if potentialTarget:IsA("Model") and potentialTarget ~= character then
+			local targetHumanoid = potentialTarget:FindFirstChild("Humanoid")
+			local targetRootPart = potentialTarget:FindFirstChild("HumanoidRootPart")
+
+			if targetHumanoid and targetHumanoid.Health > 0 and targetRootPart then
+				-- Check if target is in range
+				local distance = (targetRootPart.Position - origin).Magnitude
+
+				if distance <= SLASH_RANGE then
+					-- Check if target is in front of attacker
+					local directionToTarget = (targetRootPart.Position - origin).Unit
+					local dotProduct = lookDirection:Dot(directionToTarget)
+
+					-- Check if target is within attack cone
+					if dotProduct > HIT_ANGLE_THRESHOLD then
+						table.insert(hitTargets, { model = potentialTarget, humanoid = targetHumanoid })
+					end
+				end
+			end
+		end
+	end
+
+	-- Process all hit targets and collect actual hits (not blocked/parried)
+	local actualHits = {}
+	for _, targetData in ipairs(hitTargets) do
+		local hitResult = self:_hitTarget(targetData.model, targetData.humanoid)
+		-- hitResult will be true if it was a real hit, false if blocked/parried/iframed
+		if hitResult then
+			table.insert(actualHits, targetData)
+		end
+	end
+
+	-- Fire hit effects ONCE if any actual hits occurred (not blocked/parried)
+	if #actualHits > 0 then
+		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		if hitEffectsRemote then
+			-- Get the current weapon type for hit effects
+			local weaponType = self:_getCurrentWeaponType()
+			hitEffectsRemote:FireAllClients(actualHits[1].model, weaponType)
+		end
+	end
+end
+
+-- Get the current weapon type from equipment manager
+function Slash:_getCurrentWeaponType(): string
+	if self.Character.EquipmentManager then
+		local equipped = self.Character.EquipmentManager:getEquipped()
+		if equipped then
+			return equipped
+		end
+	end
+	return "kunai" -- Default to kunai
+end
+
+-- Apply damage to a target
+-- Returns true if it was a real hit, false if blocked/parried/iframed
+function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
+	-- Check if we already hit this target (prevent double-hitting)
+	if self.hitTargets[targetModel] then
+		return false
+	end
+
+	-- Track if target was in failed parry window or startup (for failed parry punishment)
+	local inFailedParryWindow = false
+
+	-- Check if target has iframes (invincibility)
+	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
+	if targetWCSCharacter then
+		-- Check if target is in failed parry window or startup phase (block skill active but no Parrying/Blocking status)
+		local targetBlockSkill = targetWCSCharacter:GetSkillFromConstructor(Block)
+		if targetBlockSkill then
+			local blockState = targetBlockSkill:GetState()
+			if blockState.IsActive then
+				-- Block skill is active - check if they're in the failed parry window or startup
+				local hasParryingOrBlocking = targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry, Blocking })
+				if not hasParryingOrBlocking then
+					-- They're holding block but have no parrying/blocking status = failed parry window OR startup
+					inFailedParryWindow = true
+					print(`[Slash] Target {targetModel.Name} is in failed parry window or startup phase!`)
+				end
+			end
+		end
+
+		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
+			print(`[Slash] Target {targetModel.Name} has iframes - No damage`)
+
+			-- End target's dodge skill (cancel the roll)
+			local targetDodgeSkill = targetWCSCharacter:GetSkillFromConstructor(Dodge)
+			if targetDodgeSkill then
+				local dodgeState = targetDodgeSkill:GetState()
+				if dodgeState.IsActive then
+					targetDodgeSkill:End()
+					print(`[Slash] Ended dodge skill for {targetModel.Name} - Rollcancel`)
+				end
+			end
+
+			-- Fire rollcancel effect on the target (plays cancel animation/sound/VFX)
+			local rollCancelRemote = ReplicatedStorage:FindFirstChild("PlayRollCancel")
+			if rollCancelRemote then
+				rollCancelRemote:FireAllClients(targetModel)
+			end
+
+			-- Cancel attacker's momentum and attack
+			self:_cancelAttackMomentum()
+
+			return false
+		end
+
+		-- Check for parry (Parrying or Autoparry status) - 360 degrees, no facing requirement
+		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
+			print(`[Slash] Target {targetModel.Name} PARRIED the attack!`)
+			self:_handleParry(targetWCSCharacter)
+			return false
+		end
+
+		-- Check for block (Blocking status but NOT parrying) - requires facing attacker
+		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
+			local defenderFacingAttacker = self:_isDefenderFacingAttacker(targetModel)
+			if defenderFacingAttacker then
+				print(`[Slash] Target {targetModel.Name} blocked the attack`)
+				self:_handleBlock(targetWCSCharacter)
+				return false
+			else
+				print(`[Slash] Target {targetModel.Name} tried to block but wasn't facing attacker`)
+				-- Fall through to damage (but no shakyblock - they're in blocking phase)
+			end
+		end
+	end
+
+	self.hitTargets[targetModel] = true
+
+	print(`[Slash] Hit target: {targetModel.Name} - Phase {self.currentAttackPhase}`)
+
+	-- Apply damage
+	targetHumanoid:TakeDamage(SLASH_DAMAGE)
+
+	-- Apply soft hitstun to the target (if they have WCS character)
+	if not targetWCSCharacter then
+		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
+	end
+	if targetWCSCharacter then
+		local hitstun = SoftHitstun.new(targetWCSCharacter)
+		if hitstun then
+			-- Start with duration per WCS docs (will refresh if already active)
+			hitstun:Start(SOFT_HITSTUN_DURATION)
+			print(`[Slash] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
+		else
+			warn(`[Slash] Failed to create SoftHitstun for {targetModel.Name}`)
+		end
+
+		-- Apply Shakyblock if target was in failed parry window (failed parry punishment)
+		if inFailedParryWindow then
+			local shakyblock = Shakyblock.new(targetWCSCharacter)
+			if shakyblock then
+				shakyblock:Start(0.8)
+				print(`[Slash] Applied Shakyblock (0.8s) to {targetModel.Name} - Failed parry punishment`)
+			else
+				warn(`[Slash] Failed to create Shakyblock for {targetModel.Name}`)
+			end
+		end
+
+		-- Cancel target's attack if they were attacking (attack cancellation on hit)
+		local Slash_ref = require(ReplicatedStorage.Shared.skills.slash)
+		local targetSlashSkill = targetWCSCharacter:GetSkillFromConstructor(Slash_ref)
+		if targetSlashSkill then
+			local slashState = targetSlashSkill:GetState()
+			if slashState.IsActive then
+				targetSlashSkill:End()
+				print(`[Slash] Cancelled {targetModel.Name}'s Slash - Got hit`)
+			end
+		end
+	else
+		warn(`[Slash] No WCS character found for {targetModel.Name}`)
+	end
+
+	-- Apply knockback for flourish (phase 4)
+	if self.currentAttackPhase == MAX_COMBO_PHASE then
+		local targetRootPart = targetModel:FindFirstChild("HumanoidRootPart")
+		local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart")
+
+		if targetRootPart and attackerRootPart then
+			local knockbackDirection = (targetRootPart.Position - attackerRootPart.Position).Unit
+			local knockbackVelocity = Vector3.new(
+				knockbackDirection.X * FLOURISH_KNOCKBACK_POWER,
+				0, -- No vertical knockback
+				knockbackDirection.Z * FLOURISH_KNOCKBACK_POWER
+			)
+
+			local bodyVelocity = Instance.new("BodyVelocity")
+			bodyVelocity.MaxForce = Vector3.new(50000, 0, 50000)
+			bodyVelocity.Velocity = knockbackVelocity
+			bodyVelocity.Parent = targetRootPart
+
+			game:GetService("Debris"):AddItem(bodyVelocity, FLOURISH_KNOCKBACK_DURATION)
+			print(`[Slash] Applied flourish knockback to {targetModel.Name}`)
+
+			-- Apply self-hitstun to attacker for recovery period
+			local selfHitstun = SoftHitstun.new(self.Character)
+
+			if selfHitstun then
+				selfHitstun:Start(FLOURISH_SELF_HITSTUN_DURATION)
+				print(
+					`[Slash] Applied self-hitstun ({FLOURISH_SELF_HITSTUN_DURATION}s) to attacker for flourish recovery`
+				)
+			else
+				warn("[Slash] Failed to create self-hitstun for flourish recovery")
+			end
+		end
+	end
+
+	-- Return true to indicate this was a real hit (not blocked/parried)
+	return true
+end
+
+-- Check if defender is facing the attacker (for directional blocking)
+-- Returns true if the defender's look direction points towards the attacker
+function Slash:_isDefenderFacingAttacker(defenderModel: Model): boolean
+	local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local defenderRootPart = defenderModel:FindFirstChild("HumanoidRootPart") :: BasePart?
+
+	if not attackerRootPart or not defenderRootPart then
+		return false
+	end
+
+	-- Get defender's look direction
+	local defenderLookDirection = defenderRootPart.CFrame.LookVector
+
+	-- Get direction from defender to attacker
+	local directionToAttacker = (attackerRootPart.Position - defenderRootPart.Position).Unit
+
+	-- Calculate dot product (1 = facing directly, 0 = perpendicular, -1 = facing away)
+	local dotProduct = defenderLookDirection:Dot(directionToAttacker)
+
+	-- Defender must be facing attacker within the block angle threshold
+	return dotProduct > BLOCK_ANGLE_THRESHOLD
+end
+
+-- Handle successful parry
+function Slash:_handleParry(defenderWCSCharacter)
+	-- End Block skill so defender can attack during Autoparry window (enables parry trading)
+	local blockSkill = defenderWCSCharacter:GetSkillFromConstructor(Block)
+	if blockSkill then
+		-- End the block skill to remove Blocking/Parrying status
+		local blockState = blockSkill:GetState()
+		if blockState.IsActive then
+			blockSkill:End()
+			print(`[Slash] Ended Block skill for {defenderWCSCharacter.Instance.Name} - Parry reward`)
+		end
+
+		-- Reset parry cooldown as reward for successful parry
+		blockSkill.lastBlockEndTime = 0
+		blockSkill.parryOnCooldown = false
+		print(`[Slash] Reset parry cooldown for {defenderWCSCharacter.Instance.Name} - Parry reward`)
+	end
+
+	-- Apply Autoparry status to defender for 0.4s (protects during attack window)
+	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
+	if autoparryEffect then
+		autoparryEffect:Start(0.4)
+		print(`[Slash] Applied Autoparry (0.4s) to {defenderWCSCharacter.Instance.Name}`)
+	end
+
+	-- Apply SoftHitstun to attacker (0.8s stagger - can still parry out of it)
+	local softHitstunEffect = SoftHitstun.new(self.Character)
+	if softHitstunEffect then
+		softHitstunEffect:Start(0.8)
+		print(`[Slash] Applied SoftHitstun (0.8s) to attacker {self.Character.Instance.Name} - Got parried`)
+	end
+
+	-- Cancel attacker's attack (this skill) - stop the attack animation
+	-- The skill will end naturally but we want immediate feedback
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+		self.attackingEffect = nil
+	end
+
+	-- Apply Parried status to attacker for visual/audio feedback
+	local parriedEffect = Parried.new(self.Character)
+	if parriedEffect then
+		parriedEffect:Start(0.8)
+		print(`[Slash] Applied Parried status (0.8s) to attacker {self.Character.Instance.Name}`)
+	end
+
+	-- Fire parry VFX event on DEFENDER (full parry effect on defender)
+	local parryVFXRemote = ReplicatedStorage:FindFirstChild("PlayParryVFX")
+	if parryVFXRemote then
+		parryVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- Fire parried animation event on ATTACKER (stagger animation when getting parried)
+	local parriedAnimRemote = ReplicatedStorage:FindFirstChild("PlayParriedAnimation")
+	if parriedAnimRemote then
+		parriedAnimRemote:FireAllClients(self.Character.Instance)
+	end
+
+	-- Apply posture changes
+	local postureManager = getPostureManager()
+	-- Attacker gains posture (capped at 99% - can never guardbreak from parry alone)
+	postureManager.addPostureCapped(self.Character.Instance, postureManager.getParriedPostureDamage())
+	-- Defender loses posture (reward for successful parry)
+	postureManager.removePosture(defenderWCSCharacter.Instance, postureManager.getParryPostureReward())
+end
+
+-- Handle successful block (not a parry)
+function Slash:_handleBlock(defenderWCSCharacter)
+	-- Apply posture damage to defender for blocking FIRST (to check for guardbreak)
+	local postureManager = getPostureManager()
+	postureManager.addPosture(defenderWCSCharacter.Instance, postureManager.getBlockPostureDamage())
+
+	-- Check if this block resulted in a guardbreak
+	if defenderWCSCharacter.IsGuardbroken then
+		print(
+			`[Slash] Defender {defenderWCSCharacter.Instance.Name} guardbroken - Skipping block VFX (only guardbreak VFX will play)`
+		)
+		-- Don't play block VFX or block stun - guardbreak handles everything
+		return
+	end
+
+	-- Normal block (no guardbreak) - apply block effects
+	-- Apply BlockStunned status to defender for 0.1s
+	local blockStunnedEffect = BlockStunned.new(defenderWCSCharacter)
+	if blockStunnedEffect then
+		blockStunnedEffect:Start(0.1)
+		print(`[Slash] Applied BlockStunned (0.1s) to {defenderWCSCharacter.Instance.Name}`)
+	end
+
+	-- Fire block hit animation event
+	local blockHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitAnimation")
+	if blockHitAnimRemote then
+		blockHitAnimRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+
+	-- Fire block hit VFX event (only if not guardbroken)
+	local blockHitVFXRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitVFX")
+	if blockHitVFXRemote then
+		blockHitVFXRemote:FireAllClients(defenderWCSCharacter.Instance)
+	end
+end
+
+-- Apply weapon trail VFX to weapon's Grip attachments (client-only)
+function Slash:_applyWeaponTrail(animTrack: AnimationTrack, currentPhase: number)
+	if not RunService:IsClient() then
+		return
+	end
+
+	-- Flourish (phase 4) has no trail
+	if currentPhase == 4 then
+		return
+	end
+
+	-- Find the weapon model directly from character (it's parented there with "_Equipped" suffix)
+	-- On client, EquipmentManager doesn't exist, so we search the character's children
+	local characterInstance = self.Character.Instance
+	local weaponModel = nil
+
+	for _, child in ipairs(characterInstance:GetChildren()) do
+		if child:IsA("Model") and string.find(child.Name, "_Equipped") then
+			weaponModel = child
+			break
+		end
+	end
+
+	if not weaponModel then
+		warn("[Slash] No weapon model found for trail (looking for *_Equipped model)")
+		return
+	end
+
+	-- Find the Grip part in the weapon model
+	local gripPart = weaponModel:FindFirstChild("Grip")
+	if not gripPart then
+		warn("[Slash] No Grip part found in weapon model")
+		return
+	end
+
+	-- Get trail attachments (trail0 and trail1)
+	-- trail1 is a child of trail0 in the weapon model structure
+	local trail0 = gripPart:FindFirstChild("trail0")
+	if not trail0 then
+		warn("[Slash] Trail attachment (trail0) not found in Grip")
+		return
+	end
+
+	-- trail1 is inside trail0
+	local trail1 = trail0:FindFirstChild("trail1")
+	if not trail1 then
+		-- Fallback: check if trail1 is a sibling
+		trail1 = gripPart:FindFirstChild("trail1")
+	end
+
+	if not trail1 then
+		warn("[Slash] Trail attachment (trail1) not found in trail0 or Grip")
+		return
+	end
+
+	-- Find the Trail object (could be in Grip or trail0)
+	local trail = gripPart:FindFirstChildOfClass("Trail") or trail0:FindFirstChildOfClass("Trail")
+	if trail then
+		trail.Enabled = true
+		print(`[Slash] Enabled weapon trail for phase {currentPhase}`)
+
+		-- Disable trail when animation ends
+		local animLength = animTrack.Length or 0.5
+		task.delay(animLength * 0.8, function()
+			if trail and trail.Parent then
+				trail.Enabled = false
+				print("[Slash] Disabled weapon trail VFX")
+			end
+		end)
+	else
+		warn("[Slash] No Trail object found in Grip")
+	end
+end
+
+-- Play swing SFX (client-only) - delayed to 1/4 of animation duration
+function Slash:_playSwingSFX(animTrack: AnimationTrack?)
+	if not RunService:IsClient() then
+		return
+	end
+
+	-- Calculate delay (1/4 of animation duration - early in the swing)
+	local animLength = if animTrack then animTrack.Length else 0.5
+	local sfxDelay = animLength * 0.25
+
+	-- Delay the sound to match animation timing
+	task.delay(sfxDelay, function()
+		-- Get the equipped weapon type for SFX path
+		local weaponType = self:_getClientWeaponType()
+
+		-- Get swing SFX folder for this weapon
+		local swingSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+			and ReplicatedStorage.Assets:FindFirstChild("SFX")
+			and ReplicatedStorage.Assets.SFX:FindFirstChild("Weapon_Classes")
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes:FindFirstChild("Light_Weapons")
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons:FindFirstChild(weaponType)
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons[weaponType]:FindFirstChild("swings")
+
+		if not swingSFXFolder then
+			warn(`[Slash] Swing SFX folder not found for weapon: {weaponType}`)
+			return
+		end
+
+		-- Get all Sound instances from folder
+		local sounds = {}
+		for _, child in ipairs(swingSFXFolder:GetChildren()) do
+			if child:IsA("Sound") then
+				table.insert(sounds, child)
+			end
+		end
+
+		if #sounds == 0 then
+			warn("[Slash] No swing sounds found in folder")
+			return
+		end
+
+		-- Select random sound
+		local randomSound = sounds[math.random(1, #sounds)]
+
+		-- Find the character's HumanoidRootPart for spatial audio
+		local character = self.Character.Instance
+		if not character then
+			return
+		end
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then
+			warn("[Slash] No HumanoidRootPart found")
+			return
+		end
+
+		-- Clone the sound and parent it to the root part for spatial audio
+		local soundClone = randomSound:Clone()
+		soundClone.Parent = rootPart
+
+		-- Play the sound
+		soundClone:Play()
+
+		-- Clean up after sound finishes
+		task.delay(soundClone.TimeLength + 0.1, function()
+			if soundClone and soundClone.Parent then
+				soundClone:Destroy()
+			end
+		end)
+
+		print(`[Slash] Playing swing SFX: {randomSound.Name}`)
+	end)
+end
+
+-- Get weapon type on client (for SFX/VFX paths)
+function Slash:_getClientWeaponType(): string
+	-- On client, find weapon model from character (named *_Equipped)
+	local characterInstance = self.Character.Instance
+	for _, child in ipairs(characterInstance:GetChildren()) do
+		if child:IsA("Model") and string.find(child.Name, "_Equipped") then
+			-- Extract weapon name from "Kunai_Equipped" -> "Kunai"
+			local weaponName = string.gsub(child.Name, "_Equipped", "")
+			return weaponName
+		end
+	end
+	return "Kunai" -- Default
+end
+
+function Slash:OnEndServer()
+	-- Clear hit targets when skill ends
+	self.hitTargets = {}
+end
+
+function Slash:OnEndClient()
+	-- Restore walking animation speeds when slash ends
+	self:_restoreMovementAnimations()
+
+	-- Industry standard: Only stop animations on interrupt, let them finish naturally otherwise
+	-- Check if we were interrupted by looking for hitstun status OR Parried status
+	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
+
+	if interrupted then
+		-- Only stop animations if interrupted - use fast fade
+		for _, animTrack in pairs(self.loadedAnimations) do
+			if animTrack and animTrack.IsPlaying then
+				animTrack:Stop(0.05)
+				print("[Slash] Client: Stopped animation due to interrupt")
+			end
+		end
+	end
+	-- Otherwise let animations finish naturally - don't stop them
+end
+
+-- Client-side prediction for rollcancel (plays sound immediately when detecting iframe targets)
+function Slash:_predictRollCancel()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	local myPosition = rootPart.Position
+	local myLookVector = rootPart.CFrame.LookVector
+
+	-- Check nearby characters for iframes
+	for _, otherCharacter in ipairs(workspace:GetChildren()) do
+		if otherCharacter:IsA("Model") and otherCharacter ~= character then
+			local otherHumanoid = otherCharacter:FindFirstChild("Humanoid")
+			local otherRootPart = otherCharacter:FindFirstChild("HumanoidRootPart")
+
+			if otherHumanoid and otherRootPart and otherHumanoid.Health > 0 then
+				-- Check distance
+				local distance = (otherRootPart.Position - myPosition).Magnitude
+				if distance <= SLASH_RANGE then
+					-- Check angle (in front of attacker)
+					local directionToTarget = (otherRootPart.Position - myPosition).Unit
+					local dotProduct = myLookVector:Dot(directionToTarget)
+
+					if dotProduct > HIT_ANGLE_THRESHOLD then
+						-- Target is in range and in front - check for iframes
+						local wcsCharacter = WCS.Character.GetCharacterFromInstance(otherCharacter)
+						if wcsCharacter and wcsCharacter:HasStatusEffects({ Iframes }) then
+							-- Play rollcancel sound immediately (client prediction)
+							self:_playPredictedRollCancelSound(otherCharacter)
+							print(`[Slash] Client prediction: Rollcancel on {otherCharacter.Name}`)
+							return -- Only trigger once per slash
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- Play predicted rollcancel sound (client-side, before server confirmation)
+function Slash:_playPredictedRollCancelSound(targetModel: Model)
+	-- Set debounce attribute so hitEffectsManager won't play duplicate sound
+	targetModel:SetAttribute("_RollCancelTime", tick())
+
+	local cancelSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("SFX")
+		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
+		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Dodges")
+		and ReplicatedStorage.Assets.SFX.Movement.Dodges:FindFirstChild("Cancel")
+
+	if not cancelSFXFolder then
+		return -- Silently fail - folder might not exist yet
+	end
+
+	local sounds = {}
+	for _, child in ipairs(cancelSFXFolder:GetChildren()) do
+		if child:IsA("Sound") then
+			table.insert(sounds, child)
+		end
+	end
+
+	if #sounds == 0 then
+		return
+	end
+
+	local randomSound = sounds[math.random(1, #sounds)]
+	local soundClone = randomSound:Clone()
+	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
+	soundClone:Play()
+
+	-- Cleanup
+	task.delay(soundClone.TimeLength + 0.1, function()
+		if soundClone and soundClone.Parent then
+			soundClone:Destroy()
+		end
+	end)
+end
+
+-- Cancel attacker's momentum when hitting iframes (rollcancel punishment)
+function Slash:_cancelAttackMomentum()
+	if not RunService:IsServer() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then
+		return
+	end
+
+	-- Cancel any velocity/momentum by removing BodyVelocity or similar movers
+	for _, child in ipairs(rootPart:GetChildren()) do
+		if child:IsA("BodyVelocity") or child:IsA("BodyPosition") or child:IsA("BodyGyro") then
+			child:Destroy()
+		end
+	end
+
+	-- Reset velocity to zero
+	if rootPart:IsA("BasePart") then
+		rootPart.AssemblyLinearVelocity = Vector3.new(0, rootPart.AssemblyLinearVelocity.Y, 0)
+	end
+
+	-- End attacking status to allow dodging/movement
+	if self.attackingEffect then
+		self.attackingEffect:Stop()
+		self.attackingEffect = nil
+	end
+
+	-- Apply very brief stun (0.15s) to create a punish window
+	local stunEffect = Stun.new(self.Character)
+	if stunEffect then
+		stunEffect:Start(0.15)
+		print(`[Slash] Applied rollcancel stun (0.15s) to attacker {character.Name}`)
+	end
+
+	print(`[Slash] Cancelled attack momentum for {character.Name} - Hit iframes`)
+end
+
+return Slash

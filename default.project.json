@@ -14,6 +14,9 @@
         },
         "managers": {
           "$path": "src/client/managers"
+        },
+        "ui": {
+          "$path": "src/client/ui"
         }
       },
       "Packages": {

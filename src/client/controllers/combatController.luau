@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
+local Slash = require(ReplicatedStorage.Shared.skills.slash)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 
@@ -73,6 +74,41 @@ function CombatController:getPunchSkill()
 	return character:GetSkillFromConstructor(Punch)
 end
 
+-- Get slash skill (fresh lookup - moveset changes can add/remove skills)
+function CombatController:getSlashSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	-- Always get fresh reference since moveset changes destroy/recreate skills
+	return character:GetSkillFromConstructor(Slash)
+end
+
+-- Get the appropriate attack skill based on equipped weapon
+function CombatController:getAttackSkill()
+	-- Check if player has equipment controller and weapon equipped
+	if not self.equipmentController then
+		return nil
+	end
+
+	local equipped = self.equipmentController:getEquipped()
+	if not equipped then
+		return nil
+	end
+
+	-- Fists use Punch, weapons use Slash
+	if equipped == "fists" then
+		return self:getPunchSkill()
+	else
+		-- For physical weapons (kunai, etc.), check if weapon is in hand
+		if not self.equipmentController:isWeaponInHand() then
+			return nil -- Can't attack with weapon on back
+		end
+		return self:getSlashSkill()
+	end
+end
+
 -- Get block skill (fresh lookup - moveset changes can add/remove skills)
 function CombatController:getBlockSkill()
 	local character = self:getCharacter()
@@ -97,16 +133,11 @@ end
 
 -- Perform primary attack (M1)
 function CombatController:performPrimaryAttack()
-	-- Check if player has a slot selected (waiting to confirm equip/unequip)
+	-- Check if player has a slot selected (waiting to confirm equip)
 	-- IMPORTANT: Check this BEFORE canceling sprint
 	if self.equipmentController and self.equipmentController:getSelectedSlot() then
-		-- Confirm the equip/unequip action
-		local slotNumber = self.equipmentController:getSelectedSlot()
-
-		-- Map slot to weapon ID
-		if slotNumber == 1 then
-			self.equipmentController:confirmAction("fists")
-		end
+		-- Confirm the equip action (uses weapon from selected slot's inventory)
+		self.equipmentController:confirmAction()
 
 		-- Don't cancel sprint or perform attack when confirming equipment
 		return
@@ -118,10 +149,14 @@ function CombatController:performPrimaryAttack()
 		return
 	end
 
-	-- Get punch skill using cached accessor (fast path)
-	local punchSkill = self:getPunchSkill()
-	if not punchSkill then
-		-- No skill found - player probably doesn't have weapon equipped
+	-- Get the appropriate attack skill (Punch for fists, Slash for weapons)
+	local attackSkill = self:getAttackSkill()
+	if not attackSkill then
+		-- No skill found - player might not have weapon in hand or equipped
+		local equipped = self.equipmentController:getEquipped()
+		if equipped and equipped ~= "fists" and not self.equipmentController:isWeaponInHand() then
+			print("[CombatController] Cannot attack - Weapon not in hand (press slot key to draw)")
+		end
 		return
 	end
 
@@ -133,7 +168,7 @@ function CombatController:performPrimaryAttack()
 	end
 
 	-- Check if skill is on cooldown
-	local state = punchSkill:GetState()
+	local state = attackSkill:GetState()
 	if state.Debounce then
 		-- Don't update combo or print anything - skill is on cooldown
 		return
@@ -145,7 +180,7 @@ function CombatController:performPrimaryAttack()
 	end
 
 	-- Execute the skill
-	punchSkill:Start()
+	attackSkill:Start()
 end
 
 -- Perform secondary attack (M2)

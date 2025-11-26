@@ -61,6 +61,10 @@ local airdashCameraRemote = Instance.new("RemoteEvent")
 airdashCameraRemote.Name = "SetAirdashCamera"
 airdashCameraRemote.Parent = ReplicatedStorage
 
+local toggleWeaponInHandRemote = Instance.new("RemoteEvent")
+toggleWeaponInHandRemote.Name = "ToggleWeaponInHand"
+toggleWeaponInHandRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 
@@ -96,6 +100,22 @@ equipRemote.OnServerEvent:Connect(function(player, weaponId)
 		-- Unequip weapon
 		wcsCharacter.EquipmentManager:unequip()
 	end
+end)
+
+-- Handle toggle weapon in hand requests from clients
+toggleWeaponInHandRemote.OnServerEvent:Connect(function(player)
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if not wcsCharacter or not wcsCharacter.EquipmentManager then
+		return
+	end
+
+	-- Toggle weapon between back and hand
+	wcsCharacter.EquipmentManager:toggleWeaponInHand()
 end)
 
 -- Create the regular dummy after server has started
