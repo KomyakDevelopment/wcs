@@ -5,6 +5,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 
 -- Pre-cache status effects and skills at module load (avoid require() in hot paths)
 local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
@@ -143,9 +144,9 @@ function Block:OnStartServer()
 	end
 
 	-- Check if player is in hitstun, dashing, attacking, or guardbroken
-	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned, Guardbroken, Attacking }) then
-		print("[Block] Server: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken/attacking")
+	-- SoftHitstun prevents blocking (player must wait for hitstun to end before blocking)
+	if self.Character:HasStatusEffects({ Dashing, SoftHitstun, TrueHitstun, Stun, BlockStunned, Guardbroken, Attacking }) then
+		print("[Block] Server: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking")
 		return
 	end
 
@@ -229,9 +230,9 @@ function Block:OnStartClient()
 	end
 
 	-- Check if player has any status effects that prevent blocking
-	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Attacking }) then
-		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken/attacking")
+	-- SoftHitstun prevents blocking (player must wait for hitstun to end before blocking)
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Attacking }) then
+		print("[Block] Client: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking")
 		return
 	end
 

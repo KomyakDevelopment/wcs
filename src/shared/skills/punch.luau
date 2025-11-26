@@ -139,10 +139,17 @@ function Punch:OnStartServer()
 	end
 
 	-- Check if player is in hitstun, guardbroken, dashing, or blocking/parrying
+	-- Use HasStatusEffects to avoid flag race conditions between status effects
 	if
-		self.Character.IsInHitstun
-		or self.Character.IsGuardbroken
-		or self.Character:HasStatusEffects({ Dashing, Blocking, Parrying })
+		self.Character:HasStatusEffects({
+			SoftHitstun,
+			TrueHitstun,
+			Stun,
+			Guardbroken,
+			Dashing,
+			Blocking,
+			Parrying,
+		})
 	then
 		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, or blocking/parrying")
 		return
@@ -693,7 +700,7 @@ function Punch:_applyFistsTrail(animTrack: AnimationTrack, currentPhase: number)
 	end
 
 	-- Get fists trail template
-	local fistsTrailPart = ReplicatedStorage.Assets.VFX.Weapon_Classes.Fists.fists_trail
+	local fistsTrailPart = ReplicatedStorage.Assets.VFX.Weapon_Classes.Light_Weapons.Fists.fists_trail
 	if not fistsTrailPart or not fistsTrailPart:IsA("BasePart") then
 		warn("[Punch] Fists trail part not found")
 		return
@@ -759,7 +766,7 @@ function Punch:_playSwingSFX(animTrack: AnimationTrack?)
 	-- Delay the sound to match animation timing
 	task.delay(sfxDelay, function()
 		-- Get swing SFX folder
-		local swingSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.swings
+		local swingSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons.Fists.swings
 		if not swingSFXFolder then
 			warn("[Punch] Swing SFX folder not found")
 			return

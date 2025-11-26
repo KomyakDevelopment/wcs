@@ -12,8 +12,8 @@ HitEffectsManager.__index = HitEffectsManager
 -- Weapon class configuration
 local WEAPON_EFFECTS = {
 	fists = {
-		soundPath = { "Assets", "SFX", "Weapon_Classes", "Fists", "hit" },
-		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Fists", "hit" },
+		soundPath = { "Assets", "SFX", "Weapon_Classes", "Light_Weapons", "Fists", "hit" },
+		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Light_Weapons", "Fists", "hit" },
 	},
 }
 

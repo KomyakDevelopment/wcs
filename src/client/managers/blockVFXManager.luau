@@ -27,7 +27,7 @@ function BlockVFXManager.new()
 	self.parryHighlight = ReplicatedStorage.Assets.VFX.General_Combat.parry.Highlight
 
 	-- SFX folder paths
-	self.blockSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Fists.block
+	self.blockSFXFolder = ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons.Fists.block
 	self.parrySFXFolder = ReplicatedStorage.Assets.SFX.General_Combat.parry
 
 	-- Debounce tracking for parry flash (prevents duplicate emissions per attack)
