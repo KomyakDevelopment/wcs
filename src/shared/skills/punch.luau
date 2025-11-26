@@ -504,8 +504,8 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		if inFailedParryWindow then
 			local shakyblock = Shakyblock.new(targetWCSCharacter)
 			if shakyblock then
-				shakyblock:Start(0.8)
-				print(`[Punch] Applied Shakyblock (0.8s) to {targetModel.Name} - Failed parry punishment`)
+				shakyblock:Start(0.3)
+				print(`[Punch] Applied Shakyblock (0.3s) to {targetModel.Name} - Failed parry punishment`)
 			else
 				warn(`[Punch] Failed to create Shakyblock for {targetModel.Name}`)
 			end

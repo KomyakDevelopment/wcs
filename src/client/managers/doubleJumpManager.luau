@@ -181,6 +181,7 @@ function DoubleJumpManager:_playJumpSFX(character: Model)
 	soundClone.Parent = hrp
 	soundClone:Play()
 
+	-- Clean up after sound finishes
 	task.delay(soundClone.TimeLength + 0.1, function()
 		if soundClone and soundClone.Parent then
 			soundClone:Destroy()

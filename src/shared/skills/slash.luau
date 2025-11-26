@@ -404,8 +404,10 @@ function Slash:_detectHit()
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
 		if hitEffectsRemote then
-			-- Get the current weapon type for hit effects
-			local weaponType = self:_getCurrentWeaponType()
+			-- Flourish (phase 4) uses kick, so use fists hit effects instead of weapon
+			local weaponType = if self.currentAttackPhase == MAX_COMBO_PHASE
+				then "fists"
+				else self:_getCurrentWeaponType()
 			hitEffectsRemote:FireAllClients(actualHits[1].model, weaponType)
 		end
 	end
@@ -522,8 +524,8 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		if inFailedParryWindow then
 			local shakyblock = Shakyblock.new(targetWCSCharacter)
 			if shakyblock then
-				shakyblock:Start(0.8)
-				print(`[Slash] Applied Shakyblock (0.8s) to {targetModel.Name} - Failed parry punishment`)
+				shakyblock:Start(0.3)
+				print(`[Slash] Applied Shakyblock (0.3s) to {targetModel.Name} - Failed parry punishment`)
 			else
 				warn(`[Slash] Failed to create Shakyblock for {targetModel.Name}`)
 			end
