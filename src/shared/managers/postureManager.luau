@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
 -- Lazy load to avoid circular dependencies
 local Guardbroken = nil
@@ -35,17 +36,18 @@ local function getBlock()
 	return Block
 end
 
--- Configuration
-local DEFAULT_MAX_POSTURE = 100
-local RECOVERY_DELAY = 3.0 -- Seconds before recovery starts
-local RECOVERY_RATE = 0.02 -- 2% of max per second
-local RECOVERY_RATE_BLOCKING = 0.01 -- 1% while blocking (50% slower)
-local GUARDBREAK_DURATION = 1.5
+-- Configuration (from central config)
+local PostureConfig = CombatConfig.Posture
+local DEFAULT_MAX_POSTURE = PostureConfig.MaxPosture
+local RECOVERY_DELAY = PostureConfig.RecoveryDelay
+local RECOVERY_RATE = PostureConfig.RecoveryRate
+local RECOVERY_RATE_BLOCKING = PostureConfig.RecoveryRateBlocking
+local GUARDBREAK_DURATION = PostureConfig.GuardbreakDuration
 
--- Posture damage values (placeholders until stats system)
-local BLOCK_POSTURE_DAMAGE = 15 -- Per blocked M1
-local PARRY_POSTURE_MULTIPLIER = 1.15 -- Defender gains 115% of block damage on successful parry
-local PARRIED_POSTURE_DAMAGE = 30 -- Attacker loses when parried (capped at 99%)
+-- Posture damage values (from central config)
+local BLOCK_POSTURE_DAMAGE = PostureConfig.BlockDamage
+local PARRY_POSTURE_REWARD = PostureConfig.ParryReward
+local PARRIED_POSTURE_DAMAGE = PostureConfig.ParriedDamage
 
 export type PostureData = {
 	current: number,
@@ -325,7 +327,7 @@ function PostureManager.getBlockPostureDamage(): number
 end
 
 function PostureManager.getParryPostureReward(): number
-	return BLOCK_POSTURE_DAMAGE * PARRY_POSTURE_MULTIPLIER
+	return PARRY_POSTURE_REWARD
 end
 
 function PostureManager.getParriedPostureDamage(): number

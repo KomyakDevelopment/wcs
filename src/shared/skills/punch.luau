@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
 -- Pre-cache status effects and skills at module load (avoid require() in hot paths)
 local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
@@ -40,26 +41,29 @@ local Punch = WCS.RegisterSkill("Punch")
 Punch.CheckClientState = false -- Don't wait for server to validate before playing client effects
 Punch.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
 
--- Configuration
-local PUNCH_DAMAGE = 10
-local PUNCH_RANGE = 10 -- Increased for better hit registration
-local PUNCH_COOLDOWN = 0.65 -- 0.75
+-- Configuration (from central combatConfig)
+local WeaponConfig = CombatConfig.Weapons.fists
+local ComboConfig = CombatConfig.Combo
+
+local PUNCH_DAMAGE = WeaponConfig.Damage
+local PUNCH_RANGE = WeaponConfig.Range
+local PUNCH_COOLDOWN = WeaponConfig.Cooldown
 
 -- Hitbox configuration
-local HIT_ANGLE_THRESHOLD = 0.3 -- Dot product threshold for hit detection (~72 degrees in front)
-local BLOCK_ANGLE_THRESHOLD = 0 -- 180 degree block arc (90 degrees each side)
+local HIT_ANGLE_THRESHOLD = CombatConfig.Hitbox.HitAngleThreshold
+local BLOCK_ANGLE_THRESHOLD = CombatConfig.Hitbox.BlockAngleThreshold
 
 -- Hitstun duration for unarmed attacks
-local SOFT_HITSTUN_DURATION = 0.6
-local FLOURISH_SELF_HITSTUN_DURATION = 0.5 -- Recovery time after landing flourish
+local SOFT_HITSTUN_DURATION = WeaponConfig.HitstunDuration
+local FLOURISH_SELF_HITSTUN_DURATION = WeaponConfig.FlourishSelfHitstun
 
 -- Combo system configuration
-local COMBO_RESET_TIME = 2.0 -- Time before combo resets to phase 1
-local MAX_COMBO_PHASE = 4 -- Total combo phases (1, 2, 3, flourish)
+local COMBO_RESET_TIME = ComboConfig.ResetTime
+local MAX_COMBO_PHASE = ComboConfig.MaxPhase
 
 -- Knockback configuration for flourish
-local FLOURISH_KNOCKBACK_POWER = 55
-local FLOURISH_KNOCKBACK_DURATION = 0.18
+local FLOURISH_KNOCKBACK_POWER = WeaponConfig.FlourishKnockbackPower
+local FLOURISH_KNOCKBACK_DURATION = WeaponConfig.FlourishKnockbackDuration
 
 -- Animation IDs for each combo phase
 local COMBO_ANIMATIONS = {
@@ -71,12 +75,7 @@ local COMBO_ANIMATIONS = {
 
 -- Damage delays for each combo phase (in seconds)
 -- Synced to when the fist/foot connects in each animation
-local DAMAGE_DELAYS = {
-	[1] = 0.41, -- First M1 - quick jab
-	[2] = 0.41, -- Second M1 - cross punch
-	[3] = 0.41, -- Third M1 - hook
-	[4] = 0.51, -- Flourish - kick takes slightly longer
-}
+local DAMAGE_DELAYS = WeaponConfig.DamageDelays
 
 function Punch:OnConstructServer()
 	-- Setup server-side skill data
@@ -506,8 +505,8 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		if inFailedParryWindow then
 			local shakyblock = Shakyblock.new(targetWCSCharacter)
 			if shakyblock then
-				shakyblock:Start(0.3)
-				print(`[Punch] Applied Shakyblock (0.3s) to {targetModel.Name} - Failed parry punishment`)
+				shakyblock:Start(CombatConfig.StatusDurations.Shakyblock)
+				print(`[Punch] Applied Shakyblock to {targetModel.Name} - Failed parry punishment`)
 			else
 				warn(`[Punch] Failed to create Shakyblock for {targetModel.Name}`)
 			end
@@ -606,18 +605,18 @@ function Punch:_handleParry(defenderWCSCharacter)
 		print(`[Punch] Reset parry cooldown for {defenderWCSCharacter.Instance.Name} - Parry reward`)
 	end
 
-	-- Apply Autoparry status to defender for 0.4s (protects during attack window)
+	-- Apply Autoparry status to defender (protects during attack window)
 	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
 	if autoparryEffect then
-		autoparryEffect:Start(0.4)
-		print(`[Punch] Applied Autoparry (0.4s) to {defenderWCSCharacter.Instance.Name}`)
+		autoparryEffect:Start(CombatConfig.StatusDurations.Autoparry)
+		print(`[Punch] Applied Autoparry to {defenderWCSCharacter.Instance.Name}`)
 	end
 
-	-- Apply SoftHitstun to attacker (0.8s stagger - can still parry out of it)
+	-- Apply SoftHitstun to attacker (stagger - can still parry out of it)
 	local softHitstunEffect = SoftHitstun.new(self.Character)
 	if softHitstunEffect then
-		softHitstunEffect:Start(0.8)
-		print(`[Punch] Applied SoftHitstun (0.8s) to attacker {self.Character.Instance.Name} - Got parried`)
+		softHitstunEffect:Start(CombatConfig.StatusDurations.ParriedAttackerHitstun)
+		print(`[Punch] Applied SoftHitstun to attacker {self.Character.Instance.Name} - Got parried`)
 	end
 
 	-- Cancel attacker's M1 (this skill) - stop the attack animation
@@ -630,8 +629,8 @@ function Punch:_handleParry(defenderWCSCharacter)
 	-- Apply Parried status to attacker for visual/audio feedback
 	local parriedEffect = Parried.new(self.Character)
 	if parriedEffect then
-		parriedEffect:Start(0.8)
-		print(`[Punch] Applied Parried status (0.8s) to attacker {self.Character.Instance.Name}`)
+		parriedEffect:Start(CombatConfig.StatusDurations.ParriedAttackerHitstun)
+		print(`[Punch] Applied Parried status to attacker {self.Character.Instance.Name}`)
 	end
 
 	-- Fire parry VFX event on DEFENDER (full parry effect on defender)
@@ -670,11 +669,10 @@ function Punch:_handleBlock(defenderWCSCharacter)
 	end
 
 	-- Normal block (no guardbreak) - apply block effects
-	-- Apply BlockStunned status to defender for 0.1s
 	local blockStunnedEffect = BlockStunned.new(defenderWCSCharacter)
 	if blockStunnedEffect then
-		blockStunnedEffect:Start(0.1)
-		print(`[Punch] Applied BlockStunned (0.1s) to {defenderWCSCharacter.Instance.Name}`)
+		blockStunnedEffect:Start(CombatConfig.StatusDurations.BlockStunned)
+		print(`[Punch] Applied BlockStunned to {defenderWCSCharacter.Instance.Name}`)
 	end
 
 	-- Fire block hit animation event
@@ -958,11 +956,11 @@ function Punch:_cancelAttackMomentum()
 		self.attackingEffect = nil
 	end
 
-	-- Apply very brief stun (0.15s) to create a punish window
+	-- Apply very brief stun to create a punish window
 	local stunEffect = Stun.new(self.Character)
 	if stunEffect then
-		stunEffect:Start(0.15)
-		print(`[Punch] Applied rollcancel stun (0.15s) to attacker {character.Name}`)
+		stunEffect:Start(CombatConfig.StatusDurations.RollcancelStun)
+		print(`[Punch] Applied rollcancel stun to attacker {character.Name}`)
 	end
 
 	print(`[Punch] Cancelled attack momentum for {character.Name} - Hit iframes`)

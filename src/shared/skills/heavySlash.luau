@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
 -- Pre-cache status effects at module load
 local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
@@ -41,22 +42,25 @@ local HeavySlash = WCS.RegisterSkill("HeavySlash")
 HeavySlash.CheckClientState = false
 HeavySlash.CheckOthersActive = false
 
--- Configuration
-local BASE_SLASH_DAMAGE = 12 -- Base slash damage
-local HEAVY_DAMAGE = math.floor(BASE_SLASH_DAMAGE * 1.5) -- 1.5x base damage = 18
-local HEAVY_RANGE = 11 -- Slightly longer range
-local HEAVY_COOLDOWN = 5 -- Longer cooldown than normal M1
+-- Configuration (from central combatConfig)
+local WeaponConfig = CombatConfig.Weapons.kunai
+local HeavyConfig = CombatConfig.HeavyAttacks
+local SkillConfig = HeavyConfig.HeavySlash
+
+local HEAVY_DAMAGE = math.floor(WeaponConfig.Damage * HeavyConfig.DamageMultiplier)
+local HEAVY_RANGE = SkillConfig.Range
+local HEAVY_COOLDOWN = HeavyConfig.Cooldown
 
 -- Hitbox configuration
-local HIT_ANGLE_THRESHOLD = 0.3
+local HIT_ANGLE_THRESHOLD = CombatConfig.Hitbox.HitAngleThreshold
 
 -- Timing configuration
-local WINDUP_DURATION = 0.4 -- Time before parry window starts
-local DAMAGE_DELAY = 0.8 -- Total time before damage (includes windup)
+local WINDUP_DURATION = HeavyConfig.WindupDuration
+local DAMAGE_DELAY = HeavyConfig.DamageDelay
 
 -- Knockback configuration
-local KNOCKBACK_POWER = 45
-local KNOCKBACK_DURATION = 0.2
+local KNOCKBACK_POWER = SkillConfig.KnockbackPower
+local KNOCKBACK_DURATION = HeavyConfig.KnockbackDuration
 
 -- Animation ID for heavy slash (placeholder - replace with actual heavy slash anim)
 local HEAVY_ANIMATION_ID = "rbxassetid://128565870055276" -- Using flourish for now
@@ -399,7 +403,7 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			-- Apply guardbreak
 			local guardbrokenEffect = Guardbroken.new(targetWCSCharacter)
 			if guardbrokenEffect then
-				guardbrokenEffect:Start(1.5) -- 1.5s guardbreak for combo opportunity
+				guardbrokenEffect:Start(HeavyConfig.GuardbreakDuration)
 				print(`[HeavySlash] Broke {targetModel.Name}'s block! Guardbroken for combo.`)
 			end
 		else
@@ -439,12 +443,12 @@ function HeavySlash:_handleParry(defenderWCSCharacter)
 
 	local autoparryEffect = Autoparry.new(defenderWCSCharacter)
 	if autoparryEffect then
-		autoparryEffect:Start(0.4)
+		autoparryEffect:Start(CombatConfig.StatusDurations.Autoparry)
 	end
 
 	local softHitstunEffect = SoftHitstun.new(self.Character)
 	if softHitstunEffect then
-		softHitstunEffect:Start(0.9) -- Slightly longer stagger for heavy
+		softHitstunEffect:Start(CombatConfig.StatusDurations.HeavyParriedHitstun)
 	end
 
 	if self.attackingEffect then
@@ -454,7 +458,7 @@ function HeavySlash:_handleParry(defenderWCSCharacter)
 
 	local parriedEffect = Parried.new(self.Character)
 	if parriedEffect then
-		parriedEffect:Start(0.9)
+		parriedEffect:Start(CombatConfig.StatusDurations.HeavyParriedHitstun)
 	end
 
 	local parryVFXRemote = ReplicatedStorage:FindFirstChild("PlayParryVFX")
@@ -607,7 +611,7 @@ function HeavySlash:_cancelAttackMomentum()
 
 	local stunEffect = Stun.new(self.Character)
 	if stunEffect then
-		stunEffect:Start(0.15)
+		stunEffect:Start(CombatConfig.StatusDurations.RollcancelStun)
 	end
 end
 
