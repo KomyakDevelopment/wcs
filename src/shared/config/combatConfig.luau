@@ -128,4 +128,16 @@ CombatConfig.Dodge = {
 	Distance = 20,
 }
 
+--============================================================================--
+-- INPUT BUFFER
+--============================================================================--
+CombatConfig.InputBuffer = {
+	-- How long inputs are stored before expiring (in seconds)
+	-- Higher = more forgiving, lower = more precise
+	BufferWindow = 0.075, -- 75ms (similar to fighting games)
+
+	-- Default state (can be toggled by player in settings)
+	EnabledByDefault = true,
+}
+
 return CombatConfig

@@ -5,6 +5,9 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
@@ -43,6 +46,22 @@ function CombatController.new()
 
 	-- Cached character reference (cleared on respawn)
 	self._cachedCharacter = nil
+
+	-- Input buffer system
+	local bufferConfig = CombatConfig.InputBuffer
+	self.inputBufferEnabled = bufferConfig.EnabledByDefault
+	self.inputBufferWindow = bufferConfig.BufferWindow
+	self.inputBuffer = {
+		m1 = { pressed = false, timestamp = 0 },
+		heavy = { pressed = false, timestamp = 0 },
+		dodge = { pressed = false, timestamp = 0 },
+		-- Note: Block is hold-based, not buffered
+	}
+
+	-- Start buffer processing loop
+	self._bufferConnection = RunService.Heartbeat:Connect(function()
+		self:_processInputBuffer()
+	end)
 
 	return self
 end
@@ -193,44 +212,13 @@ function CombatController:performPrimaryAttack()
 		-- Continue to attack (don't return early)
 	end
 
-	-- Check if player has equipment equipped
-	if not self.equipmentController or not self.equipmentController:getEquipped() then
-		print("[CombatController] Cannot attack - No weapon equipped")
-		return
+	-- Check if we can perform M1 right now
+	if self:_canPerformM1() then
+		self:_executeM1()
+	else
+		-- Buffer the input for later execution
+		self:_bufferInput("m1")
 	end
-
-	-- Get the appropriate attack skill (Punch for fists, Slash for weapons)
-	local attackSkill = self:getAttackSkill()
-	if not attackSkill then
-		-- No skill found - player might not have weapon in hand or equipped
-		local equipped = self.equipmentController:getEquipped()
-		if equipped and equipped ~= "fists" and not self.equipmentController:isWeaponInHand() then
-			print("[CombatController] Cannot attack - Weapon not in hand (press slot key to draw)")
-		end
-		return
-	end
-
-	-- Check if character is guardbroken (completely stunned)
-	local character = self:getCharacter()
-	if character and character:HasStatusEffects({ Guardbroken }) then
-		print("[CombatController] Cannot attack - Player is guardbroken")
-		return
-	end
-
-	-- Check if skill is on cooldown
-	local state = attackSkill:GetState()
-	if state.Debounce then
-		-- Don't update combo or print anything - skill is on cooldown
-		return
-	end
-
-	-- Cancel sprint if active (only when actually attacking, after all checks pass)
-	if self.sprintManager then
-		self.sprintManager:stopSprint()
-	end
-
-	-- Execute the skill
-	attackSkill:Start()
 end
 
 -- Perform secondary attack (M2)
@@ -268,56 +256,247 @@ end
 
 -- Perform dodge action
 function CombatController:performDodge()
-	-- Client-side debounce to prevent rapid spam before server state updates
-	if self.dodgeDebounce then
+	-- Check if we can perform dodge right now
+	if self:_canPerformDodge() then
+		self:_executeDodge()
+	else
+		-- Buffer the input for later execution
+		self:_bufferInput("dodge")
+	end
+end
+
+-- Perform heavy attack (R key)
+function CombatController:performCriticalAttack()
+	-- Check if we can perform heavy attack right now
+	if self:_canPerformHeavy() then
+		self:_executeHeavy()
+	else
+		-- Buffer the input for later execution
+		self:_bufferInput("heavy")
+	end
+end
+
+-- Use ability from hotbar slot
+function CombatController:useAbility(slotNumber: number)
+	print(`[CombatController] Using ability slot {slotNumber} - Not implemented yet`)
+	-- TODO: Get ability from hotbar and execute
+end
+
+--============================================================================--
+-- INPUT BUFFER SYSTEM
+--============================================================================--
+
+-- Toggle input buffering on/off (for player settings)
+function CombatController:setInputBufferEnabled(enabled: boolean)
+	self.inputBufferEnabled = enabled
+	-- Clear any pending buffered inputs when disabling
+	if not enabled then
+		self:_clearAllBuffers()
+	end
+	print(`[CombatController] Input buffering {enabled and "enabled" or "disabled"}`)
+end
+
+-- Check if input buffering is enabled
+function CombatController:isInputBufferEnabled(): boolean
+	return self.inputBufferEnabled
+end
+
+-- Buffer an input for later execution
+function CombatController:_bufferInput(action: string)
+	if not self.inputBufferEnabled then
 		return
 	end
 
-	-- Get dodge skill using cached accessor (fast path)
-	local dodgeSkill = self:getDodgeSkill()
-	if not dodgeSkill then
-		print("[CombatController] performDodge: No dodge skill found on character")
+	self.inputBuffer[action] = {
+		pressed = true,
+		timestamp = tick(),
+	}
+end
+
+-- Check if a buffered input is still valid (not expired)
+function CombatController:_getBufferedInput(action: string): boolean
+	local buffer = self.inputBuffer[action]
+	if not buffer or not buffer.pressed then
+		return false
+	end
+
+	local age = tick() - buffer.timestamp
+	if age > self.inputBufferWindow then
+		buffer.pressed = false -- Expired
+		return false
+	end
+
+	return true
+end
+
+-- Clear a specific buffer after execution
+function CombatController:_clearBuffer(action: string)
+	if self.inputBuffer[action] then
+		self.inputBuffer[action].pressed = false
+	end
+end
+
+-- Clear all buffers
+function CombatController:_clearAllBuffers()
+	for action, _ in pairs(self.inputBuffer) do
+		self.inputBuffer[action].pressed = false
+	end
+end
+
+-- Process buffered inputs each frame
+function CombatController:_processInputBuffer()
+	if not self.inputBufferEnabled then
 		return
 	end
 
-	-- Check if character is guardbroken (completely stunned)
+	-- Check M1 buffer
+	if self:_getBufferedInput("m1") then
+		if self:_canPerformM1() then
+			self:_clearBuffer("m1")
+			self:_executeM1()
+		end
+	end
+
+	-- Check Heavy attack buffer
+	if self:_getBufferedInput("heavy") then
+		if self:_canPerformHeavy() then
+			self:_clearBuffer("heavy")
+			self:_executeHeavy()
+		end
+	end
+
+	-- Check Dodge buffer
+	if self:_getBufferedInput("dodge") then
+		if self:_canPerformDodge() then
+			self:_clearBuffer("dodge")
+			self:_executeDodge()
+		end
+	end
+end
+
+-- Check if M1 can be performed (without side effects)
+function CombatController:_canPerformM1(): boolean
+	if not self.equipmentController or not self.equipmentController:getEquipped() then
+		return false
+	end
+
+	local attackSkill = self:getAttackSkill()
+	if not attackSkill then
+		return false
+	end
+
 	local character = self:getCharacter()
 	if character and character:HasStatusEffects({ Guardbroken }) then
-		print("[CombatController] Cannot dodge - Player is guardbroken")
-		return
+		return false
 	end
 
-	-- Check if skill is on cooldown
+	local state = attackSkill:GetState()
+	if state.Debounce then
+		return false
+	end
+
+	return true
+end
+
+-- Execute M1 (actual attack, no validation)
+function CombatController:_executeM1()
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
+	end
+
+	local attackSkill = self:getAttackSkill()
+	if attackSkill then
+		attackSkill:Start()
+	end
+end
+
+-- Check if heavy attack can be performed
+function CombatController:_canPerformHeavy(): boolean
+	if not self.equipmentController or not self.equipmentController:getEquipped() then
+		return false
+	end
+
+	local equipped = self.equipmentController:getEquipped()
+	if equipped and equipped ~= "fists" and not self.equipmentController:isWeaponInHand() then
+		return false
+	end
+
+	local heavySkill = self:getHeavyAttackSkill()
+	if not heavySkill then
+		return false
+	end
+
+	local character = self:getCharacter()
+	if character and character:HasStatusEffects({ Guardbroken }) then
+		return false
+	end
+
+	local state = heavySkill:GetState()
+	if state.Debounce then
+		return false
+	end
+
+	return true
+end
+
+-- Execute heavy attack
+function CombatController:_executeHeavy()
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
+	end
+
+	local heavySkill = self:getHeavyAttackSkill()
+	if heavySkill then
+		heavySkill:Start()
+	end
+end
+
+-- Check if dodge can be performed
+function CombatController:_canPerformDodge(): boolean
+	if self.dodgeDebounce then
+		return false
+	end
+
+	local dodgeSkill = self:getDodgeSkill()
+	if not dodgeSkill then
+		return false
+	end
+
+	local character = self:getCharacter()
+	if character and character:HasStatusEffects({ Guardbroken }) then
+		return false
+	end
+
 	local state = dodgeSkill:GetState()
 	if state.Debounce then
-		print("[CombatController] performDodge: Dodge is on cooldown")
-		return
+		return false
 	end
 
-	-- Set client-side debounce immediately
+	return true
+end
+
+-- Execute dodge (handles airdash camera, etc.)
+function CombatController:_executeDodge()
 	self.dodgeDebounce = true
 	task.delay(0.5, function()
 		self.dodgeDebounce = false
 	end)
 
-	-- Cancel sprint if active (AFTER validation)
 	if self.sprintManager then
 		self.sprintManager:stopSprint()
 	end
 
-	-- Send camera direction to server BEFORE starting skill (for airdash)
-	local player = game:GetService("Players").LocalPlayer
+	-- Handle airdash camera direction
+	local player = Players.LocalPlayer
 	if player and player.Character then
 		local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 		local humanoid = player.Character:FindFirstChild("Humanoid")
 
 		if hrp and humanoid then
-			-- Check if in air (same logic as dodge skill)
 			local humanoidState = humanoid:GetState()
 			local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
 				or humanoidState == Enum.HumanoidStateType.Jumping
 
-			-- Also do raycast to check height
 			local rayOrigin = hrp.Position
 			local rayDirection = Vector3.new(0, -5, 0)
 			local raycastParams = RaycastParams.new()
@@ -328,7 +507,6 @@ function CombatController:performDodge()
 
 			local isGrounded = not isInAirState and isGroundedByRaycast
 
-			-- If in air, send camera direction to server NOW (before skill activation)
 			if not isGrounded then
 				local camera = workspace.CurrentCamera
 				if camera then
@@ -336,68 +514,24 @@ function CombatController:performDodge()
 					local airdashRemote = ReplicatedStorage:FindFirstChild("SetAirdashCamera")
 					if airdashRemote then
 						airdashRemote:FireServer(cameraLook)
-						print(`[CombatController] Sent camera direction to server for airdash: {cameraLook}`)
 					end
 				end
 			end
 		end
 	end
 
-	print("[CombatController] performDodge: Starting dodge skill")
-	-- Execute the dodge skill
-	dodgeSkill:Start()
+	local dodgeSkill = self:getDodgeSkill()
+	if dodgeSkill then
+		dodgeSkill:Start()
+	end
 end
 
--- Perform heavy attack (R key)
-function CombatController:performCriticalAttack()
-	-- Check if player has equipment equipped
-	if not self.equipmentController or not self.equipmentController:getEquipped() then
-		print("[CombatController] Cannot heavy attack - No weapon equipped")
-		return
+-- Cleanup (call when controller is destroyed)
+function CombatController:destroy()
+	if self._bufferConnection then
+		self._bufferConnection:Disconnect()
+		self._bufferConnection = nil
 	end
-
-	-- For weapons (not fists), check if weapon is in hand
-	local equipped = self.equipmentController:getEquipped()
-	if equipped and equipped ~= "fists" and not self.equipmentController:isWeaponInHand() then
-		print("[CombatController] Cannot heavy attack - Weapon not in hand (press slot key to draw)")
-		return
-	end
-
-	-- Get the appropriate heavy attack skill (HeavyPunch for fists, HeavySlash for weapons)
-	local heavySkill = self:getHeavyAttackSkill()
-	if not heavySkill then
-		print("[CombatController] performCriticalAttack: No heavy attack skill found on character")
-		return
-	end
-
-	-- Check if character is guardbroken
-	local character = self:getCharacter()
-	if character and character:HasStatusEffects({ Guardbroken }) then
-		print("[CombatController] Cannot heavy attack - Player is guardbroken")
-		return
-	end
-
-	-- Check if skill is on cooldown
-	local state = heavySkill:GetState()
-	if state.Debounce then
-		print("[CombatController] performCriticalAttack: Heavy attack is on cooldown")
-		return
-	end
-
-	-- Cancel sprint if active
-	if self.sprintManager then
-		self.sprintManager:stopSprint()
-	end
-
-	print("[CombatController] performCriticalAttack: Starting heavy attack!")
-	-- Execute the heavy attack skill
-	heavySkill:Start()
-end
-
--- Use ability from hotbar slot
-function CombatController:useAbility(slotNumber: number)
-	print(`[CombatController] Using ability slot {slotNumber} - Not implemented yet`)
-	-- TODO: Get ability from hotbar and execute
 end
 
 return CombatController
