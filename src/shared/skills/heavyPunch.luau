@@ -1,7 +1,7 @@
 --!strict
 -- Heavy Punch Skill
 -- A slower, more powerful fist attack with windup
--- Triggered by pressing R when using fists
+-- Triggered by pressing R when using fists Test
 
 local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
