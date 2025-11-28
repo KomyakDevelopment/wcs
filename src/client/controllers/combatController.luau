@@ -204,12 +204,13 @@ function CombatController:performPrimaryAttack()
 		-- Returns true if weapon was just equipped, false if already equipped
 		local justEquipped = self.equipmentController:confirmAction()
 
-		-- If we just equipped, moveset change is async - skills might not be ready yet
-		-- Continue to attack anyway - if skills aren't ready, attack will fail silently
-		if justEquipped and self.sprintManager then
-			self.sprintManager:stopSprint()
+		-- If we just equipped, don't also attack - player only wanted to equip
+		if justEquipped then
+			if self.sprintManager then
+				self.sprintManager:stopSprint()
+			end
+			return
 		end
-		-- Continue to attack (don't return early)
 	end
 
 	-- Check if we can perform M1 right now
