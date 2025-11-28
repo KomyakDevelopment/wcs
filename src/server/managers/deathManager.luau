@@ -6,9 +6,14 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- WCS for status effects
+local WCS = require(ReplicatedStorage.Packages.wcs)
+local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+
 -- Configuration
 local KNOCKDOWN_DURATION = 6.0 -- Seconds before getting back up
 local MIN_KNOCKDOWN_HP = 1 -- Minimum HP while knocked down (prevents death)
+local RECOVERY_GRACE_PERIOD = 1.0 -- Seconds of immunity after recovering to prevent instant re-knockdown
 
 -- Remote events
 local knockdownRemote: RemoteEvent = nil
@@ -23,6 +28,8 @@ function DeathManager.new()
 	self._knockedPlayers = {} :: { [Player]: boolean } -- Track players currently knocked down
 	self._knockdownTimers = {} :: { [Player]: thread } -- Track knockdown timer threads
 	self._knockdownHealthConnections = {} :: { [Player]: RBXScriptConnection } -- Health protection while knocked
+	self._knockdownStatusEffects = {} :: { [Player]: any } -- Track Knockdown status effects
+	self._recoveryGracePeriod = {} :: { [Player]: boolean } -- Track players in recovery grace period
 
 	self:_setup()
 
@@ -80,7 +87,8 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 	-- Listen for health changes to intercept "death"
 	humanoid.HealthChanged:Connect(function(newHealth)
 		-- When health reaches 0 or below, trigger knockdown instead of death
-		if newHealth <= 0 and not self._knockedPlayers[player] then
+		-- Skip if already knocked or in recovery grace period
+		if newHealth <= 0 and not self._knockedPlayers[player] and not self._recoveryGracePeriod[player] then
 			self:_handleKnockdown(player, character, humanoid)
 		end
 	end)
@@ -97,6 +105,17 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 
 	-- CRITICAL: Keep player alive by setting HP to minimum
 	humanoid.Health = MIN_KNOCKDOWN_HP
+
+	-- Apply Knockdown status effect to block all skills
+	local wcsCharacter = WCS.GetCharacterFromInstance(character)
+	if wcsCharacter then
+		local knockdownEffect = Knockdown.new(wcsCharacter)
+		if knockdownEffect then
+			knockdownEffect:Start(-1) -- Infinite duration until manually ended
+			self._knockdownStatusEffects[player] = knockdownEffect
+			print(`[DeathManager] Applied Knockdown status effect to {player.Name}`)
+		end
+	end
 
 	-- Set ragdoll properties on SERVER
 	humanoid.PlatformStand = true
@@ -151,6 +170,13 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 		self._knockdownHealthConnections[player] = nil
 	end
 
+	-- End Knockdown status effect
+	if self._knockdownStatusEffects[player] then
+		self._knockdownStatusEffects[player]:End()
+		self._knockdownStatusEffects[player] = nil
+		print(`[DeathManager] Ended Knockdown status effect for {player.Name}`)
+	end
+
 	-- Check if player/character still exists
 	if not player or not player.Parent then
 		self._knockedPlayers[player] = nil
@@ -171,6 +197,13 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 	end
 
 	print(`[DeathManager] {player.Name} recovering from knockdown`)
+
+	-- Start recovery grace period to prevent immediate re-knockdown
+	self._recoveryGracePeriod[player] = true
+	task.delay(RECOVERY_GRACE_PERIOD, function()
+		self._recoveryGracePeriod[player] = nil
+		print(`[DeathManager] {player.Name} recovery grace period ended`)
+	end)
 
 	-- Get the HumanoidRootPart for positioning
 	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -311,27 +344,36 @@ function DeathManager:_enableRagdoll(character: Model)
 		end
 	end
 
-	-- Apply gentle trip impulse to knock them over
-	local upperTorso = character:FindFirstChild("UpperTorso") :: BasePart?
+	-- Apply trip to knock them over (strong enough for stationary players)
 	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	local targetPart = upperTorso or rootPart
 
-	if targetPart then
-		-- Random direction for natural-looking fall
-		local tripDirection = Vector3.new(
+	if rootPart then
+		-- Random fall direction (horizontal)
+		local fallDirection = Vector3.new(
 			math.random() - 0.5,
 			0,
 			math.random() - 0.5
 		).Unit
 
-		-- Gentle angular impulse to make them tip over
-		targetPart:ApplyAngularImpulse(tripDirection * 20)
+		-- Calculate rotation axis (perpendicular to fall direction, horizontal)
+		local rotationAxis = Vector3.new(0, 1, 0):Cross(fallDirection).Unit
 
-		-- Gentle linear impulse to push them down
-		targetPart:ApplyImpulse(Vector3.new(0, -15, 0) + tripDirection * 10)
+		-- DIRECTLY TILT the root CFrame to put them off-balance BEFORE physics kicks in
+		-- This physically rotates the entire body ~45 degrees in the fall direction
+		local currentCFrame = rootPart.CFrame
+		local tiltAngle = math.rad(50) -- 50 degree tilt
+		local tiltRotation = CFrame.fromAxisAngle(rotationAxis, tiltAngle)
+		rootPart.CFrame = CFrame.new(currentCFrame.Position) * tiltRotation * currentCFrame.Rotation
+
+		-- Wait for physics to initialize
+		task.wait()
+
+		-- Now add some velocity to help them fall the rest of the way
+		rootPart.AssemblyAngularVelocity = rotationAxis * 5
+		rootPart.AssemblyLinearVelocity = fallDirection * 10 + Vector3.new(0, -5, 0)
 	end
 
-	print("[DeathManager] Ragdoll enabled")
+	print("[DeathManager] Ragdoll enabled with trip")
 end
 
 -- Disable ragdoll and restore Motor6Ds
@@ -372,6 +414,13 @@ function DeathManager:destroy()
 	end
 	self._knockdownTimers = {}
 	self._knockedPlayers = {}
+	self._recoveryGracePeriod = {}
+
+	-- End all knockdown status effects
+	for _, effect in pairs(self._knockdownStatusEffects) do
+		effect:End()
+	end
+	self._knockdownStatusEffects = {}
 
 	-- Disconnect all health protection connections
 	for _, connection in pairs(self._knockdownHealthConnections) do

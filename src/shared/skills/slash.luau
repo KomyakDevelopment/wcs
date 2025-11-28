@@ -20,6 +20,7 @@ local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
+local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -155,9 +156,10 @@ function Slash:OnStartServer()
 			Blocking,
 			Parrying,
 			Attacking, -- Prevents stacking M1 with heavy attack
+			Knockdown, -- Can't attack while knocked down
 		})
 	then
-		print("[Slash] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, or attacking")
+		print("[Slash] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking")
 		return
 	end
 
@@ -296,6 +298,7 @@ function Slash:OnStartClient()
 			Parrying,
 			Guardbroken,
 			Attacking, -- Prevents stacking M1 with heavy attack
+			Knockdown, -- Can't attack while knocked down
 		})
 	then
 		return

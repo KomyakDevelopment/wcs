@@ -14,6 +14,7 @@ local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
+local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 
 local Block = WCS.RegisterSkill("Block")
@@ -146,8 +147,8 @@ function Block:OnStartServer()
 
 	-- Check if player is in hitstun, dashing, attacking, or guardbroken
 	-- SoftHitstun prevents blocking (player must wait for hitstun to end before blocking)
-	if self.Character:HasStatusEffects({ Dashing, SoftHitstun, TrueHitstun, Stun, BlockStunned, Guardbroken, Attacking }) then
-		print("[Block] Server: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking")
+	if self.Character:HasStatusEffects({ Dashing, SoftHitstun, TrueHitstun, Stun, BlockStunned, Guardbroken, Attacking, Knockdown }) then
+		print("[Block] Server: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking/knocked down")
 		return
 	end
 
@@ -259,8 +260,8 @@ function Block:OnStartClient()
 
 	-- Check if player has any status effects that prevent blocking
 	-- SoftHitstun prevents blocking (player must wait for hitstun to end before blocking)
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Attacking }) then
-		print("[Block] Client: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Attacking, Knockdown }) then
+		print("[Block] Client: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking/knocked down")
 		return
 	end
 

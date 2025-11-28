@@ -11,6 +11,7 @@ local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 
 local Dodge = WCS.RegisterSkill("Dodge")
 
@@ -99,8 +100,8 @@ end
 
 function Dodge:OnStartServer()
 	-- Check if player is in hitstun (soft or true) or guardbroken
-	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun }) then
-		print("[Dodge] Server: Cannot dodge - Player is in hitstun or guardbroken")
+	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown }) then
+		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, or knocked down")
 		return
 	end
 
@@ -379,8 +380,8 @@ end
 
 function Dodge:OnStartClient()
 	-- Check if player has any hitstun status effects active, is guardbroken, or is dashing
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken }) then
-		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing")
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown }) then
+		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down")
 		return
 	end
 

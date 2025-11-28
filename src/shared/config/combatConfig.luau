@@ -140,4 +140,13 @@ CombatConfig.InputBuffer = {
 	EnabledByDefault = true,
 }
 
+--============================================================================--
+-- HOLD TO M1
+--============================================================================--
+CombatConfig.HoldToM1 = {
+	-- When enabled, holding M1 will automatically chain attacks through the combo
+	-- Players can still click to attack normally - this just adds hold functionality
+	EnabledByDefault = true,
+}
+
 return CombatConfig

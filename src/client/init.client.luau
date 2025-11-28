@@ -68,7 +68,10 @@ end)
 -- Bind combat actions
 inputManager:bindAction("Combat.PrimaryAttack", function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
+		combatController:setM1Held(true)
 		combatController:performPrimaryAttack()
+	elseif state == Enum.UserInputState.End then
+		combatController:setM1Held(false)
 	end
 end)
 

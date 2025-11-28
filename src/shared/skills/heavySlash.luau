@@ -22,6 +22,7 @@ local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 
 -- Pre-cache skill references
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -125,6 +126,7 @@ function HeavySlash:OnStartServer()
 			Blocking,
 			Parrying,
 			Attacking, -- Prevent stacking with M1
+			Knockdown, -- Can't attack while knocked down
 		})
 	then
 		return
@@ -222,6 +224,7 @@ function HeavySlash:OnStartClient()
 			Parrying,
 			Guardbroken,
 			Attacking,
+			Knockdown, -- Can't attack while knocked down
 		})
 	then
 		return

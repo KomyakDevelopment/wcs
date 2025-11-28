@@ -58,9 +58,15 @@ function CombatController.new()
 		-- Note: Block is hold-based, not buffered
 	}
 
-	-- Start buffer processing loop
+	-- Hold to M1 system
+	local holdToM1Config = CombatConfig.HoldToM1
+	self.holdToM1Enabled = holdToM1Config.EnabledByDefault
+	self.m1Held = false -- Track if M1 is currently held down
+
+	-- Start buffer processing loop (also handles hold-to-M1)
 	self._bufferConnection = RunService.Heartbeat:Connect(function()
 		self:_processInputBuffer()
+		self:_processHoldToM1()
 	end)
 
 	return self
@@ -300,6 +306,39 @@ end
 -- Check if input buffering is enabled
 function CombatController:isInputBufferEnabled(): boolean
 	return self.inputBufferEnabled
+end
+
+-- Toggle hold-to-M1 on/off (for player settings)
+function CombatController:setHoldToM1Enabled(enabled: boolean)
+	self.holdToM1Enabled = enabled
+	-- Release held state when disabling
+	if not enabled then
+		self.m1Held = false
+	end
+	print(`[CombatController] Hold-to-M1 {enabled and "enabled" or "disabled"}`)
+end
+
+-- Check if hold-to-M1 is enabled
+function CombatController:isHoldToM1Enabled(): boolean
+	return self.holdToM1Enabled
+end
+
+-- Set M1 held state (called from input binding)
+function CombatController:setM1Held(held: boolean)
+	self.m1Held = held
+end
+
+-- Process hold-to-M1 (called every frame)
+function CombatController:_processHoldToM1()
+	-- Skip if hold-to-M1 is disabled or M1 is not held
+	if not self.holdToM1Enabled or not self.m1Held then
+		return
+	end
+
+	-- Try to execute M1 if we can
+	if self:_canPerformM1() then
+		self:_executeM1()
+	end
 end
 
 -- Buffer an input for later execution
