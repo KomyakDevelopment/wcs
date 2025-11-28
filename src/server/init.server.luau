@@ -58,6 +58,10 @@ local guardbreakRemote = Instance.new("RemoteEvent")
 guardbreakRemote.Name = "PlayGuardbreak"
 guardbreakRemote.Parent = ReplicatedStorage
 
+local playerExecutedRemote = Instance.new("RemoteEvent")
+playerExecutedRemote.Name = "PlayerExecuted"
+playerExecutedRemote.Parent = ReplicatedStorage
+
 local airdashCameraRemote = Instance.new("RemoteEvent")
 airdashCameraRemote.Name = "SetAirdashCamera"
 airdashCameraRemote.Parent = ReplicatedStorage
@@ -66,8 +70,18 @@ local toggleWeaponInHandRemote = Instance.new("RemoteEvent")
 toggleWeaponInHandRemote.Name = "ToggleWeaponInHand"
 toggleWeaponInHandRemote.Parent = ReplicatedStorage
 
+local requestRespawnRemote = Instance.new("RemoteEvent")
+requestRespawnRemote.Name = "RequestRespawn"
+requestRespawnRemote.Parent = ReplicatedStorage
+
+local confirmExecutionRemote = Instance.new("RemoteEvent")
+confirmExecutionRemote.Name = "ConfirmExecution"
+confirmExecutionRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
+
+-- DeathManager will be exposed after initialization (needed by grip skill for executions)
 
 -- Handle airdash camera direction from client
 airdashCameraRemote.OnServerEvent:Connect(function(player, cameraDirection)
@@ -78,10 +92,13 @@ airdashCameraRemote.OnServerEvent:Connect(function(player, cameraDirection)
 end)
 
 -- Initialize managers (after remotes are created)
-local stunIndicatorManager = StunIndicatorManager.new()
-local postureManager = PostureManager.new()
+local _stunIndicatorManager = StunIndicatorManager.new()
+local _postureManager = PostureManager.new()
 local deathManager = DeathManager.new()
-local collisionManager = CollisionManager.new()
+local _collisionManager = CollisionManager.new()
+
+-- Expose DeathManager for grip skill to use for executions
+_G.DeathManager = deathManager
 
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)
@@ -118,6 +135,56 @@ toggleWeaponInHandRemote.OnServerEvent:Connect(function(player)
 
 	-- Toggle weapon between back and hand
 	wcsCharacter.EquipmentManager:toggleWeaponInHand()
+end)
+
+-- Handle respawn requests from clients (after execution death)
+requestRespawnRemote.OnServerEvent:Connect(function(player)
+	-- Only respawn if player doesn't have a character or character is dead
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid") :: Humanoid?
+
+	if not character or not humanoid or humanoid.Health <= 0 then
+		player:LoadCharacter()
+		print(`[Server] Respawning {player.Name} by request`)
+	end
+end)
+
+-- Handle execution confirmation from clients (player clicked continue after being gripped)
+confirmExecutionRemote.OnServerEvent:Connect(function(player)
+	local character = player.Character
+	if not character then
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	-- Check if player is marked for execution
+	if not deathManager:isMarkedForExecution(player) then
+		warn(`[Server] {player.Name} tried to confirm execution but is not marked`)
+		return
+	end
+
+	print(`[Server] {player.Name} confirmed execution - killing and respawning`)
+
+	-- Prepare for execution (clear all protection)
+	deathManager:prepareForExecution(player)
+
+	-- Enable BreakJointsOnDeath so death properly breaks the character
+	humanoid.BreakJointsOnDeath = true
+
+	-- Kill the player
+	humanoid.Health = 0
+
+	-- Respawn after a short delay
+	task.delay(0.5, function()
+		if player and player.Parent then
+			player:LoadCharacter()
+			print(`[Server] {player.Name} respawned after execution`)
+		end
+	end)
 end)
 
 -- Create the regular dummy after server has started

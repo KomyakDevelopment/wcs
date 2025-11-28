@@ -68,9 +68,9 @@ local FLOURISH_KNOCKBACK_DURATION = WeaponConfig.FlourishKnockbackDuration
 
 -- Animation IDs for each combo phase (same as punch for now)
 local COMBO_ANIMATIONS = {
-	[1] = "rbxassetid://71814602910988",
-	[2] = "rbxassetid://83691540313756",
-	[3] = "rbxassetid://118980540226262",
+	[1] = "rbxassetid://91619051516074",
+	[2] = "rbxassetid://131141876861809",
+	[3] = "rbxassetid://122892720764576",
 	[4] = "rbxassetid://128565870055276", -- Flourish
 }
 
@@ -159,7 +159,9 @@ function Slash:OnStartServer()
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
-		print("[Slash] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking")
+		print(
+			"[Slash] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking"
+		)
 		return
 	end
 
@@ -444,6 +446,12 @@ end
 function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	-- Check if we already hit this target (prevent double-hitting)
 	if self.hitTargets[targetModel] then
+		return false
+	end
+
+	-- Check if target is marked for execution (complete iframes)
+	if targetModel:GetAttribute("MarkedForExecution") == true then
+		print(`[Slash] Target {targetModel.Name} is marked for execution - No damage`)
 		return false
 	end
 

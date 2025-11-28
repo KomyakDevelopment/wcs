@@ -81,8 +81,10 @@ end
 
 -- Internal: Handle input and route to appropriate callbacks (O(1) lookup)
 function InputManager:_handleInput(input: InputObject, state: Enum.UserInputState, gameProcessed: boolean)
-	-- Don't process input if player is typing in chat, etc.
-	if gameProcessed then
+	-- Don't process input BEGIN if player is typing in chat, etc.
+	-- BUT always process END events so held states get cleared properly
+	-- (e.g., releasing M1 while hovering over UI should still stop attacks)
+	if gameProcessed and state == Enum.UserInputState.Begin then
 		return
 	end
 

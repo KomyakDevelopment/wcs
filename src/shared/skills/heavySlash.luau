@@ -334,6 +334,12 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		return false
 	end
 
+	-- Check if target is marked for execution (complete iframes)
+	if targetModel:GetAttribute("MarkedForExecution") == true then
+		print(`[HeavySlash] Target {targetModel.Name} is marked for execution - No damage`)
+		return false
+	end
+
 	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
 		-- Check for iframes

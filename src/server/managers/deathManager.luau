@@ -29,7 +29,10 @@ function DeathManager.new()
 	self._knockdownTimers = {} :: { [Player]: thread } -- Track knockdown timer threads
 	self._knockdownHealthConnections = {} :: { [Player]: RBXScriptConnection } -- Health protection while knocked
 	self._knockdownStatusEffects = {} :: { [Player]: any } -- Track Knockdown status effects
-	self._recoveryGracePeriod = {} :: { [Player]: boolean } -- Track players in recovery grace period
+	self._recoveryGraceEndTime = {} :: { [Player]: number } -- Timestamp when grace period ends (more reliable than boolean)
+	self._executingPlayers = {} :: { [Player]: boolean } -- Track players being executed (skip knockdown)
+	self._executionHealthConnections = {} :: { [Player]: RBXScriptConnection } -- Prevent regen during execution
+	self._executionLeavers = {} :: { [number]: boolean } -- Track UserIds that left during execution (death on rejoin)
 
 	self:_setup()
 
@@ -53,13 +56,67 @@ function DeathManager:_setup()
 		end
 	end
 
-	-- Handle new players
+	-- Handle new players joining
 	table.insert(
 		self._connections,
 		Players.PlayerAdded:Connect(function(player)
+			-- Check if this player left during execution (combat log)
+			if self._executionLeavers[player.UserId] then
+				print(`[DeathManager] {player.Name} rejoined after leaving during execution - death will be counted`)
+				self._executionLeavers[player.UserId] = nil -- Clear the flag
+
+				-- Wait for their character, then kill them immediately
+				player.CharacterAdded:Once(function(character)
+					task.wait(0.5) -- Brief delay to let character fully load
+					local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+					if humanoid then
+						humanoid.BreakJointsOnDeath = true
+						humanoid.Health = 0
+						print(`[DeathManager] {player.Name} killed for leaving during execution`)
+					end
+				end)
+			end
+
 			player.CharacterAdded:Connect(function(character)
 				self:_setupCharacter(player, character)
 			end)
+		end)
+	)
+
+	-- Handle players leaving - track if they left during execution
+	table.insert(
+		self._connections,
+		Players.PlayerRemoving:Connect(function(player)
+			-- If player was being executed, mark them for death on rejoin
+			if self._executingPlayers[player] then
+				self._executionLeavers[player.UserId] = true
+				print(`[DeathManager] {player.Name} left during execution - death will be counted on rejoin`)
+			end
+
+			-- Clean up all state for this player
+			self._knockedPlayers[player] = nil
+			self._executingPlayers[player] = nil
+			self._recoveryGraceEndTime[player] = nil
+
+			if self._knockdownTimers[player] then
+				task.cancel(self._knockdownTimers[player])
+				self._knockdownTimers[player] = nil
+			end
+
+			if self._knockdownHealthConnections[player] then
+				self._knockdownHealthConnections[player]:Disconnect()
+				self._knockdownHealthConnections[player] = nil
+			end
+
+			if self._executionHealthConnections[player] then
+				self._executionHealthConnections[player]:Disconnect()
+				self._executionHealthConnections[player] = nil
+			end
+
+			if self._knockdownStatusEffects[player] then
+				-- Don't call End() - player is leaving anyway
+				self._knockdownStatusEffects[player] = nil
+			end
 		end)
 	)
 
@@ -81,14 +138,40 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 		return
 	end
 
+	-- Clear any execution/knockdown state from previous character (respawn cleanup)
+	self._executingPlayers[player] = nil
+	self._knockedPlayers[player] = nil
+	self._recoveryGraceEndTime[player] = nil
+
+	-- Disconnect any execution health clamp from previous character
+	if self._executionHealthConnections[player] then
+		self._executionHealthConnections[player]:Disconnect()
+		self._executionHealthConnections[player] = nil
+	end
+
 	-- Disable BreakJointsOnDeath so we can handle knockdown instead
 	humanoid.BreakJointsOnDeath = false
 
 	-- Listen for health changes to intercept "death"
 	humanoid.HealthChanged:Connect(function(newHealth)
 		-- When health reaches 0 or below, trigger knockdown instead of death
-		-- Skip if already knocked or in recovery grace period
-		if newHealth <= 0 and not self._knockedPlayers[player] and not self._recoveryGracePeriod[player] then
+		-- Skip if already knocked, being executed, or in recovery grace period
+		if newHealth <= 0 and not self._knockedPlayers[player] then
+			-- Skip if player is being executed (let them actually die)
+			if self._executingPlayers[player] then
+				print(`[DeathManager] {player.Name} is being executed - allowing death`)
+				return
+			end
+
+			-- Check grace period using timestamp (more reliable than boolean flag)
+			local graceEndTime = self._recoveryGraceEndTime[player]
+			if graceEndTime and tick() < graceEndTime then
+				local remaining = math.floor((graceEndTime - tick()) * 100) / 100
+				print(`[DeathManager] {player.Name} protected by grace period ({remaining}s remaining)`)
+				-- Keep player alive during grace period
+				humanoid.Health = MIN_KNOCKDOWN_HP
+				return
+			end
 			self:_handleKnockdown(player, character, humanoid)
 		end
 	end)
@@ -107,7 +190,7 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 	humanoid.Health = MIN_KNOCKDOWN_HP
 
 	-- Apply Knockdown status effect to block all skills
-	local wcsCharacter = WCS.GetCharacterFromInstance(character)
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
 	if wcsCharacter then
 		local knockdownEffect = Knockdown.new(wcsCharacter)
 		if knockdownEffect then
@@ -198,12 +281,9 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 
 	print(`[DeathManager] {player.Name} recovering from knockdown`)
 
-	-- Start recovery grace period to prevent immediate re-knockdown
-	self._recoveryGracePeriod[player] = true
-	task.delay(RECOVERY_GRACE_PERIOD, function()
-		self._recoveryGracePeriod[player] = nil
-		print(`[DeathManager] {player.Name} recovery grace period ended`)
-	end)
+	-- Start recovery grace period using timestamp (more reliable than task.delay boolean)
+	self._recoveryGraceEndTime[player] = tick() + RECOVERY_GRACE_PERIOD
+	print(`[DeathManager] {player.Name} grace period active until {self._recoveryGraceEndTime[player]}`)
 
 	-- Get the HumanoidRootPart for positioning
 	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -407,6 +487,125 @@ function DeathManager:isKnockedDown(player: Player): boolean
 	return self._knockedPlayers[player] == true
 end
 
+-- Check if a player is marked for execution (grip in progress)
+function DeathManager:isMarkedForExecution(player: Player): boolean
+	return self._executingPlayers[player] == true
+end
+
+-- Mark a player for execution - stops regen, gives complete iframes, disables collision
+-- Called by grip skill when grip starts (before the actual execution)
+-- Does NOT disable ragdoll - keeps them ragdolled during grip animation
+function DeathManager:markForExecution(player: Player)
+	print(`[DeathManager] Marking {player.Name} for execution (complete protection)`)
+
+	-- Mark as being executed early (prevents any knockdown re-triggers)
+	self._executingPlayers[player] = true
+
+	-- Cancel knockdown timer (they won't recover anymore)
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+		self._knockdownTimers[player] = nil
+	end
+
+	-- Disconnect knockdown health protection
+	if self._knockdownHealthConnections[player] then
+		self._knockdownHealthConnections[player]:Disconnect()
+		self._knockdownHealthConnections[player] = nil
+	end
+
+	-- Disconnect any existing execution health connection
+	if self._executionHealthConnections[player] then
+		self._executionHealthConnections[player]:Disconnect()
+		self._executionHealthConnections[player] = nil
+	end
+
+	local character = player.Character
+	if character then
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if humanoid then
+			-- Set HP to 1 (1%) - low but safe, won't cause accidental death
+			humanoid.Health = 1
+
+			-- Add connection to PREVENT any health changes during execution
+			-- This blocks both damage AND regen - complete protection
+			self._executionHealthConnections[player] = humanoid.HealthChanged:Connect(function(newHealth)
+				-- Keep HP locked at 1 no matter what
+				if self._executingPlayers[player] and newHealth ~= 1 then
+					humanoid.Health = 1
+				end
+			end)
+
+			print(`[DeathManager] {player.Name} HP locked at 1 (complete protection)`)
+		end
+
+		-- Set attribute so clients know this player is being executed (hides interaction UI)
+		character:SetAttribute("MarkedForExecution", true)
+
+		-- Set collision group to "Players" so they don't collide with other players
+		-- but still collide with the ground (won't fall through terrain)
+		-- "Players" collision group is configured to not collide with itself
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CollisionGroup = "Players"
+			end
+		end
+		print(`[DeathManager] {player.Name} collision group set to Players (no player collision)`)
+	end
+end
+
+-- Prepare a player for execution (clear all knockdown protection so they can die)
+-- Called by grip skill right before killing the target
+function DeathManager:prepareForExecution(player: Player)
+	print(`[DeathManager] Preparing {player.Name} for execution`)
+
+	-- Mark player as being executed (prevents re-knockdown when HP hits 0)
+	self._executingPlayers[player] = true
+
+	-- Cancel knockdown timer
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+		self._knockdownTimers[player] = nil
+	end
+
+	-- Disconnect knockdown health protection so HP can go to 0
+	if self._knockdownHealthConnections[player] then
+		self._knockdownHealthConnections[player]:Disconnect()
+		self._knockdownHealthConnections[player] = nil
+	end
+
+	-- Disconnect execution health clamp (so HP can go to 0)
+	if self._executionHealthConnections[player] then
+		self._executionHealthConnections[player]:Disconnect()
+		self._executionHealthConnections[player] = nil
+	end
+
+	-- End knockdown status effect
+	if self._knockdownStatusEffects[player] then
+		self._knockdownStatusEffects[player]:End()
+		self._knockdownStatusEffects[player] = nil
+	end
+
+	-- Clear knockdown state
+	self._knockedPlayers[player] = nil
+	self._recoveryGraceEndTime[player] = nil
+
+	-- Disable ragdoll on the character
+	local character = player.Character
+	if character then
+		self:_disableRagdoll(character)
+
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if humanoid then
+			-- Restore humanoid properties
+			humanoid.PlatformStand = false
+			humanoid.AutoRotate = true
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
+		end
+	end
+
+	print(`[DeathManager] {player.Name} ready for execution (knockdown protection removed)`)
+end
+
 function DeathManager:destroy()
 	-- Cancel all knockdown timers
 	for _, timerThread in pairs(self._knockdownTimers) do
@@ -414,7 +613,9 @@ function DeathManager:destroy()
 	end
 	self._knockdownTimers = {}
 	self._knockedPlayers = {}
-	self._recoveryGracePeriod = {}
+	self._recoveryGraceEndTime = {}
+	self._executingPlayers = {}
+	self._executionLeavers = {}
 
 	-- End all knockdown status effects
 	for _, effect in pairs(self._knockdownStatusEffects) do
@@ -422,11 +623,17 @@ function DeathManager:destroy()
 	end
 	self._knockdownStatusEffects = {}
 
-	-- Disconnect all health protection connections
+	-- Disconnect all knockdown health protection connections
 	for _, connection in pairs(self._knockdownHealthConnections) do
 		connection:Disconnect()
 	end
 	self._knockdownHealthConnections = {}
+
+	-- Disconnect all execution health clamp connections
+	for _, connection in pairs(self._executionHealthConnections) do
+		connection:Disconnect()
+	end
+	self._executionHealthConnections = {}
 
 	for _, connection in ipairs(self._connections) do
 		connection:Disconnect()

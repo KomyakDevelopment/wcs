@@ -281,10 +281,20 @@ function Punch:_restoreMovementAnimations()
 end
 
 function Punch:OnStartClient()
-	-- Check if player has any hitstun status effects active, is guardbroken, dashing, blocking/parrying, or attacking
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, blocking/parrying, knocked down, or attacking
 	-- Attacking check prevents move stacking with heavy attacks
 	if
-		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Blocking, Parrying, Guardbroken, Attacking })
+		self.Character:HasStatusEffects({
+			SoftHitstun,
+			TrueHitstun,
+			Stun,
+			Dashing,
+			Blocking,
+			Parrying,
+			Guardbroken,
+			Attacking,
+			Knockdown, -- Can't attack while knocked down
+		})
 	then
 		return
 	end
@@ -414,6 +424,12 @@ end
 function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	-- Check if we already hit this target (prevent double-hitting)
 	if self.hitTargets[targetModel] then
+		return false
+	end
+
+	-- Check if target is marked for execution (complete iframes)
+	if targetModel:GetAttribute("MarkedForExecution") == true then
+		print(`[Punch] Target {targetModel.Name} is marked for execution - No damage`)
 		return false
 	end
 

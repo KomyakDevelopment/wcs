@@ -69,6 +69,20 @@ InputConfig.Abilities = {
 -- Equipment Actions (reserved for future use)
 InputConfig.Equipment = {}
 
+-- Interaction Actions (for knocked players)
+InputConfig.Interaction = {
+	Grip = {
+		InputType = Enum.UserInputType.Keyboard,
+		KeyCode = Enum.KeyCode.B,
+		Description = "Grip/Execute knocked player",
+	},
+	Carry = {
+		InputType = Enum.UserInputType.Keyboard,
+		KeyCode = Enum.KeyCode.V,
+		Description = "Carry knocked player",
+	},
+}
+
 -- UI Actions
 InputConfig.UI = {
 	ToggleInventory = {

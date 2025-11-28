@@ -20,6 +20,9 @@ local REQUIRED_REMOTES = {
 	"PlayerDeath",
 	"PlayRollCancel",
 	"PlayGuardbreak",
+	"PlayerExecuted", -- Execution system
+	"ConfirmExecution", -- Execution confirmation
+	"RequestRespawn", -- Respawn request
 }
 
 -- Assets to preload (animation IDs, sounds, etc.)

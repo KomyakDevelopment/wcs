@@ -27,9 +27,11 @@ function HealthUIManager:_setup()
 	local playerGui = self.player:WaitForChild("PlayerGui")
 	local mainGui = playerGui:WaitForChild("Main", 5)
 	if mainGui then
-		local healthGUI = mainGui:FindFirstChild("HealthGUI")
-		if healthGUI then
-			local health = healthGUI:FindFirstChild("Health")
+		-- Try both case variants (HealthGui and HealthGUI)
+		local healthGui = mainGui:FindFirstChild("HealthGui") or mainGui:FindFirstChild("HealthGUI")
+		if healthGui then
+			self.healthGuiName = healthGui.Name -- Store actual name for debugging
+			local health = healthGui:FindFirstChild("Health")
 			if health then
 				self.healthBar = health:FindFirstChild("Bar")
 				self.healthPercentageLabel = health:FindFirstChild("Percentage")
@@ -38,10 +40,10 @@ function HealthUIManager:_setup()
 	end
 
 	if not self.healthBar then
-		warn("[HealthUIManager] Health bar not found at StarterGui.Main.HealthGUI.Health.Bar")
+		warn("[HealthUIManager] Health bar not found - check Main.HealthGui.Health.Bar or Main.HealthGUI.Health.Bar")
 	end
 	if not self.healthPercentageLabel then
-		warn("[HealthUIManager] Health percentage label not found at StarterGui.Main.HealthGUI.Health.Percentage")
+		warn("[HealthUIManager] Health percentage label not found")
 	end
 
 	-- Setup for current character

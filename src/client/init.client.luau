@@ -25,6 +25,8 @@ local PostureUIManager = require(ReplicatedStorage.Client.managers.postureUIMana
 local HealthUIManager = require(ReplicatedStorage.Client.managers.healthUIManager)
 local DeathEffectsManager = require(ReplicatedStorage.Client.managers.deathEffectsManager)
 local KnockdownEffectsManager = require(ReplicatedStorage.Client.managers.knockdownEffectsManager)
+local ExecutionEffectsManager = require(ReplicatedStorage.Client.managers.executionEffectsManager)
+local InteractionManager = require(ReplicatedStorage.Client.managers.interactionManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -48,6 +50,8 @@ local postureUIManager = PostureUIManager.new()
 local healthUIManager = HealthUIManager.new()
 local deathEffectsManager = DeathEffectsManager.new()
 local knockdownEffectsManager = KnockdownEffectsManager.new()
+local executionEffectsManager = ExecutionEffectsManager.new() -- Event-driven, listens for PlayerExecuted
+local interactionManager = InteractionManager.new()
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
@@ -135,6 +139,19 @@ end)
 inputManager:bindAction("UI.ToggleMap", function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
 		print("[Client] Toggle Map - Not implemented yet")
+	end
+end)
+
+-- Bind interaction actions (for knocked players)
+inputManager:bindAction("Interaction.Grip", function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		interactionManager:performGrip()
+	end
+end)
+
+inputManager:bindAction("Interaction.Carry", function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		interactionManager:performCarry()
 	end
 end)
 

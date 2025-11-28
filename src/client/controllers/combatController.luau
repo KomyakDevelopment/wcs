@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
@@ -332,6 +333,13 @@ end
 function CombatController:_processHoldToM1()
 	-- Skip if hold-to-M1 is disabled or M1 is not held
 	if not self.holdToM1Enabled or not self.m1Held then
+		return
+	end
+
+	-- Safety check: verify mouse is actually held down
+	-- This catches edge cases where the End event was missed (e.g., window focus loss)
+	if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+		self.m1Held = false
 		return
 	end
 
