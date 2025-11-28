@@ -410,8 +410,12 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			-- TARGET WAS NOT BLOCKING: Knockback (spacing tool), no guardbreak
 			local targetRootPart = targetModel:FindFirstChild("HumanoidRootPart") :: BasePart?
 			local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart") :: BasePart?
+			local knockbackTargetHumanoid = targetModel:FindFirstChild("Humanoid") :: Humanoid?
 
-			if targetRootPart and attackerRootPart then
+			-- Skip knockback if target is knocked down (ragdolled)
+			if knockbackTargetHumanoid and knockbackTargetHumanoid.PlatformStand then
+				print(`[HeavySlash] Skipping knockback - {targetModel.Name} is knocked down`)
+			elseif targetRootPart and attackerRootPart then
 				local knockbackDirection = (targetRootPart.Position - attackerRootPart.Position).Unit
 				local knockbackVelocity =
 					Vector3.new(knockbackDirection.X * KNOCKBACK_POWER, 5, knockbackDirection.Z * KNOCKBACK_POWER)

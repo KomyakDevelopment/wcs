@@ -40,6 +40,7 @@ function Block:OnConstructServer()
 	self.startupComplete = false
 	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
 	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
+	self._currentBlockToken = nil -- Token to detect stale delayed tasks
 end
 
 function Block:OnConstructClient()
@@ -164,10 +165,19 @@ function Block:OnStartServer()
 
 	self.blockActive = true
 
+	-- Store a unique token for this block instance to detect stale delayed tasks
+	local blockToken = {}
+	self._currentBlockToken = blockToken
+
 	-- Apply startup delay before block becomes active
 	task.delay(BLOCK_STARTUP_TIME, function()
 		if not self.blockActive then
 			return -- Block was cancelled during startup
+		end
+
+		-- Check if this delayed task is from the current block instance
+		if self._currentBlockToken ~= blockToken then
+			return -- Stale task from previous block
 		end
 
 		self.startupComplete = true
@@ -176,6 +186,12 @@ function Block:OnStartServer()
 		-- Apply ONLY Parrying status effect during parry window (only if not on cooldown)
 		-- Blocking status comes later after failed parry window
 		if not self.parryOnCooldown then
+			-- End any existing parrying effect first (prevents leaked effects)
+			if self.parryingEffect then
+				self.parryingEffect:End()
+				self.parryingEffect = nil
+			end
+
 			self.parryingEffect = Parrying.new(self.Character)
 			if self.parryingEffect then
 				self.parryingEffect:Start(PARRY_WINDOW_DURATION)
@@ -194,6 +210,18 @@ function Block:OnStartServer()
 	task.delay(blockingStartDelay, function()
 		if not self.blockActive then
 			return -- Block was cancelled before blocking phase
+		end
+
+		-- Check if this delayed task is from the current block instance
+		-- If not, it's a stale task from a previous block and should be ignored
+		if self._currentBlockToken ~= blockToken then
+			return -- Stale task from previous block
+		end
+
+		-- End any existing blocking effect first (prevents leaked effects)
+		if self.blockingEffect then
+			self.blockingEffect:End()
+			self.blockingEffect = nil
 		end
 
 		-- Apply Blocking status effect (infinite duration until cancelled)
@@ -291,6 +319,7 @@ function Block:OnEndServer()
 
 	self.blockActive = false
 	self.startupComplete = false
+	self._currentBlockToken = nil -- Invalidate any pending delayed tasks
 
 	-- Set cooldown timer
 	self.lastBlockEndTime = tick()

@@ -22,9 +22,9 @@ CombatConfig.Weapons = {
 		FlourishSelfHitstun = 0.5,
 	},
 	kunai = {
-		Damage = 12,
+		Damage = 9,
 		Range = 11,
-		Cooldown = 0.6,
+		Cooldown = 0.7,
 		HitstunDuration = 0.65,
 		-- Combo damage delays (synced to animation timing)
 		DamageDelays = { 0.38, 0.38, 0.38, 0.48 },

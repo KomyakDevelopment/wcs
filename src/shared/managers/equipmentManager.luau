@@ -34,7 +34,7 @@ local EQUIPMENT = {
 	},
 	kunai = {
 		Name = "Kunai",
-		IdleAnimationIds = { 115261994832101, 114255160039855 }, -- torso, hands
+		IdleAnimationIds = { 118152163033819, 133017425360708 }, -- torso, hands
 		Moveset = "Armed",
 		CriticalSkill = "HeavySlash", -- Heavy attack for light weapons
 		IsPhysical = true,

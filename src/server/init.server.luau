@@ -6,6 +6,7 @@ local StunIndicatorManager = require(ReplicatedStorage.Shared.managers.stunIndic
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
 local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 local DeathManager = require(script.managers.deathManager)
+local CollisionManager = require(script.managers.collisionManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
@@ -80,6 +81,7 @@ end)
 local stunIndicatorManager = StunIndicatorManager.new()
 local postureManager = PostureManager.new()
 local deathManager = DeathManager.new()
+local collisionManager = CollisionManager.new()
 
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)

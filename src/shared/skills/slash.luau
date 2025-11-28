@@ -409,7 +409,7 @@ function Slash:_detectHit()
 		end
 	end
 
-	-- Fire hit effects ONCE if any actual hits occurred (not blocked/parried)
+	-- Fire hit effects for EACH target that was actually hit (not blocked/parried)
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
 		if hitEffectsRemote then
@@ -417,7 +417,10 @@ function Slash:_detectHit()
 			local weaponType = if self.currentAttackPhase == MAX_COMBO_PHASE
 				then "fists"
 				else self:_getCurrentWeaponType()
-			hitEffectsRemote:FireAllClients(actualHits[1].model, weaponType)
+			-- Fire effects for each target that was hit
+			for _, targetData in ipairs(actualHits) do
+				hitEffectsRemote:FireAllClients(targetData.model, weaponType)
+			end
 		end
 	end
 end
@@ -558,8 +561,12 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	if self.currentAttackPhase == MAX_COMBO_PHASE then
 		local targetRootPart = targetModel:FindFirstChild("HumanoidRootPart")
 		local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart")
+		local knockbackTargetHumanoid = targetModel:FindFirstChild("Humanoid") :: Humanoid?
 
-		if targetRootPart and attackerRootPart then
+		-- Skip knockback if target is knocked down (ragdolled)
+		if knockbackTargetHumanoid and knockbackTargetHumanoid.PlatformStand then
+			print(`[Slash] Skipping flourish knockback - {targetModel.Name} is knocked down`)
+		elseif targetRootPart and attackerRootPart then
 			local knockbackDirection = (targetRootPart.Position - attackerRootPart.Position).Unit
 			local knockbackVelocity = Vector3.new(
 				knockbackDirection.X * FLOURISH_KNOCKBACK_POWER,

@@ -24,6 +24,7 @@ local DoubleJumpManager = require(ReplicatedStorage.Client.managers.doubleJumpMa
 local PostureUIManager = require(ReplicatedStorage.Client.managers.postureUIManager)
 local HealthUIManager = require(ReplicatedStorage.Client.managers.healthUIManager)
 local DeathEffectsManager = require(ReplicatedStorage.Client.managers.deathEffectsManager)
+local KnockdownEffectsManager = require(ReplicatedStorage.Client.managers.knockdownEffectsManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -46,6 +47,7 @@ local doubleJumpManager = DoubleJumpManager.new()
 local postureUIManager = PostureUIManager.new()
 local healthUIManager = HealthUIManager.new()
 local deathEffectsManager = DeathEffectsManager.new()
+local knockdownEffectsManager = KnockdownEffectsManager.new()
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 

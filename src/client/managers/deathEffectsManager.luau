@@ -133,8 +133,17 @@ function DeathEffectsManager:_enableRagdoll()
 		return
 	end
 
+	-- CRITICAL: PlatformStand makes the humanoid stop trying to stand up
+	humanoid.PlatformStand = true
+
+	-- Disable auto-rotate so character doesn't face camera
+	humanoid.AutoRotate = false
+
 	-- Change humanoid state to ragdoll
 	humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+
+	-- Disable GettingUp so they stay ragdolled
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
 
 	-- Disable all motor6ds to allow physics ragdoll
 	for _, motor in ipairs(character:GetDescendants()) do
@@ -174,7 +183,28 @@ function DeathEffectsManager:_enableRagdoll()
 		end
 	end
 
-	print("[DeathEffectsManager] Ragdoll enabled")
+	-- Apply impulse to knock them over (trip them)
+	local upperTorso = character:FindFirstChild("UpperTorso") :: BasePart?
+	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+
+	-- Use UpperTorso for R15, fallback to HumanoidRootPart
+	local targetPart = upperTorso or rootPart
+	if targetPart then
+		-- Apply angular impulse to make them fall backwards/forwards
+		local tripDirection = Vector3.new(
+			math.random() - 0.5, -- Slight random X
+			0,
+			math.random() - 0.5  -- Slight random Z
+		).Unit
+
+		-- Angular impulse makes them spin/fall over
+		targetPart:ApplyAngularImpulse(tripDirection * 50)
+
+		-- Also apply a small regular impulse to push them
+		targetPart:ApplyImpulse(Vector3.new(0, -20, 0) + tripDirection * 30)
+	end
+
+	print("[DeathEffectsManager] Ragdoll enabled with trip impulse")
 end
 
 function DeathEffectsManager:_playDeathSound()
