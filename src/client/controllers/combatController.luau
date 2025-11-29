@@ -64,6 +64,9 @@ function CombatController.new()
 	self.holdToM1Enabled = holdToM1Config.EnabledByDefault
 	self.m1Held = false -- Track if M1 is currently held down
 
+	-- Equip cooldown: prevents hold-to-M1 and buffer from attacking immediately after equipping
+	self._equipCooldownUntil = 0
+
 	-- Start buffer processing loop (also handles hold-to-M1)
 	self._bufferConnection = RunService.Heartbeat:Connect(function()
 		self:_processInputBuffer()
@@ -216,6 +219,8 @@ function CombatController:performPrimaryAttack()
 			if self.sprintManager then
 				self.sprintManager:stopSprint()
 			end
+			-- Set cooldown to prevent hold-to-M1 and buffer from triggering attack
+			self._equipCooldownUntil = tick() + 0.15
 			return
 		end
 	end
@@ -336,6 +341,11 @@ function CombatController:_processHoldToM1()
 		return
 	end
 
+	-- Skip if in equip cooldown (just equipped a weapon, don't attack immediately)
+	if tick() < self._equipCooldownUntil then
+		return
+	end
+
 	-- Safety check: verify mouse is actually held down
 	-- This catches edge cases where the End event was missed (e.g., window focus loss)
 	if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
@@ -397,9 +407,9 @@ function CombatController:_processInputBuffer()
 		return
 	end
 
-	-- Check M1 buffer
+	-- Check M1 buffer (respect equip cooldown)
 	if self:_getBufferedInput("m1") then
-		if self:_canPerformM1() then
+		if tick() >= self._equipCooldownUntil and self:_canPerformM1() then
 			self:_clearBuffer("m1")
 			self:_executeM1()
 		end
