@@ -20,9 +20,9 @@ local CAMERA_POSITION = Vector3.new(-570.256, 553.223, 8264.481)
 
 -- Smooth camera pan settings
 local PAN_SMOOTHNESS = 0.1 -- Lower = smoother/slower follow (0.05-0.15 is good)
-local MAX_PAN_OFFSET_X = 5 -- Max horizontal pan in studs
-local MAX_PAN_OFFSET_Y = 5 -- Max vertical pan in studs
-local MOUSE_INFLUENCE = 0.01 -- How much mouse affects camera
+local MAX_PAN_OFFSET_X = 3 -- Max horizontal pan in studs
+local MAX_PAN_OFFSET_Y = 3 -- Max vertical pan in studs
+local MOUSE_INFLUENCE = 0.008 -- How much mouse affects camera
 
 local MenuManager = {}
 MenuManager.__index = MenuManager
@@ -143,10 +143,13 @@ function MenuManager:_initialize()
 		return
 	end
 
-	-- Get text label and set loading text
+	-- Get text label and set it up (invisible, below screen)
 	local textLabel = clonedInitialUI and clonedInitialUI:FindFirstChild("TextLabel") :: TextLabel?
 	if textLabel then
-		textLabel.Text = "Kekkei is loading, please stand by."
+		textLabel.Text = "- Press any key to continue -"
+		textLabel.TextTransparency = 1 -- Start invisible
+		-- Position 15% below the screen (1.15 Y scale)
+		textLabel.Position = UDim2.new(textLabel.Position.X.Scale, textLabel.Position.X.Offset, 1.15, 0)
 	end
 
 	-- Start continuous streaming to keep particles loaded
@@ -176,7 +179,7 @@ function MenuManager:_initialize()
 	clonedContinueUI.Visible = false
 
 	-- Get references from cloned UIs
-	local buttonsFolder = clonedContinueUI:FindFirstChild("Buttons")
+	local buttonsFolder = clonedContinueUI --:FindFirstChild("Buttons")
 	local continueButton = buttonsFolder and buttonsFolder:FindFirstChild("Continue") :: GuiButton?
 
 	if not textLabel then
@@ -221,9 +224,15 @@ function MenuManager:_initialize()
 		task.wait(4 - elapsed)
 	end
 
-	-- Phase 2: Ready for input
+	-- Phase 2: Ready for input - animate text sliding up and fading in
 	if textLabel then
-		textLabel.Text = "Press any key to continue"
+		-- Tween both position (from 1.15 to 0.75) and transparency (from 1 to 0) together
+		local tween =
+			TweenService:Create(textLabel, TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = UDim2.new(textLabel.Position.X.Scale, textLabel.Position.X.Offset, 0.75, 0),
+				TextTransparency = 0,
+			})
+		tween:Play()
 	end
 
 	print("[MenuManager] Game loaded - waiting for key press")
@@ -244,54 +253,31 @@ function MenuManager:_initialize()
 				self._keyPressConnection = nil
 			end
 
-			-- Fade transition to continue screen
+			-- Transition to continue screen (text animates down, then continue button fades in)
 			if clonedInitialUI and clonedContinueUI then
-				self:_fadeToScreen(clonedInitialUI, clonedContinueUI, continueButton)
+				self:_transitionToScreen(clonedInitialUI, clonedContinueUI, continueButton)
 			end
 		end
 	end)
 end
 
-function MenuManager:_fadeToScreen(initialUI: Frame, continueUI: Frame, continueButton: GuiButton?)
-	-- Create fade frame on initial screen
-	local fadeFrame = Instance.new("Frame")
-	fadeFrame.Name = "FadeFrame"
-	fadeFrame.Size = UDim2.fromScale(1, 1)
-	fadeFrame.Position = UDim2.fromScale(0, 0)
-	fadeFrame.BackgroundColor3 = Color3.new(0, 0, 0)
-	fadeFrame.BackgroundTransparency = 1
-	fadeFrame.BorderSizePixel = 0
-	fadeFrame.ZIndex = 100
-
-	if self._initialScreenGui then
-		fadeFrame.Parent = self._initialScreenGui
+function MenuManager:_transitionToScreen(initialUI: Frame, continueUI: Frame, continueButton: GuiButton?)
+	-- Find the text label and animate it back down (reverse of the entry animation)
+	local textLabel = initialUI:FindFirstChild("TextLabel") :: TextLabel?
+	if textLabel then
+		-- Tween back down (0.75 to 1.15) and fade out (0 to 1)
+		local textTween =
+			TweenService:Create(textLabel, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				Position = UDim2.new(textLabel.Position.X.Scale, textLabel.Position.X.Offset, 1.15, 0),
+				TextTransparency = 1,
+			})
+		textTween:Play()
+		textTween.Completed:Wait()
 	end
-
-	-- Fade to black
-	local fadeIn = TweenService:Create(fadeFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
-		BackgroundTransparency = 0,
-	})
-	fadeIn:Play()
-	fadeIn.Completed:Wait()
 
 	-- Hide initial screen, show continue screen
 	initialUI.Visible = false
 	self:_showContinueScreen(initialUI, continueUI, continueButton)
-
-	-- Move fade frame to continue screen gui
-	if self._continueScreenGui then
-		fadeFrame.Parent = self._continueScreenGui
-	end
-
-	-- Fade from black
-	local fadeOut = TweenService:Create(fadeFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {
-		BackgroundTransparency = 1,
-	})
-	fadeOut:Play()
-	fadeOut.Completed:Wait()
-
-	-- Clean up fade frame
-	fadeFrame:Destroy()
 end
 
 function MenuManager:_showContinueScreen(initialUI: Frame, continueUI: Frame, continueButton: GuiButton?)
@@ -306,8 +292,52 @@ function MenuManager:_showContinueScreen(initialUI: Frame, continueUI: Frame, co
 	-- Show continue UI
 	continueUI.Visible = true
 
-	-- Handle continue button
+	-- Animate continue button sliding up from bottom while fading in
 	if continueButton then
+		-- Store original position values
+		local originalXScale = continueButton.Position.X.Scale
+		local originalXOffset = continueButton.Position.X.Offset
+		local originalYScale = continueButton.Position.Y.Scale
+		local originalYOffset = continueButton.Position.Y.Offset
+
+		-- Find text children and start them invisible
+		local textLabel = continueButton:FindFirstChildOfClass("TextLabel")
+		local textButton = continueButton:FindFirstChildOfClass("TextButton")
+
+		if textLabel then
+			textLabel.TextTransparency = 1
+		end
+		if textButton then
+			textButton.TextTransparency = 1
+		end
+
+		-- Start below screen (push down by 500 pixels)
+		continueButton.Position = UDim2.new(originalXScale, originalXOffset, originalYScale, originalYOffset + 500)
+
+		-- Tween button position back up to original
+		TweenService:Create(
+			continueButton,
+			TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Position = UDim2.new(originalXScale, originalXOffset, originalYScale, originalYOffset) }
+		):Play()
+
+		-- Tween text transparency
+		if textLabel then
+			TweenService:Create(
+				textLabel,
+				TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ TextTransparency = 0 }
+			):Play()
+		end
+		if textButton then
+			TweenService:Create(
+				textButton,
+				TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ TextTransparency = 0 }
+			):Play()
+		end
+
+		-- Connect button click handler
 		self._continueConnection = continueButton.MouseButton1Click:Connect(function()
 			if self._continueConnection then
 				self._continueConnection:Disconnect()
