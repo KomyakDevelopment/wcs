@@ -78,6 +78,10 @@ local confirmExecutionRemote = Instance.new("RemoteEvent")
 confirmExecutionRemote.Name = "ConfirmExecution"
 confirmExecutionRemote.Parent = ReplicatedStorage
 
+local requestSpawnRemote = Instance.new("RemoteEvent")
+requestSpawnRemote.Name = "RequestSpawn"
+requestSpawnRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 
@@ -236,23 +240,50 @@ local function setupCharacter(player: Player, character: Model)
 	end)
 end
 
--- Setup player (connect CharacterAdded)
-local function setupPlayer(player: Player)
-	-- Handle current character if exists
-	if player.Character then
-		setupCharacter(player, player.Character)
-	end
+-- Track players who have done their initial spawn (clicked continue)
+local playersReadyToSpawn = {} :: { [Player]: boolean }
 
-	-- Handle future characters (respawns)
+-- Setup player for CharacterAdded events
+local function setupPlayerCharacterAdded(player: Player)
 	player.CharacterAdded:Connect(function(character)
 		setupCharacter(player, character)
 	end)
 end
 
--- Handle existing players (in case script runs after players joined)
-for _, player in ipairs(Players:GetPlayers()) do
-	setupPlayer(player)
+-- Setup NEW player (CharacterAutoLoads is disabled globally in Players service)
+local function setupNewPlayer(player: Player)
+	-- Handle future characters (respawns after clicking continue)
+	setupPlayerCharacterAdded(player)
 end
 
--- Handle new players
-Players.PlayerAdded:Connect(setupPlayer)
+-- Handle initial spawn request from client (when they click continue)
+requestSpawnRemote.OnServerEvent:Connect(function(player)
+	-- Only allow initial spawn once
+	if playersReadyToSpawn[player] then
+		return
+	end
+
+	playersReadyToSpawn[player] = true
+
+	-- Re-enable auto loads for future respawns (pcall for Studio compatibility)
+	pcall(function()
+		player.CharacterAutoLoads = true
+	end)
+
+	-- Spawn their character
+	player:LoadCharacter()
+	print(`[Server] Initial spawn for {player.Name} (clicked continue)`)
+end)
+
+-- Clean up when player leaves
+Players.PlayerRemoving:Connect(function(player)
+	playersReadyToSpawn[player] = nil
+end)
+
+-- Handle existing players (rare edge case - server script ran after player joined)
+for _, player in ipairs(Players:GetPlayers()) do
+	setupPlayerCharacterAdded(player)
+end
+
+-- Handle new players (they need to click continue to spawn)
+Players.PlayerAdded:Connect(setupNewPlayer)

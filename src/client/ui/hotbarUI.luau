@@ -44,11 +44,12 @@ function HotbarUI:_createUI()
 	local player = Players.LocalPlayer
 	local playerGui = player:WaitForChild("PlayerGui")
 
-	-- Create ScreenGui
+	-- Create ScreenGui (starts disabled - enabled by MenuManager after continue)
 	local screenGui = Instance.new("ScreenGui")
 	screenGui.Name = "HotbarUI"
 	screenGui.ResetOnSpawn = false
 	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.Enabled = false
 	screenGui.Parent = playerGui
 
 	self.screenGui = screenGui

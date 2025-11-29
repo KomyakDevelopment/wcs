@@ -1,12 +1,11 @@
 --!strict
 -- Loading Manager (Client)
--- Shows a black screen while waiting for server to be ready
--- Preloads assets and waits for required remotes
+-- Waits for server to be ready (remotes, assets, character)
+-- Visual loading screen is handled by ReplicatedFirst
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ContentProvider = game:GetService("ContentProvider")
-local TweenService = game:GetService("TweenService")
 
 -- Required remote events that must exist before game starts
 local REQUIRED_REMOTES = {
@@ -23,6 +22,7 @@ local REQUIRED_REMOTES = {
 	"PlayerExecuted", -- Execution system
 	"ConfirmExecution", -- Execution confirmation
 	"RequestRespawn", -- Respawn request
+	"RequestSpawn", -- Initial spawn request (after continue)
 }
 
 -- Assets to preload (animation IDs, sounds, etc.)
@@ -31,7 +31,6 @@ local PRELOAD_ASSETS = {
 	-- "rbxassetid://123456789",
 }
 
-local FADE_OUT_DURATION = 0.5
 local TIMEOUT = 30 -- Max seconds to wait before giving up
 
 local LoadingManager = {}
@@ -41,40 +40,10 @@ function LoadingManager.new()
 	local self = setmetatable({}, LoadingManager)
 
 	self.player = Players.LocalPlayer
-	self.loadingGui = nil :: ScreenGui?
-	self.loadingFrame = nil :: Frame?
 	self.isReady = false
 
-	self:_createLoadingScreen()
-
-	print("[LoadingManager] Initialized - showing loading screen")
+	print("[LoadingManager] Initialized - waiting for server resources")
 	return self
-end
-
-function LoadingManager:_createLoadingScreen()
-	local playerGui = self.player:WaitForChild("PlayerGui")
-
-	-- Create ScreenGui
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "LoadingGui"
-	screenGui.IgnoreGuiInset = true
-	screenGui.DisplayOrder = 1000 -- On top of everything
-	screenGui.ResetOnSpawn = false
-	screenGui.Parent = playerGui
-
-	-- Create black frame
-	local frame = Instance.new("Frame")
-	frame.Name = "LoadingFrame"
-	frame.Size = UDim2.new(1, 0, 1, 0)
-	frame.Position = UDim2.new(0, 0, 0, 0)
-	frame.BackgroundColor3 = Color3.new(0, 0, 0)
-	frame.BackgroundTransparency = 0
-	frame.BorderSizePixel = 0
-	frame.ZIndex = 100
-	frame.Parent = screenGui
-
-	self.loadingGui = screenGui
-	self.loadingFrame = frame
 end
 
 -- Wait for all required remotes to exist
@@ -154,35 +123,14 @@ function LoadingManager:load(): boolean
 	return true
 end
 
--- Fade out the loading screen
+-- No-op: Visual loading screen is handled by ReplicatedFirst
 function LoadingManager:fadeOut()
-	if not self.loadingFrame then
-		return
-	end
-
-	local tweenInfo = TweenInfo.new(FADE_OUT_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local tween = TweenService:Create(self.loadingFrame, tweenInfo, { BackgroundTransparency = 1 })
-
-	tween:Play()
-	tween.Completed:Wait()
-
-	-- Destroy the loading GUI
-	if self.loadingGui then
-		self.loadingGui:Destroy()
-		self.loadingGui = nil
-		self.loadingFrame = nil
-	end
-
-	print("[LoadingManager] Loading screen hidden")
+	-- Kept for API compatibility
 end
 
 -- Clean up
 function LoadingManager:destroy()
-	if self.loadingGui then
-		self.loadingGui:Destroy()
-		self.loadingGui = nil
-		self.loadingFrame = nil
-	end
+	-- No resources to clean up
 end
 
 return LoadingManager

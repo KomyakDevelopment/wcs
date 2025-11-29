@@ -4,7 +4,11 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Load loading manager FIRST (shows black screen immediately)
+-- Initialize menu manager FIRST (handles loading screen and continue flow)
+local MenuManager = require(ReplicatedStorage.Client.managers.menuManager)
+local menuManager = MenuManager.new()
+
+-- Load loading manager (waits for server resources)
 local LoadingManager = require(ReplicatedStorage.Client.managers.loadingManager)
 local loadingManager = LoadingManager.new()
 
