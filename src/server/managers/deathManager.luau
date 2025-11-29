@@ -13,7 +13,6 @@ local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 -- Configuration
 local KNOCKDOWN_DURATION = 6.0 -- Seconds before getting back up
 local MIN_KNOCKDOWN_HP = 1 -- Minimum HP while knocked down (prevents death)
-local RECOVERY_GRACE_PERIOD = 1.0 -- Seconds of immunity after recovering to prevent instant re-knockdown
 
 -- Remote events
 local knockdownRemote: RemoteEvent = nil
@@ -163,15 +162,6 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 				return
 			end
 
-			-- Check grace period using timestamp (more reliable than boolean flag)
-			local graceEndTime = self._recoveryGraceEndTime[player]
-			if graceEndTime and tick() < graceEndTime then
-				local remaining = math.floor((graceEndTime - tick()) * 100) / 100
-				print(`[DeathManager] {player.Name} protected by grace period ({remaining}s remaining)`)
-				-- Keep player alive during grace period
-				humanoid.Health = MIN_KNOCKDOWN_HP
-				return
-			end
 			self:_handleKnockdown(player, character, humanoid)
 		end
 	end)
@@ -281,10 +271,6 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 
 	print(`[DeathManager] {player.Name} recovering from knockdown`)
 
-	-- Start recovery grace period using timestamp (more reliable than task.delay boolean)
-	self._recoveryGraceEndTime[player] = tick() + RECOVERY_GRACE_PERIOD
-	print(`[DeathManager] {player.Name} grace period active until {self._recoveryGraceEndTime[player]}`)
-
 	-- Get the HumanoidRootPart for positioning
 	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 
@@ -327,8 +313,8 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 	humanoid.JumpPower = 50 -- Default jump power
 	humanoid.JumpHeight = 7.2 -- Default jump height
 
-	-- NO HP restoration - player keeps their current HP (minimum knockdown HP)
-	-- They got knocked down, they don't get rewarded with health
+	-- Player keeps their current HP (MIN_KNOCKDOWN_HP)
+	-- Roblox's built-in health regen will restore HP over time
 
 	-- Fire recovery event to all clients
 	knockdownRemote:FireAllClients(character, false)
