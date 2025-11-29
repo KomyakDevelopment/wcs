@@ -69,6 +69,9 @@ function MenuManager:_enableGameUI()
 end
 
 function MenuManager:_initialize()
+	-- Remove Roblox's default loading screen IMMEDIATELY (prevents black frame)
+	ReplicatedFirst:RemoveDefaultLoadingScreen()
+
 	-- Start loading screen music IMMEDIATELY (earliest possible moment)
 	MusicManager.playMusicFromPath(AudioConfig.Music.Tracks.LoadingScreen, AudioConfig.Music.MenuFadeIn)
 	print("[MenuManager] Started loading screen music")
@@ -91,9 +94,6 @@ function MenuManager:_initialize()
 		local camera = workspace.CurrentCamera
 		camera.CameraType = Enum.CameraType.Scriptable
 		camera.CFrame = CFrame.new(CAMERA_POSITION)
-
-		-- Remove Roblox's default loading screen
-		ReplicatedFirst:RemoveDefaultLoadingScreen()
 
 		-- Look for UI in ReplicatedFirst (placed in Studio)
 		local initialScreen = ReplicatedFirst:FindFirstChild("InitialScreen")
