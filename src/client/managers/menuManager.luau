@@ -10,6 +10,9 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 
+local MusicManager = require(ReplicatedStorage.Client.managers.musicManager)
+local AudioConfig = require(ReplicatedStorage.Shared.config.audioConfig)
+
 local player = Players.LocalPlayer
 
 -- Cinematic camera position
@@ -66,6 +69,10 @@ function MenuManager:_enableGameUI()
 end
 
 function MenuManager:_initialize()
+	-- Start loading screen music IMMEDIATELY (earliest possible moment)
+	MusicManager.playMusicFromPath(AudioConfig.Music.Tracks.LoadingScreen, AudioConfig.Music.MenuFadeIn)
+	print("[MenuManager] Started loading screen music")
+
 	local playerGui = player:WaitForChild("PlayerGui")
 
 	-- Check if ReplicatedFirst script already created the loading screen
@@ -377,6 +384,10 @@ end
 
 function MenuManager:_handleContinue(continueUI: Frame)
 	print("[MenuManager] Continue clicked - transitioning to game")
+
+	-- Crossfade from loading screen music to background music
+	MusicManager.playMusicFromPath(AudioConfig.Music.Tracks.Background, AudioConfig.Music.MenuCrossfade)
+	print("[MenuManager] Crossfading to background music")
 
 	-- Create fade frame
 	local fadeFrame = Instance.new("Frame")
