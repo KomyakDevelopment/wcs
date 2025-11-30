@@ -63,6 +63,9 @@ local DAMAGE_DELAY = HeavyConfig.DamageDelay
 local KNOCKBACK_POWER = SkillConfig.KnockbackPower
 local KNOCKBACK_DURATION = HeavyConfig.KnockbackDuration
 
+-- Endlag after crit completes (cannot attack during this time)
+local ENDLAG_DURATION = 0.3
+
 -- Animation ID for heavy punch
 local HEAVY_ANIMATION_ID = "rbxassetid://105621431802545"
 
@@ -130,13 +133,13 @@ function HeavyPunch:OnStartServer()
 
 	self:ApplyCooldown(HEAVY_COOLDOWN)
 
-	-- Apply Attacking status
+	-- Apply Attacking status (includes endlag after attack completes)
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 	end
 	self.attackingEffect = Attacking.new(self.Character)
 	if self.attackingEffect then
-		self.attackingEffect:Start(DAMAGE_DELAY + 0.1)
+		self.attackingEffect:Start(DAMAGE_DELAY + ENDLAG_DURATION)
 	end
 
 	-- Broadcast parry flash AFTER windup (so parry window timing is correct)
@@ -222,6 +225,24 @@ function HeavyPunch:OnStartClient()
 		})
 	then
 		return
+	end
+
+	-- Stop any M1 (punch) animations that might be lingering
+	local Punch = require(ReplicatedStorage.Shared.skills.punch)
+	local punchSkill = self.Character:GetSkillFromConstructor(Punch)
+	if punchSkill then
+		-- Stop current animation track if playing
+		if punchSkill.currentTrack and punchSkill.currentTrack.IsPlaying then
+			punchSkill.currentTrack:Stop(0.05)
+		end
+		-- Also stop any loaded animations that might be playing
+		if punchSkill.loadedAnimations then
+			for _, track in pairs(punchSkill.loadedAnimations) do
+				if track and track.IsPlaying then
+					track:Stop(0.05)
+				end
+			end
+		end
 	end
 
 	-- Play animation
@@ -464,41 +485,117 @@ function HeavyPunch:_applyHeavyVFX()
 		return
 	end
 
-	-- Get fists trail template
-	local fistsTrailPart = ReplicatedStorage:FindFirstChild("Assets")
+	local character = self.Character.Instance
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then
+		return
+	end
+
+	-- Get VFX folder from Criticals
+	local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("VFX")
 		and ReplicatedStorage.Assets.VFX:FindFirstChild("Weapon_Classes")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes:FindFirstChild("Light_Weapons")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Light_Weapons:FindFirstChild("Fists")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Light_Weapons.Fists:FindFirstChild("fists_trail")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes:FindFirstChild("Criticals")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild("Light_Weapons")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons:FindFirstChild("heavyPunch")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons.heavyPunch:FindFirstChild("vfx")
 
-	if not fistsTrailPart or not fistsTrailPart:IsA("BasePart") then
+	if not vfxFolder then
+		warn("[HeavyPunch] VFX folder not found at Assets.VFX.Weapon_Classes.Criticals.Light_Weapons.heavyPunch.vfx")
 		return
 	end
-
-	local trailAttachment = fistsTrailPart:FindFirstChildOfClass("Attachment")
-	if not trailAttachment then
-		return
-	end
-
-	local character = self.Character.Instance
-
-	-- Apply trail to right arm
-	local rightArm = character:FindFirstChild("Right Arm") or character:FindFirstChild("RightHand")
-	local targetGrip = rightArm and rightArm:FindFirstChild("RightGripAttachment")
-
-	if not targetGrip then
-		return
-	end
-
-	local trailClone = trailAttachment:Clone()
-	trailClone.Name = "HeavyPunchTrail"
-	trailClone.Parent = targetGrip
 
 	local animLength = self.loadedAnimation and self.loadedAnimation.Length or 0.7
-	task.delay(animLength, function()
-		if trailClone and trailClone.Parent then
-			trailClone:Destroy()
+	local clonedAttachments = {} -- Track all cloned attachments for cleanup
+
+	-- Process VFX_attachment (particles on HumanoidRootPart)
+	local vfxAttachment = vfxFolder:FindFirstChild("VFX_attachment")
+	if vfxAttachment and vfxAttachment:IsA("Attachment") then
+		local attachmentClone = vfxAttachment:Clone()
+		attachmentClone.Parent = humanoidRootPart
+		table.insert(clonedAttachments, attachmentClone)
+
+		-- Process all particle emitters - emit based on their attributes
+		for _, emitter in ipairs(attachmentClone:GetDescendants()) do
+			if emitter:IsA("ParticleEmitter") then
+				-- Keep disabled - we'll manually emit
+				emitter.Enabled = false
+
+				-- Read attributes for timing
+				local emitDelay = emitter:GetAttribute("EmitDelay") or 0
+				local emitCount = emitter:GetAttribute("EmitCount") or emitter.Rate
+
+				-- Emit at the specified delay time
+				if emitDelay > 0 then
+					task.delay(emitDelay, function()
+						if emitter and emitter.Parent then
+							emitter:Emit(emitCount)
+						end
+					end)
+				else
+					-- Emit immediately if no delay
+					emitter:Emit(emitCount)
+				end
+			end
+		end
+	end
+
+	-- Process limb-based folders (e.g., "Left Leg", "Right Arm", etc.)
+	for _, child in ipairs(vfxFolder:GetChildren()) do
+		if child:IsA("Folder") then
+			local limbName = child.Name
+			local limbPart = character:FindFirstChild(limbName)
+
+			if limbPart then
+				-- Get the first Attachment child from the folder
+				local attachmentTemplate = child:FindFirstChildOfClass("Attachment")
+				if attachmentTemplate then
+					local attachmentClone = attachmentTemplate:Clone()
+					attachmentClone.Parent = limbPart
+					table.insert(clonedAttachments, attachmentClone)
+
+					-- Process trails with start/end timing attributes
+					for _, trailChild in ipairs(attachmentClone:GetChildren()) do
+						if trailChild:IsA("Trail") then
+							local startTime = trailChild:GetAttribute("start")
+							local endTime = trailChild:GetAttribute("end")
+
+							-- Start disabled
+							trailChild.Enabled = false
+
+							-- Enable at start time
+							if startTime and startTime > 0 then
+								task.delay(startTime, function()
+									if trailChild and trailChild.Parent then
+										trailChild.Enabled = true
+									end
+								end)
+							else
+								-- No start time means enable immediately
+								trailChild.Enabled = true
+							end
+
+							-- Disable at end time
+							if endTime and endTime > 0 then
+								task.delay(endTime, function()
+									if trailChild and trailChild.Parent then
+										trailChild.Enabled = false
+									end
+								end)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	-- Cleanup all cloned attachments after animation
+	task.delay(animLength + 0.5, function()
+		for _, attachment in ipairs(clonedAttachments) do
+			if attachment and attachment.Parent then
+				attachment:Destroy()
+			end
 		end
 	end)
 end

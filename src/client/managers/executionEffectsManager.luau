@@ -901,16 +901,17 @@ function ExecutionEffectsManager:_playDeathVFX(targetCharacter: Model)
 	print(`[ExecutionEffectsManager] Playing death VFX on {targetCharacter.Name}`)
 end
 
--- Play death SFX (random sound from ReplicatedStorage.Assets.SFX.General_Combat.death)
+-- Play death SFX (random sound from ReplicatedStorage.Assets.SFX.General_Combat.death.successful_grip)
 function ExecutionEffectsManager:_playDeathSFX(targetCharacter: Model)
 	-- Get death SFX folder
 	local deathSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("SFX")
 		and ReplicatedStorage.Assets.SFX:FindFirstChild("General_Combat")
 		and ReplicatedStorage.Assets.SFX.General_Combat:FindFirstChild("death")
+		and ReplicatedStorage.Assets.SFX.General_Combat.death:FindFirstChild("successful_grip")
 
 	if not deathSFXFolder then
-		warn("[ExecutionEffectsManager] Death SFX folder not found at Assets.SFX.General_Combat.death")
+		warn("[ExecutionEffectsManager] Death SFX folder not found at Assets.SFX.General_Combat.death.successful_grip")
 		return
 	end
 

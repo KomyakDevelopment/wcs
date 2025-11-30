@@ -54,7 +54,6 @@ CombatConfig.HeavyAttacks = {
 	},
 	HeavySlash = {
 		Range = 11,
-		KnockbackPower = 45,
 	},
 }
 
@@ -81,7 +80,7 @@ CombatConfig.StatusDurations = {
 	-- Parry/Block
 	Autoparry = 0.4, -- Protection window after successful parry
 	BlockStunned = 0.1, -- Brief stun when blocking a hit
-	Shakyblock = 0.3, -- Failed parry punishment
+	Shakyblock = 0.15, -- Failed parry punishment
 
 	-- Hitstun
 	ParriedAttackerHitstun = 0.8, -- Attacker stagger when parried

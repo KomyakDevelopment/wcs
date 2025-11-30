@@ -48,7 +48,7 @@ local WeaponConfig = CombatConfig.Weapons.kunai
 local HeavyConfig = CombatConfig.HeavyAttacks
 local SkillConfig = HeavyConfig.HeavySlash
 
-local HEAVY_DAMAGE = math.floor(WeaponConfig.Damage * HeavyConfig.DamageMultiplier)
+local HEAVY_DAMAGE = math.floor(WeaponConfig.Damage * 0.8)
 local HEAVY_RANGE = SkillConfig.Range
 local HEAVY_COOLDOWN = HeavyConfig.Cooldown
 
@@ -57,14 +57,15 @@ local HIT_ANGLE_THRESHOLD = CombatConfig.Hitbox.HitAngleThreshold
 
 -- Timing configuration
 local WINDUP_DURATION = HeavyConfig.WindupDuration
-local DAMAGE_DELAY = HeavyConfig.DamageDelay
+-- Two-slash timing (times from animation start)
+local SLASH_1_TIMING = 0.60 -- First slash
+local SLASH_2_TIMING = 0.83 -- Second slash
 
--- Knockback configuration
-local KNOCKBACK_POWER = SkillConfig.KnockbackPower
-local KNOCKBACK_DURATION = HeavyConfig.KnockbackDuration
+-- Endlag after crit completes (cannot attack during this time)
+local ENDLAG_DURATION = 0.3
 
 -- Animation ID for heavy slash (placeholder - replace with actual heavy slash anim)
-local HEAVY_ANIMATION_ID = "rbxassetid://128565870055276" -- Using flourish for now
+local HEAVY_ANIMATION_ID = "rbxassetid://136860865307002" -- Using flourish for now
 
 -- Animation IDs that should be stopped
 local MOVEMENT_ANIMATION_IDS = {
@@ -136,13 +137,13 @@ function HeavySlash:OnStartServer()
 
 	self:ApplyCooldown(HEAVY_COOLDOWN)
 
-	-- Apply Attacking status
+	-- Apply Attacking status (includes endlag after second slash)
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 	end
 	self.attackingEffect = Attacking.new(self.Character)
 	if self.attackingEffect then
-		self.attackingEffect:Start(DAMAGE_DELAY + 0.1)
+		self.attackingEffect:Start(SLASH_2_TIMING + ENDLAG_DURATION)
 	end
 
 	-- Broadcast parry flash AFTER windup (so parry window timing is correct)
@@ -153,8 +154,14 @@ function HeavySlash:OnStartServer()
 		end
 	end)
 
-	-- Delayed hitbox detection
-	task.delay(DAMAGE_DELAY, function()
+	-- First slash hit detection
+	task.delay(SLASH_1_TIMING, function()
+		self:_detectHit()
+	end)
+
+	-- Second slash hit detection (reset hitTargets so same target can be hit twice)
+	task.delay(SLASH_2_TIMING, function()
+		self.hitTargets = {} -- Reset so second slash can hit same targets
 		self:_detectHit()
 	end)
 end
@@ -228,6 +235,24 @@ function HeavySlash:OnStartClient()
 		})
 	then
 		return
+	end
+
+	-- Stop any M1 (slash) animations that might be lingering
+	local Slash = require(ReplicatedStorage.Shared.skills.slash)
+	local slashSkill = self.Character:GetSkillFromConstructor(Slash)
+	if slashSkill then
+		-- Stop current animation track if playing
+		if slashSkill.currentTrack and slashSkill.currentTrack.IsPlaying then
+			slashSkill.currentTrack:Stop(0.05)
+		end
+		-- Also stop any loaded animations that might be playing
+		if slashSkill.loadedAnimations then
+			for _, track in pairs(slashSkill.loadedAnimations) do
+				if track and track.IsPlaying then
+					track:Stop(0.05)
+				end
+			end
+		end
 	end
 
 	-- Play animation
@@ -398,46 +423,7 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			end
 		end
 
-		if wasBlocking then
-			-- TARGET WAS BLOCKING: Guardbreak (combo starter), no knockback
-			-- End block skill first
-			local targetBlockSkill = targetWCSCharacter:GetSkillFromConstructor(Block)
-			if targetBlockSkill then
-				local blockState = targetBlockSkill:GetState()
-				if blockState.IsActive then
-					targetBlockSkill:End()
-				end
-			end
-
-			-- Apply guardbreak
-			local guardbrokenEffect = Guardbroken.new(targetWCSCharacter)
-			if guardbrokenEffect then
-				guardbrokenEffect:Start(HeavyConfig.GuardbreakDuration)
-				print(`[HeavySlash] Broke {targetModel.Name}'s block! Guardbroken for combo.`)
-			end
-		else
-			-- TARGET WAS NOT BLOCKING: Knockback (spacing tool), no guardbreak
-			local targetRootPart = targetModel:FindFirstChild("HumanoidRootPart") :: BasePart?
-			local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart") :: BasePart?
-			local knockbackTargetHumanoid = targetModel:FindFirstChild("Humanoid") :: Humanoid?
-
-			-- Skip knockback if target is knocked down (ragdolled)
-			if knockbackTargetHumanoid and knockbackTargetHumanoid.PlatformStand then
-				print(`[HeavySlash] Skipping knockback - {targetModel.Name} is knocked down`)
-			elseif targetRootPart and attackerRootPart then
-				local knockbackDirection = (targetRootPart.Position - attackerRootPart.Position).Unit
-				local knockbackVelocity =
-					Vector3.new(knockbackDirection.X * KNOCKBACK_POWER, 5, knockbackDirection.Z * KNOCKBACK_POWER)
-
-				local bodyVelocity = Instance.new("BodyVelocity")
-				bodyVelocity.MaxForce = Vector3.new(50000, 5000, 50000)
-				bodyVelocity.Velocity = knockbackVelocity
-				bodyVelocity.Parent = targetRootPart
-
-				game:GetService("Debris"):AddItem(bodyVelocity, KNOCKBACK_DURATION)
-				print(`[HeavySlash] Knocked back {targetModel.Name}!`)
-			end
-		end
+		-- No knockback or guardbreak - pure damage skill
 	end
 
 	return true
