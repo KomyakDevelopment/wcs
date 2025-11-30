@@ -19,6 +19,7 @@ local SPRINT_SPEED_MULTIPLIER = 1.75 -- 175% of normal walk speed (16 -> 28)
 local DOUBLE_TAP_WINDOW = 0.4 -- Time window to detect double tap (seconds) - increased for better detection
 local MIN_SPRINT_VELOCITY = 3 -- Minimum velocity to maintain sprint - lowered for better fluidity
 local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after sprint starts
+local LANDING_GRACE_PERIOD = 0.3 -- Grace period after landing before velocity check applies
 local BACKWARD_SPEED_PENALTY = 0.85 -- 15% slower when holding S (backward movement)
 
 -- Animation
@@ -52,6 +53,7 @@ function SprintManager.new()
 	self.isAirborne = false -- Track if player is mid-air for animation speed adjustment
 	self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL -- Track current animation speed
 	self.isHoldingBackward = false -- Track if S key is held for backward speed penalty
+	self.lastLandingTime = 0 -- Track when player last landed (for landing grace period)
 
 	-- Setup
 	self:_initialize()
@@ -76,6 +78,7 @@ function SprintManager:_initialize()
 		self.isAirborne = false
 		self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
 		self.isHoldingBackward = false
+		self.lastLandingTime = 0
 
 		-- Wait for character to be fully loaded
 		character:WaitForChild("Humanoid", 10)
@@ -119,6 +122,28 @@ function SprintManager:_setupCharacter(character: Model)
 
 	-- Store base walk speed on character setup
 	self.baseWalkSpeed = humanoid.WalkSpeed
+
+	-- PROTECT against external WalkSpeed changes while sprinting
+	-- Something else (status effects, animations, equipment) might reset WalkSpeed
+	humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+		if self.sprintActive then
+			-- Calculate expected sprint speed (with backward penalty if applicable)
+			local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+			local expectedSpeed = holdingS
+				and (self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER * BACKWARD_SPEED_PENALTY)
+				or (self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER)
+
+			-- If WalkSpeed was changed to something unexpected, restore it
+			if math.abs(humanoid.WalkSpeed - expectedSpeed) > 0.1 then
+				print(`[SprintManager] WalkSpeed changed externally to {humanoid.WalkSpeed}, restoring to {expectedSpeed}`)
+				task.defer(function()
+					if humanoid and humanoid.Parent and self.sprintActive then
+						humanoid.WalkSpeed = expectedSpeed
+					end
+				end)
+			end
+		end
+	end)
 end
 
 -- Setup double-tap detection for movement keys
@@ -291,6 +316,16 @@ function SprintManager:_startSprint()
 	self.sprintActive = true
 	self.sprintStartTime = tick() -- Record sprint start time
 
+	-- Set attribute so other systems (block, etc.) can check sprint state
+	if character then
+		character:SetAttribute("IsSprinting", true)
+		-- Sync to server so server-side checks work too
+		local sprintRemote = ReplicatedStorage:FindFirstChild("SprintStateChanged") :: RemoteEvent?
+		if sprintRemote then
+			sprintRemote:FireServer(true)
+		end
+	end
+
 	-- Set a brief grace period for directional checks (helps with initial sprint and post-dodge)
 	-- Only set if not already in a grace period (don't override longer post-dodge grace)
 	if tick() >= self.postDodgeGraceEnd then
@@ -302,6 +337,17 @@ function SprintManager:_startSprint()
 		self.currentAnimTrack = self.loadedAnimation
 		self.currentAnimTrack:Play(0.1) -- Smooth transition
 		print("[SprintManager] Playing sprint animation")
+
+		-- Check if player is currently airborne and adjust animation speed accordingly
+		-- This handles cases like resuming sprint after airdash while still in the air
+		if self:_isPlayerAirborne() then
+			self.isAirborne = true
+			self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_AIRBORNE)
+			print("[SprintManager] Started airborne - animation slowed")
+		else
+			self.isAirborne = false
+			self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
+		end
 	end
 
 	-- Apply sprint speed (backward penalty handled in _monitorBackwardMovement)
@@ -338,14 +384,17 @@ function SprintManager:resumeSprintIfHoldingW()
 		return
 	end
 
+	-- ALWAYS extend grace periods when called from dodge/vault end
+	-- This protects against velocity checks during landing/transition
+	-- Set BOTH grace periods to ensure full protection
+	self.postDodgeGraceEnd = tick() + 0.5
+	self.lastLandingTime = tick() -- Treat dodge/vault end as a "landing" for grace purposes
+
 	-- Don't resume if already sprinting (prevents double speed bug)
 	if self.sprintActive then
-		print("[SprintManager] Already sprinting - Skipping resume")
+		print("[SprintManager] Already sprinting - Extended grace period")
 		return
 	end
-
-	-- Set post-dodge grace period (0.5s where directional checks are lenient)
-	self.postDodgeGraceEnd = tick() + 0.5
 
 	-- Start sprint
 	self:_startSprint()
@@ -362,6 +411,18 @@ function SprintManager:_stopSprint()
 	self.sprintDirection = nil
 	self.isAirborne = false
 	self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
+
+	-- Clear sprint attribute so other systems know we stopped
+	local stopPlayer = Players.LocalPlayer
+	local stopCharacter = stopPlayer.Character
+	if stopCharacter then
+		stopCharacter:SetAttribute("IsSprinting", false)
+		-- Sync to server so server-side checks work too
+		local sprintRemote = ReplicatedStorage:FindFirstChild("SprintStateChanged") :: RemoteEvent?
+		if sprintRemote then
+			sprintRemote:FireServer(false)
+		end
+	end
 
 	-- Stop animation
 	if self.currentAnimTrack then
@@ -472,12 +533,25 @@ end
 -- Monitor sprint state and auto-cancel when conditions aren't met
 function SprintManager:_monitorSprint()
 	RunService.Heartbeat:Connect(function()
-		if not self.sprintActive then
-			-- Reset airborne state when not sprinting
-			if self.isAirborne then
-				self.isAirborne = false
-				self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
+		-- Track airborne state FIRST (before cancel check) so landing grace works
+		local nowAirborne = self:_isPlayerAirborne()
+		if nowAirborne ~= self.isAirborne then
+			self.isAirborne = nowAirborne
+			if nowAirborne then
+				-- Player jumped - slow down animation
+				if self.sprintActive and self.currentAnimTrack then
+					self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_AIRBORNE)
+				end
+			else
+				-- Player landed - restore normal speed and record landing time
+				self.lastLandingTime = tick()
+				if self.sprintActive and self.currentAnimTrack then
+					self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
+				end
 			end
+		end
+
+		if not self.sprintActive then
 			return
 		end
 
@@ -486,23 +560,11 @@ function SprintManager:_monitorSprint()
 			self:_stopSprint()
 			return
 		end
-
-		-- Adjust animation speed based on airborne state
-		local nowAirborne = self:_isPlayerAirborne()
-		if nowAirborne ~= self.isAirborne then
-			self.isAirborne = nowAirborne
-			if nowAirborne then
-				-- Player jumped - slow down animation
-				self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_AIRBORNE)
-			else
-				-- Player landed - restore normal speed
-				self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
-			end
-		end
 	end)
 end
 
--- Monitor backward movement for speed penalty (applies to both walking and sprinting)
+-- Monitor backward movement for speed penalty (ONLY for walking, not sprinting)
+-- Sprint speed is handled entirely by _startSprint and _stopSprint
 function SprintManager:_monitorBackwardMovement()
 	RunService.Heartbeat:Connect(function()
 		local player = Players.LocalPlayer
@@ -526,25 +588,20 @@ function SprintManager:_monitorBackwardMovement()
 
 		self.isHoldingBackward = holdingS
 
-		-- Calculate the target speed based on current state
+		-- IMPORTANT: Only adjust walk speed when NOT sprinting and NOT in grace period
+		-- When sprinting or in grace period, the sprint system controls WalkSpeed entirely
+		-- This prevents race conditions that can cause speed desync
+		if self.sprintActive or tick() < self.postDodgeGraceEnd then
+			-- Still track the state change, but don't touch WalkSpeed
+			-- The sprint system will apply the correct speed
+			return
+		end
+
+		-- Only modify WalkSpeed when definitely not sprinting
 		if holdingS then
-			-- Apply backward penalty
-			if self.sprintActive then
-				-- Sprinting backward: base * sprint * penalty
-				humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER * BACKWARD_SPEED_PENALTY
-			else
-				-- Walking backward: base * penalty
-				humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
-			end
+			humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
 		else
-			-- Remove backward penalty
-			if self.sprintActive then
-				-- Sprinting forward: base * sprint
-				humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
-			else
-				-- Walking forward: base
-				humanoid.WalkSpeed = self.baseWalkSpeed
-			end
+			humanoid.WalkSpeed = self.baseWalkSpeed
 		end
 	end)
 end
@@ -575,9 +632,19 @@ function SprintManager:_shouldCancelSprint(): boolean
 		return true
 	end
 
-	-- Grace period - don't check velocity immediately after starting sprint
+	-- Grace period - don't check velocity immediately after starting sprint or after dodge/vault
 	local timeSinceSprintStart = tick() - self.sprintStartTime
 	if timeSinceSprintStart < SPRINT_GRACE_PERIOD then
+		return false
+	end
+	if tick() < self.postDodgeGraceEnd then
+		return false
+	end
+
+	-- Check if humanoid physics are disabled (e.g., during vault climb)
+	-- Don't cancel sprint based on velocity if another system controls movement
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if humanoid and humanoid.PlatformStand then
 		return false
 	end
 
@@ -603,7 +670,20 @@ function SprintManager:_shouldCancelSprint(): boolean
 		end
 	end
 
-	-- Check if player stopped moving (only after grace period)
+	-- Skip velocity check if player is airborne
+	-- Velocity is unreliable in the air (can drop at jump apex, during freefall, etc.)
+	-- Player is still pressing movement keys, so maintain sprint through the jump
+	if self:_isPlayerAirborne() then
+		return false
+	end
+
+	-- Skip velocity check during landing grace period
+	-- Velocity needs time to recover after landing from a jump
+	if tick() - self.lastLandingTime < LANDING_GRACE_PERIOD then
+		return false
+	end
+
+	-- Check if player stopped moving (only after grace periods and when grounded)
 	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
 	if humanoidRootPart then
 		local velocity =

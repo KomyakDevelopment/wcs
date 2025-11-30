@@ -15,7 +15,6 @@ local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
-local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 
 local Block = WCS.RegisterSkill("Block")
 
@@ -153,13 +152,10 @@ function Block:OnStartServer()
 	end
 
 	-- Check if player is sprinting (can't block while sprinting)
-	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
-	if sprintSkill then
-		local sprintState = sprintSkill:GetState()
-		if sprintState.IsActive then
-			print("[Block] Server: Blocked - Player is sprinting")
-			return
-		end
+	-- SprintManager sets IsSprinting attribute on character
+	if self.Character.Instance:GetAttribute("IsSprinting") == true then
+		print("[Block] Server: Blocked - Player is sprinting")
+		return
 	end
 
 	print("[Block] Server: Block started - Startup phase")
@@ -266,13 +262,10 @@ function Block:OnStartClient()
 	end
 
 	-- Check if player is sprinting (can't block while sprinting)
-	local sprintSkill = self.Character:GetSkillFromConstructor(Sprint)
-	if sprintSkill then
-		local sprintState = sprintSkill:GetState()
-		if sprintState.IsActive then
-			print("[Block] Client: Blocked - Player is sprinting")
-			return
-		end
+	-- SprintManager sets IsSprinting attribute on character
+	if self.Character.Instance:GetAttribute("IsSprinting") == true then
+		print("[Block] Client: Blocked - Player is sprinting")
+		return
 	end
 
 	self.blockActive = true

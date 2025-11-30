@@ -82,6 +82,10 @@ local requestSpawnRemote = Instance.new("RemoteEvent")
 requestSpawnRemote.Name = "RequestSpawn"
 requestSpawnRemote.Parent = ReplicatedStorage
 
+local sprintStateRemote = Instance.new("RemoteEvent")
+sprintStateRemote.Name = "SprintStateChanged"
+sprintStateRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 
@@ -92,6 +96,14 @@ airdashCameraRemote.OnServerEvent:Connect(function(player, cameraDirection)
 	if typeof(cameraDirection) == "Vector3" then
 		AirdashCameraStore.set(player, cameraDirection)
 		print(`[Server] Stored airdash camera for {player.Name}: {cameraDirection}`)
+	end
+end)
+
+-- Handle sprint state from client (SprintManager sets this attribute)
+sprintStateRemote.OnServerEvent:Connect(function(player, isSprinting)
+	local character = player.Character
+	if character and typeof(isSprinting) == "boolean" then
+		character:SetAttribute("IsSprinting", isSprinting)
 	end
 end)
 

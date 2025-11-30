@@ -12,6 +12,10 @@ local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+
+-- Lazy-loaded to avoid circular dependency (punch requires dodge)
+local Punch = nil
 
 local Dodge = WCS.RegisterSkill("Dodge")
 
@@ -99,10 +103,24 @@ function Dodge:OnConstructClient()
 end
 
 function Dodge:OnStartServer()
-	-- Check if player is in hitstun (soft or true) or guardbroken
-	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown }) then
-		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, or knocked down")
+	-- Check if player is in hitstun, guardbroken, knocked down, or attacking
+	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking }) then
+		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, knocked down, or attacking")
 		return
+	end
+
+	-- Cancel any active punch skill (dodge takes priority)
+	-- Lazy-load Punch to avoid circular dependency
+	if not Punch then
+		Punch = require(ReplicatedStorage.Shared.skills.punch)
+	end
+	local punchSkill = self.Character:GetSkillFromConstructor(Punch)
+	if punchSkill then
+		local punchState = punchSkill:GetState()
+		if punchState.IsActive then
+			punchSkill:Stop()
+			print("[Dodge] Server: Cancelled active punch")
+		end
 	end
 
 	-- Get character components
@@ -379,9 +397,9 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 end
 
 function Dodge:OnStartClient()
-	-- Check if player has any hitstun status effects active, is guardbroken, or is dashing
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown }) then
-		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down")
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or attacking
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown, Attacking }) then
+		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down/attacking")
 		return
 	end
 
