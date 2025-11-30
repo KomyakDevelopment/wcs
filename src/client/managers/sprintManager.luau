@@ -19,6 +19,7 @@ local SPRINT_SPEED_MULTIPLIER = 1.75 -- 175% of normal walk speed (16 -> 28)
 local DOUBLE_TAP_WINDOW = 0.4 -- Time window to detect double tap (seconds) - increased for better detection
 local MIN_SPRINT_VELOCITY = 3 -- Minimum velocity to maintain sprint - lowered for better fluidity
 local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after sprint starts
+local BACKWARD_SPEED_PENALTY = 0.85 -- 15% slower when holding S (backward movement)
 
 -- Animation
 local SPRINT_ANIMATION_ID = "rbxassetid://94461174611915"
@@ -50,6 +51,7 @@ function SprintManager.new()
 	self.wasSprintingBeforeDodge = false -- Track if player was sprinting before dodge
 	self.isAirborne = false -- Track if player is mid-air for animation speed adjustment
 	self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL -- Track current animation speed
+	self.isHoldingBackward = false -- Track if S key is held for backward speed penalty
 
 	-- Setup
 	self:_initialize()
@@ -73,6 +75,7 @@ function SprintManager:_initialize()
 		self.currentAnimTrack = nil
 		self.isAirborne = false
 		self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
+		self.isHoldingBackward = false
 
 		-- Wait for character to be fully loaded
 		character:WaitForChild("Humanoid", 10)
@@ -86,6 +89,9 @@ function SprintManager:_initialize()
 
 	-- Monitor sprint state
 	self:_monitorSprint()
+
+	-- Monitor backward movement for speed penalty
+	self:_monitorBackwardMovement()
 
 	print("[SprintManager] Initialized")
 end
@@ -111,24 +117,8 @@ function SprintManager:_setupCharacter(character: Model)
 		warn("[SprintManager] Animator not found")
 	end
 
-	-- Monitor WalkSpeed changes to prevent animations/equipment from overriding sprint
-	humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
-		if self.sprintActive then
-			-- Sprint is active - restore sprint speed if something changed it
-			local expectedSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
-			if math.abs(humanoid.WalkSpeed - expectedSpeed) > 0.1 then
-				-- Something else changed speed - restore sprint multiplier
-				task.defer(function()
-					if humanoid and humanoid.Parent then
-						humanoid.WalkSpeed = expectedSpeed
-					end
-				end)
-			end
-		else
-			-- Not sprinting - track base speed changes
-			self.baseWalkSpeed = humanoid.WalkSpeed
-		end
-	end)
+	-- Store base walk speed on character setup
+	self.baseWalkSpeed = humanoid.WalkSpeed
 end
 
 -- Setup double-tap detection for movement keys
@@ -298,9 +288,6 @@ function SprintManager:_startSprint()
 		return
 	end
 
-	-- Record current sprint state before activating
-	local wasAlreadySprinting = self.sprintActive
-
 	self.sprintActive = true
 	self.sprintStartTime = tick() -- Record sprint start time
 
@@ -317,15 +304,16 @@ function SprintManager:_startSprint()
 		print("[SprintManager] Playing sprint animation")
 	end
 
-	-- Apply sprint speed
+	-- Apply sprint speed (backward penalty handled in _monitorBackwardMovement)
 	local humanoid = character:FindFirstChild("Humanoid")
 	if humanoid then
-		-- Only update base speed if not already sprinting (prevents compound multiplier bug)
-		if not wasAlreadySprinting then
-			self.baseWalkSpeed = humanoid.WalkSpeed
+		local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+		if holdingS then
+			humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER * BACKWARD_SPEED_PENALTY
+		else
+			humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
 		end
-		humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
-		print(`[SprintManager] Sprint activated - Base: {self.baseWalkSpeed}, Speed: {humanoid.WalkSpeed}`)
+		print(`[SprintManager] Sprint activated - Speed: {humanoid.WalkSpeed}`)
 	end
 end
 
@@ -340,10 +328,13 @@ function SprintManager:saveSprintStateForDodge()
 	print(`[SprintManager] Saved sprint state before dodge: {self.wasSprintingBeforeDodge}`)
 end
 
--- Resume sprint if W is held (public method for post-dodge sprint resume)
+-- Resume sprint if movement key is held (public method for post-dodge sprint resume)
 function SprintManager:resumeSprintIfHoldingW()
-	-- Check if W is being held
-	if not UserInputService:IsKeyDown(Enum.KeyCode.W) then
+	-- Check if W or S is being held (supports forward and backward sprint)
+	local holdingW = UserInputService:IsKeyDown(Enum.KeyCode.W)
+	local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+
+	if not holdingW and not holdingS then
 		return
 	end
 
@@ -378,13 +369,18 @@ function SprintManager:_stopSprint()
 		self.currentAnimTrack = nil
 	end
 
-	-- Reset walk speed
+	-- Reset walk speed (backward penalty handled in _monitorBackwardMovement)
 	local player = Players.LocalPlayer
 	local character = player.Character
 	if character then
 		local humanoid = character:FindFirstChild("Humanoid")
 		if humanoid then
-			humanoid.WalkSpeed = self.baseWalkSpeed
+			local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+			if holdingS then
+				humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
+			else
+				humanoid.WalkSpeed = self.baseWalkSpeed
+			end
 		end
 	end
 
@@ -501,6 +497,53 @@ function SprintManager:_monitorSprint()
 			else
 				-- Player landed - restore normal speed
 				self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
+			end
+		end
+	end)
+end
+
+-- Monitor backward movement for speed penalty (applies to both walking and sprinting)
+function SprintManager:_monitorBackwardMovement()
+	RunService.Heartbeat:Connect(function()
+		local player = Players.LocalPlayer
+		local character = player.Character
+		if not character then
+			return
+		end
+
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if not humanoid then
+			return
+		end
+
+		-- Check if S key is currently held
+		local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+
+		-- Only process if backward state changed
+		if holdingS == self.isHoldingBackward then
+			return
+		end
+
+		self.isHoldingBackward = holdingS
+
+		-- Calculate the target speed based on current state
+		if holdingS then
+			-- Apply backward penalty
+			if self.sprintActive then
+				-- Sprinting backward: base * sprint * penalty
+				humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER * BACKWARD_SPEED_PENALTY
+			else
+				-- Walking backward: base * penalty
+				humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
+			end
+		else
+			-- Remove backward penalty
+			if self.sprintActive then
+				-- Sprinting forward: base * sprint
+				humanoid.WalkSpeed = self.baseWalkSpeed * SPRINT_SPEED_MULTIPLIER
+			else
+				-- Walking forward: base
+				humanoid.WalkSpeed = self.baseWalkSpeed
 			end
 		end
 	end)
