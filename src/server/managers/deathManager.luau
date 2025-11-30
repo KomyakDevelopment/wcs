@@ -151,6 +151,9 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 	-- Disable BreakJointsOnDeath so we can handle knockdown instead
 	humanoid.BreakJointsOnDeath = false
 
+	-- Track player's HP to detect instant-kills vs combat knockdowns
+	local lastKnownHP = humanoid.Health
+
 	-- Listen for health changes to intercept "death"
 	humanoid.HealthChanged:Connect(function(newHealth)
 		-- When health reaches 0 or below, trigger knockdown instead of death
@@ -159,12 +162,59 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 			-- Skip if player is being executed (let them actually die)
 			if self._executingPlayers[player] then
 				print(`[DeathManager] {player.Name} is being executed - allowing death`)
+				lastKnownHP = 0
 				return
 			end
 
-			self:_handleKnockdown(player, character, humanoid)
+			-- Check if this was an instant-kill (void, massive damage) vs combat knockdown
+			-- If they had significant HP before being knocked, it's an instant-kill
+			local instantKillThreshold = humanoid.MaxHealth * 0.15 -- 15% of max HP
+			if lastKnownHP > instantKillThreshold then
+				-- Instant-kill: they had decent HP but got one-shot (void, ability, etc.)
+				print(`[DeathManager] {player.Name} instant-killed (had {lastKnownHP} HP, threshold {instantKillThreshold}) - auto-executing`)
+				self:_autoExecuteImmediate(player, character, humanoid)
+			else
+				-- Combat knockdown: they were already low HP from taking hits
+				self:_handleKnockdown(player, character, humanoid)
+			end
+		end
+
+		-- Update last known HP (but not below 0)
+		lastKnownHP = math.max(0, newHealth)
+	end)
+end
+
+-- Auto-execute immediately for instant-kills (void, massive damage when player had decent HP)
+function DeathManager:_autoExecuteImmediate(player: Player, character: Model, humanoid: Humanoid)
+	-- Mark as executing to prevent any knockdown logic
+	self._executingPlayers[player] = true
+
+	-- Mark character for execution (used by client UI)
+	character:SetAttribute("MarkedForExecution", true)
+
+	-- Lock HP at 1 to keep them "alive" until they click continue
+	humanoid.Health = MIN_KNOCKDOWN_HP
+
+	-- Setup health connection to keep HP locked at 1
+	if self._executionHealthConnections[player] then
+		self._executionHealthConnections[player]:Disconnect()
+	end
+	self._executionHealthConnections[player] = humanoid.HealthChanged:Connect(function(newHealth)
+		if self._executingPlayers[player] and newHealth ~= MIN_KNOCKDOWN_HP then
+			humanoid.Health = MIN_KNOCKDOWN_HP
 		end
 	end)
+
+	-- Fire PlayerExecuted event to show death UI (same as grip)
+	-- Pass nil as killer for environmental/void deaths
+	local executeRemote = ReplicatedStorage:FindFirstChild("PlayerExecuted") :: RemoteEvent?
+	if executeRemote then
+		print(`[DeathManager] Firing PlayerExecuted for {player.Name} (instant-kill, no killer)`)
+		executeRemote:FireAllClients(character, nil) -- nil killer = environmental death
+	end
+
+	-- Player will respawn when they click "Continue" via ConfirmExecution remote
+	-- (handled in init.server.luau)
 end
 
 function DeathManager:_handleKnockdown(player: Player, character: Model, humanoid: Humanoid)
@@ -172,6 +222,7 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 	if self._knockedPlayers[player] then
 		return
 	end
+
 	self._knockedPlayers[player] = true
 
 	print(`[DeathManager] {player.Name} knocked down`)
@@ -207,17 +258,48 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 	-- Fire knockdown event to all clients (for any client-side effects)
 	knockdownRemote:FireAllClients(character, true)
 
+	-- Track previous HP to detect overkill damage
+	local previousHP = MIN_KNOCKDOWN_HP
+
 	-- Setup health protection while knocked down
-	-- If player takes damage while knocked, reset timer and keep HP at minimum
+	-- M1 damage: clamps to 1 HP and resets timer (never auto-executes)
+	-- Overkill damage (void, abilities dealing more than current HP): auto-executes
 	self._knockdownHealthConnections[player] = humanoid.HealthChanged:Connect(function(newHealth)
 		if not self._knockedPlayers[player] then
 			return
 		end
 
-		-- Prevent death while knocked down - always keep at minimum HP
+		-- Only process if health went DOWN (ignore regen)
+		if newHealth >= previousHP then
+			previousHP = newHealth
+			return
+		end
+
+		-- Calculate damage taken
+		local damageTaken = previousHP - newHealth
+
+		-- Check if this was M1 damage (never auto-execute from M1s)
+		local wasM1Damage = character:GetAttribute("LastDamageWasM1") == true
+		-- Clear the attribute immediately after reading
+		character:SetAttribute("LastDamageWasM1", nil)
+
+		-- Check for overkill damage (damage >= previous HP means lethal hit like void/ability)
+		-- BUT only auto-execute if it was NOT M1 damage
+		if damageTaken >= previousHP and not wasM1Damage then
+			print(`[DeathManager] {player.Name} took overkill damage ({damageTaken} >= {previousHP}) while knocked - auto-executing`)
+			self:_autoExecuteKnocked(player, character, humanoid)
+			return
+		end
+
+		-- Normal damage (or M1 damage) - clamp to minimum HP and reset timer
 		if newHealth < MIN_KNOCKDOWN_HP then
 			humanoid.Health = MIN_KNOCKDOWN_HP
-			print(`[DeathManager] {player.Name} hit while knocked - HP protected`)
+			previousHP = MIN_KNOCKDOWN_HP
+			if wasM1Damage then
+				print(`[DeathManager] {player.Name} hit by M1 while knocked - HP protected (M1s never auto-execute)`)
+			else
+				print(`[DeathManager] {player.Name} hit while knocked - HP protected`)
+			end
 
 			-- Reset the knockdown timer (they got hit, restart the countdown)
 			if self._knockdownTimers[player] then
@@ -227,6 +309,8 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 				self:_handleRecovery(player, character, humanoid)
 			end)
 			print(`[DeathManager] {player.Name} knockdown timer reset to {KNOCKDOWN_DURATION}s`)
+		else
+			previousHP = newHealth
 		end
 	end)
 
@@ -324,6 +408,48 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 	self._knockdownTimers[player] = nil
 
 	print(`[DeathManager] {player.Name} recovered (HP: {humanoid.Health}/{humanoid.MaxHealth})`)
+end
+
+-- Auto-execute a knocked player who took lethal damage (overkill from void, abilities, etc.)
+function DeathManager:_autoExecuteKnocked(player: Player, _character: Model, humanoid: Humanoid)
+	-- Mark as executing FIRST to prevent HealthChanged from re-triggering knockdown
+	self._executingPlayers[player] = true
+
+	-- Cancel the knockdown timer
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+		self._knockdownTimers[player] = nil
+	end
+
+	-- Disconnect knockdown health protection
+	if self._knockdownHealthConnections[player] then
+		self._knockdownHealthConnections[player]:Disconnect()
+		self._knockdownHealthConnections[player] = nil
+	end
+
+	-- End knockdown status effect
+	if self._knockdownStatusEffects[player] then
+		self._knockdownStatusEffects[player]:End()
+		self._knockdownStatusEffects[player] = nil
+	end
+
+	-- Clear knockdown state
+	self._knockedPlayers[player] = nil
+
+	-- Enable BreakJointsOnDeath so death properly breaks the character
+	humanoid.BreakJointsOnDeath = true
+
+	-- Kill the player
+	humanoid.Health = 0
+
+	-- Clear executing state and respawn after a short delay
+	task.delay(1.0, function()
+		self._executingPlayers[player] = nil
+		if player and player.Parent then
+			player:LoadCharacter()
+			print(`[DeathManager] {player.Name} respawned after lethal damage while knocked`)
+		end
+	end)
 end
 
 -- Enable ragdoll physics by disabling Motor6Ds and creating constraints

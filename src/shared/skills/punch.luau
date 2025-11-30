@@ -504,6 +504,9 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 
 	print(`[Punch] Hit target: {targetModel.Name} - Phase {self.currentAttackPhase}`)
 
+	-- Mark damage as M1 (so knockdown system knows not to auto-execute from M1s)
+	targetModel:SetAttribute("LastDamageWasM1", true)
+
 	-- Apply damage
 	targetHumanoid:TakeDamage(PUNCH_DAMAGE)
 

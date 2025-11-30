@@ -22,6 +22,9 @@ local SPRINT_GRACE_PERIOD = 0.3 -- Grace period before checking velocity after s
 
 -- Animation
 local SPRINT_ANIMATION_ID = "rbxassetid://94461174611915"
+local SPRINT_ANIM_SPEED_NORMAL = 1.0 -- Normal sprint animation speed
+local SPRINT_ANIM_SPEED_AIRBORNE = 0.3 -- Slowed animation speed while mid-air
+local ANIM_SPEED_TRANSITION_TIME = 0.15 -- How quickly to transition between speeds
 
 -- Movement keys for double-tap detection
 local MOVEMENT_KEYS = {
@@ -45,6 +48,8 @@ function SprintManager.new()
 	self.sprintStartTime = 0 -- Track when sprint started for grace period
 	self.postDodgeGraceEnd = 0 -- Track when post-dodge grace period ends
 	self.wasSprintingBeforeDodge = false -- Track if player was sprinting before dodge
+	self.isAirborne = false -- Track if player is mid-air for animation speed adjustment
+	self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL -- Track current animation speed
 
 	-- Setup
 	self:_initialize()
@@ -66,6 +71,8 @@ function SprintManager:_initialize()
 		self.sprintActive = false
 		self.loadedAnimation = nil
 		self.currentAnimTrack = nil
+		self.isAirborne = false
+		self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
 
 		-- Wait for character to be fully loaded
 		character:WaitForChild("Humanoid", 10)
@@ -362,6 +369,8 @@ function SprintManager:_stopSprint()
 
 	self.sprintActive = false
 	self.sprintDirection = nil
+	self.isAirborne = false
+	self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
 
 	-- Stop animation
 	if self.currentAnimTrack then
@@ -420,16 +429,79 @@ function SprintManager:_getActualSprintDirection(): string
 	return "Backward"
 end
 
+-- Check if player is currently airborne (jumping/falling)
+function SprintManager:_isPlayerAirborne(): boolean
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if not character then
+		return false
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return false
+	end
+
+	-- Check FloorMaterial - Air means not touching ground
+	if humanoid.FloorMaterial == Enum.Material.Air then
+		return true
+	end
+
+	-- Also check humanoid state for additional accuracy
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Jumping
+		or state == Enum.HumanoidStateType.Freefall
+		or state == Enum.HumanoidStateType.FallingDown then
+		return true
+	end
+
+	return false
+end
+
+-- Smoothly adjust sprint animation speed
+function SprintManager:_adjustAnimationSpeed(targetSpeed: number)
+	if not self.currentAnimTrack or not self.currentAnimTrack.IsPlaying then
+		return
+	end
+
+	-- Only adjust if speed actually changed
+	if math.abs(self.currentAnimSpeed - targetSpeed) < 0.01 then
+		return
+	end
+
+	self.currentAnimSpeed = targetSpeed
+	self.currentAnimTrack:AdjustSpeed(targetSpeed)
+end
+
 -- Monitor sprint state and auto-cancel when conditions aren't met
 function SprintManager:_monitorSprint()
 	RunService.Heartbeat:Connect(function()
 		if not self.sprintActive then
+			-- Reset airborne state when not sprinting
+			if self.isAirborne then
+				self.isAirborne = false
+				self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
+			end
 			return
 		end
 
 		-- Check if sprint should be cancelled
 		if self:_shouldCancelSprint() then
 			self:_stopSprint()
+			return
+		end
+
+		-- Adjust animation speed based on airborne state
+		local nowAirborne = self:_isPlayerAirborne()
+		if nowAirborne ~= self.isAirborne then
+			self.isAirborne = nowAirborne
+			if nowAirborne then
+				-- Player jumped - slow down animation
+				self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_AIRBORNE)
+			else
+				-- Player landed - restore normal speed
+				self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
+			end
 		end
 	end)
 end

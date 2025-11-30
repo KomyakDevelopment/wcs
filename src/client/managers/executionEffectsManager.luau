@@ -17,6 +17,15 @@ local FADE_DURATION = 1.0 -- How long the body fade takes
 local SCREEN_FADE_DURATION = 0.5 -- How long screen fade takes
 local DEATH_UI_TWEEN_DURATION = 0.5 -- How long death UI elements tween in/out
 
+-- Death notification messages (randomly selected)
+local DEATH_MESSAGES = {
+	"You fell in battle to...",
+	"Your soul waivered to...",
+	"You were no match for...",
+	"Your fate was sealed by...",
+	"You met your end at the hands of...",
+}
+
 function ExecutionEffectsManager.new()
 	local self = setmetatable({}, ExecutionEffectsManager)
 
@@ -24,6 +33,7 @@ function ExecutionEffectsManager.new()
 	self._player = Players.LocalPlayer
 	self._continueButtonConnection = nil :: RBXScriptConnection?
 	self._hiddenUIElements = {} :: { GuiObject } -- Track UI elements hidden during death
+	self._isShowingDeathUI = false -- Track if death UI is currently shown
 
 	self:_setup()
 
@@ -42,6 +52,19 @@ function ExecutionEffectsManager:_setup()
 		warn("[ExecutionEffectsManager] Failed to disable health bar:", err)
 	end
 
+	-- CRITICAL FAILSAFE: Always restore UI when character spawns
+	-- This ensures that even if something goes wrong, the UI will be restored on respawn
+	table.insert(
+		self._connections,
+		self._player.CharacterAdded:Connect(function(_newCharacter)
+			-- Small delay to ensure character is fully loaded
+			task.defer(function()
+				self:_forceCleanupDeathUI()
+			end)
+		end)
+	)
+	print("[ExecutionEffectsManager] CharacterAdded failsafe registered")
+
 	-- Wait for execution remote
 	print("[ExecutionEffectsManager] Waiting for PlayerExecuted remote...")
 	local executeRemote = ReplicatedStorage:WaitForChild("PlayerExecuted", 10) :: RemoteEvent?
@@ -49,14 +72,16 @@ function ExecutionEffectsManager:_setup()
 		print("[ExecutionEffectsManager] Found PlayerExecuted remote, connecting handler...")
 		table.insert(
 			self._connections,
-			executeRemote.OnClientEvent:Connect(function(targetCharacter: Model)
-				print(`[ExecutionEffectsManager] Received PlayerExecuted event for: {if targetCharacter then targetCharacter.Name else "nil"}`)
+			executeRemote.OnClientEvent:Connect(function(targetCharacter: Model, killerCharacter: Model?)
+				print(`[ExecutionEffectsManager] Received PlayerExecuted event for: {if targetCharacter then targetCharacter.Name else "nil"}, killer: {if killerCharacter then killerCharacter.Name else "nil (environment)"}`)
 				-- Wrap in pcall to catch any errors
 				local handleSuccess, handleErr = pcall(function()
-					self:_handleExecution(targetCharacter)
+					self:_handleExecution(targetCharacter, killerCharacter)
 				end)
 				if not handleSuccess then
 					warn("[ExecutionEffectsManager] ERROR in _handleExecution:", handleErr)
+					-- FAILSAFE: If execution handling fails, cleanup death UI
+					self:_forceCleanupDeathUI()
 				end
 			end)
 		)
@@ -66,7 +91,7 @@ function ExecutionEffectsManager:_setup()
 	end
 end
 
-function ExecutionEffectsManager:_handleExecution(targetCharacter: Model)
+function ExecutionEffectsManager:_handleExecution(targetCharacter: Model, killerCharacter: Model?)
 	print("[ExecutionEffectsManager] _handleExecution called")
 
 	if not targetCharacter then
@@ -110,7 +135,7 @@ function ExecutionEffectsManager:_handleExecution(targetCharacter: Model)
 	if targetPlayer == self._player then
 		print("[ExecutionEffectsManager] THIS IS THE LOCAL PLAYER - showing death UI")
 		local deathUISuccess, deathUIErr = pcall(function()
-			self:_handleLocalPlayerDeath(targetCharacter)
+			self:_handleLocalPlayerDeath(targetCharacter, killerCharacter)
 		end)
 		if not deathUISuccess then
 			warn("[ExecutionEffectsManager] Death UI error:", deathUIErr)
@@ -121,7 +146,7 @@ function ExecutionEffectsManager:_handleExecution(targetCharacter: Model)
 end
 
 -- Handle local player death (hide UI, show death GUI, respawn)
-function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model)
+function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model, killerCharacter: Model?)
 	print("[ExecutionEffectsManager] _handleLocalPlayerDeath called")
 
 	-- Immediately hide UI elements (no tween)
@@ -140,7 +165,7 @@ function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model)
 	task.delay(0.5, function()
 		print("[ExecutionEffectsManager] Delay finished, showing death GUI...")
 		local showSuccess, showErr = pcall(function()
-			self:_showDeathGUI()
+			self:_showDeathGUI(killerCharacter)
 		end)
 		if not showSuccess then
 			warn("[ExecutionEffectsManager] _showDeathGUI error:", showErr)
@@ -150,13 +175,50 @@ function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model)
 	end)
 end
 
+-- Generate a random UUID (format: xxxxxxxx-xxxx-xxxx)
+function ExecutionEffectsManager:_generateUUID(): string
+	local chars = "0123456789abcdef"
+	local sections = { 8, 4, 4 } -- UUID format sections
+
+	local uuid = ""
+	for i, length in ipairs(sections) do
+		for _ = 1, length do
+			local randomIndex = math.random(1, #chars)
+			uuid = uuid .. chars:sub(randomIndex, randomIndex)
+		end
+		if i < #sections then
+			uuid = uuid .. "-"
+		end
+	end
+
+	return uuid
+end
+
+-- Get current UTC date/time formatted
+function ExecutionEffectsManager:_getUTCDateTime(): string
+	local utcTime = os.date("!*t") -- ! prefix gives UTC time
+	return string.format(
+		"%04d-%02d-%02d @ %02d:%02d:%02d (UTC)",
+		utcTime.year,
+		utcTime.month,
+		utcTime.day,
+		utcTime.hour,
+		utcTime.min,
+		utcTime.sec
+	)
+end
+
 -- Show death GUI
-function ExecutionEffectsManager:_showDeathGUI()
+function ExecutionEffectsManager:_showDeathGUI(killerCharacter: Model?)
 	print("[ExecutionEffectsManager] _showDeathGUI called")
+
+	-- Mark that we're showing death UI
+	self._isShowingDeathUI = true
 
 	local playerGui = self._player:FindFirstChild("PlayerGui")
 	if not playerGui then
 		warn("[ExecutionEffectsManager] PlayerGui not found!")
+		self._isShowingDeathUI = false
 		return
 	end
 	print("[ExecutionEffectsManager] Found PlayerGui")
@@ -198,6 +260,9 @@ function ExecutionEffectsManager:_showDeathGUI()
 	end
 	print("[ExecutionEffectsManager] Found Death frame")
 
+	-- Populate death GUI labels with killer info
+	self:_populateDeathGUILabels(deathFrame, killerCharacter)
+
 	-- Show the death frame (UI elements already hidden in _handleLocalPlayerDeath)
 	deathFrame.Visible = true
 	print("[ExecutionEffectsManager] Death frame set to Visible = true")
@@ -231,6 +296,82 @@ function ExecutionEffectsManager:_showDeathGUI()
 		print("[ExecutionEffectsManager] Death GUI shown, continue button connected")
 	else
 		warn("[ExecutionEffectsManager] continue_button not found or not a GuiButton")
+	end
+end
+
+-- Populate death GUI labels with killer info, UUID, date, and notification
+function ExecutionEffectsManager:_populateDeathGUILabels(deathFrame: GuiObject, killerCharacter: Model?)
+	-- Get killer player info
+	local killerPlayer: Player? = nil
+	local killerUsername = "The Void"
+	local killerUserId = "0"
+	local killerCharacterName = "The Abyss"
+
+	if killerCharacter then
+		killerPlayer = Players:GetPlayerFromCharacter(killerCharacter)
+		if killerPlayer then
+			killerUsername = killerPlayer.Name
+			killerUserId = tostring(killerPlayer.UserId)
+
+			-- Get character name from Player attributes (FirstName + LastName)
+			local firstName = killerPlayer:GetAttribute("FirstName") or ""
+			local lastName = killerPlayer:GetAttribute("LastName") or ""
+
+			if firstName ~= "" and lastName ~= "" then
+				killerCharacterName = `{firstName} {lastName}`
+			elseif firstName ~= "" then
+				killerCharacterName = firstName
+			elseif lastName ~= "" then
+				killerCharacterName = lastName
+			else
+				-- Fallback to username if no character name set
+				killerCharacterName = killerPlayer.Name
+			end
+		else
+			-- No player found (NPC?), use model name
+			killerCharacterName = killerCharacter.Name
+		end
+	end
+
+	-- Update User label: ( username ┃ userId )
+	local userLabel = deathFrame:FindFirstChild("User")
+	if userLabel and userLabel:IsA("TextLabel") then
+		userLabel.Text = `( {killerUsername} ┃ {killerUserId} )`
+		print(`[ExecutionEffectsManager] Set User label: ( {killerUsername} ┃ {killerUserId} )`)
+	else
+		print("[ExecutionEffectsManager] User label not found or not a TextLabel")
+	end
+
+	-- Update UUID label
+	local uuidLabel = deathFrame:FindFirstChild("UUID")
+	if uuidLabel and uuidLabel:IsA("TextLabel") then
+		local uuid = self:_generateUUID()
+		uuidLabel.Text = uuid
+		print(`[ExecutionEffectsManager] Set UUID label: {uuid}`)
+	else
+		print("[ExecutionEffectsManager] UUID label not found or not a TextLabel")
+	end
+
+	-- Update Date label
+	local dateLabel = deathFrame:FindFirstChild("Date")
+	if dateLabel and dateLabel:IsA("TextLabel") then
+		local dateTime = self:_getUTCDateTime()
+		dateLabel.Text = dateTime
+		print(`[ExecutionEffectsManager] Set Date label: {dateTime}`)
+	else
+		print("[ExecutionEffectsManager] Date label not found or not a TextLabel")
+	end
+
+	-- Update Notification label with random message + killer character name
+	local notificationLabel = deathFrame:FindFirstChild("Notification")
+	if notificationLabel and notificationLabel:IsA("TextLabel") then
+		local randomMessage = DEATH_MESSAGES[math.random(1, #DEATH_MESSAGES)]
+		-- Use RichText for line break
+		notificationLabel.RichText = true
+		notificationLabel.Text = `{randomMessage}<br/>{killerCharacterName}`
+		print(`[ExecutionEffectsManager] Set Notification label: {randomMessage} + {killerCharacterName}`)
+	else
+		print("[ExecutionEffectsManager] Notification label not found or not a TextLabel")
 	end
 end
 
@@ -393,42 +534,156 @@ end
 
 -- Restore UI elements that were hidden during death screen
 function ExecutionEffectsManager:_restoreHiddenUI()
+	local restoredCount = 0
+	local failedCount = 0
+
 	for _, element in ipairs(self._hiddenUIElements) do
-		if element and element.Parent then
-			element.Visible = true
+		-- Wrap each restoration in pcall to ensure one failure doesn't stop others
+		local success, err = pcall(function()
+			if element and element.Parent then
+				element.Visible = true
+				restoredCount = restoredCount + 1
+			end
+		end)
+		if not success then
+			warn(`[ExecutionEffectsManager] Failed to restore UI element: {err}`)
+			failedCount = failedCount + 1
 		end
 	end
 
 	-- Clear the list
 	self._hiddenUIElements = {}
-	print("[ExecutionEffectsManager] Restored hidden UI elements")
+	print(`[ExecutionEffectsManager] Restored {restoredCount} hidden UI elements ({failedCount} failed)`)
+
+	-- ADDITIONAL FAILSAFE: Directly try to restore known UI elements by path
+	-- This ensures UI is restored even if our tracking list was corrupted/cleared
+	pcall(function()
+		local playerGui = self._player:FindFirstChild("PlayerGui")
+		if not playerGui then return end
+
+		local mainGui = playerGui:FindFirstChild("Main")
+		if not mainGui then return end
+
+		-- Try to restore health UI
+		local healthGui = mainGui:FindFirstChild("HealthGui") or mainGui:FindFirstChild("HealthGUI")
+		if healthGui then
+			local health = healthGui:FindFirstChild("Health")
+			if health and health:IsA("GuiObject") then
+				health.Visible = true
+			end
+			local separation = healthGui:FindFirstChild("Separation") or healthGui:FindFirstChild("Seperation")
+			if separation and separation:IsA("GuiObject") then
+				separation.Visible = true
+			end
+		end
+
+		-- Try to restore posture UI
+		local postureGui = mainGui:FindFirstChild("PostureGUI") or mainGui:FindFirstChild("PostureGui")
+		if postureGui then
+			local posture = postureGui:FindFirstChild("Posture")
+			if posture and posture:IsA("GuiObject") then
+				posture.Visible = true
+			end
+		end
+
+		-- Try to restore ctag
+		local mainChild = mainGui:FindFirstChild("Main")
+		if mainChild then
+			local ctag = mainChild:FindFirstChild("Ctag")
+			if ctag and ctag:IsA("GuiObject") then
+				ctag.Visible = true
+			end
+		end
+
+		-- Try to restore interact
+		local interact = mainGui:FindFirstChild("Interact")
+		if interact and interact:IsA("GuiObject") then
+			interact.Visible = true
+		end
+
+		-- Try to restore hotbar
+		local hotbarGui = playerGui:FindFirstChild("HotbarUI")
+		if hotbarGui and hotbarGui:IsA("ScreenGui") then
+			local hotbarContainer = hotbarGui:FindFirstChildWhichIsA("Frame")
+			if hotbarContainer then
+				hotbarContainer.Visible = true
+			end
+		end
+	end)
+
+	print("[ExecutionEffectsManager] Direct path restoration failsafe complete")
 end
 
 -- Handle continue button pressed
 function ExecutionEffectsManager:_handleContinuePressed(deathFrame: GuiObject)
 	print("[ExecutionEffectsManager] Continue button pressed")
 
-	-- Disconnect button
+	-- Prevent double-clicks
+	if not self._isShowingDeathUI then
+		print("[ExecutionEffectsManager] Death UI already being closed, ignoring click")
+		return
+	end
+
+	-- Mark that we're no longer showing death UI
+	self._isShowingDeathUI = false
+
+	-- Disconnect button immediately to prevent double-clicks
 	if self._continueButtonConnection then
 		self._continueButtonConnection:Disconnect()
 		self._continueButtonConnection = nil
 	end
 
-	-- Hide death frame
-	deathFrame.Visible = false
-
-	-- Fade screen to black
-	self:_fadeScreenToBlack(function()
-		-- Black screen is now fully visible
-		-- Restore hidden UI elements (they'll be behind the black screen)
-		self:_restoreHiddenUI()
-
-		-- Confirm execution to server (this will kill the player and respawn them)
-		self:_confirmExecution()
-
-		-- Wait for character to spawn, then fade back in
-		self:_waitForRespawnAndFadeIn()
+	-- Hide death frame (wrapped in pcall for safety)
+	pcall(function()
+		deathFrame.Visible = false
 	end)
+
+	-- Wrap the entire flow in error handling to guarantee UI restoration
+	local flowSuccess, flowErr = pcall(function()
+		-- Fade screen to black
+		self:_fadeScreenToBlack(function()
+			-- Black screen is now fully visible
+			-- Restore hidden UI elements (they'll be behind the black screen)
+			local restoreSuccess, restoreErr = pcall(function()
+				self:_restoreHiddenUI()
+			end)
+			if not restoreSuccess then
+				warn("[ExecutionEffectsManager] _restoreHiddenUI error:", restoreErr)
+			end
+
+			-- Confirm execution to server (this will kill the player and respawn them)
+			local confirmSuccess, confirmErr = pcall(function()
+				self:_confirmExecution()
+			end)
+			if not confirmSuccess then
+				warn("[ExecutionEffectsManager] _confirmExecution error:", confirmErr)
+			end
+
+			-- Wait for character to spawn, then fade back in
+			local waitSuccess, waitErr = pcall(function()
+				self:_waitForRespawnAndFadeIn()
+			end)
+			if not waitSuccess then
+				warn("[ExecutionEffectsManager] _waitForRespawnAndFadeIn error:", waitErr)
+				-- FAILSAFE: Force fade from black if waiting fails
+				task.delay(2, function()
+					self:_fadeScreenFromBlack()
+				end)
+			end
+		end)
+	end)
+
+	-- CRITICAL FAILSAFE: If the entire flow fails, force cleanup
+	if not flowSuccess then
+		warn("[ExecutionEffectsManager] Continue flow FAILED:", flowErr)
+		warn("[ExecutionEffectsManager] Forcing cleanup...")
+		self:_forceCleanupDeathUI()
+
+		-- Also try to confirm execution and respawn
+		pcall(function()
+			self:_confirmExecution()
+		end)
+	end
 end
 
 -- Fade screen to black
@@ -755,7 +1010,121 @@ function ExecutionEffectsManager:_playDeathAnimation(targetCharacter: Model)
 	end)
 end
 
+-- ULTIMATE FAILSAFE: Force cleanup all death UI state
+-- This is called on CharacterAdded and when errors occur
+-- It ensures the player's UI is ALWAYS restored, no matter what
+function ExecutionEffectsManager:_forceCleanupDeathUI()
+	print("[ExecutionEffectsManager] FORCE CLEANUP - Resetting all death UI state")
+
+	-- Reset state flag
+	self._isShowingDeathUI = false
+
+	-- Disconnect continue button if still connected
+	if self._continueButtonConnection then
+		pcall(function()
+			self._continueButtonConnection:Disconnect()
+		end)
+		self._continueButtonConnection = nil
+	end
+
+	-- Clear hidden elements list (we'll restore by path anyway)
+	self._hiddenUIElements = {}
+
+	local playerGui = self._player:FindFirstChild("PlayerGui")
+	if not playerGui then
+		print("[ExecutionEffectsManager] No PlayerGui found during force cleanup")
+		return
+	end
+
+	-- FORCE: Hide death frame
+	pcall(function()
+		local mainGui = playerGui:FindFirstChild("Main")
+		if mainGui then
+			local deathGUI = mainGui:FindFirstChild("DeathGUI")
+			if deathGUI then
+				local deathFrame = deathGUI:FindFirstChild("Death")
+				if deathFrame and deathFrame:IsA("GuiObject") then
+					deathFrame.Visible = false
+					print("[ExecutionEffectsManager] Force hidden death frame")
+				end
+			end
+		end
+	end)
+
+	-- FORCE: Remove/hide fade screen
+	pcall(function()
+		local fadeGui = playerGui:FindFirstChild("ExecutionFadeGui")
+		if fadeGui then
+			fadeGui.Enabled = false
+			local fadeFrame = fadeGui:FindFirstChild("FadeFrame")
+			if fadeFrame then
+				fadeFrame.BackgroundTransparency = 1
+			end
+			print("[ExecutionEffectsManager] Force disabled fade screen")
+		end
+	end)
+
+	-- FORCE: Restore all known UI elements by path
+	pcall(function()
+		local mainGui = playerGui:FindFirstChild("Main")
+		if not mainGui then return end
+
+		-- Health UI
+		local healthGui = mainGui:FindFirstChild("HealthGui") or mainGui:FindFirstChild("HealthGUI")
+		if healthGui then
+			local health = healthGui:FindFirstChild("Health")
+			if health and health:IsA("GuiObject") then
+				health.Visible = true
+			end
+			local separation = healthGui:FindFirstChild("Separation") or healthGui:FindFirstChild("Seperation")
+			if separation and separation:IsA("GuiObject") then
+				separation.Visible = true
+			end
+		end
+
+		-- Posture UI
+		local postureGui = mainGui:FindFirstChild("PostureGUI") or mainGui:FindFirstChild("PostureGui")
+		if postureGui then
+			local posture = postureGui:FindFirstChild("Posture")
+			if posture and posture:IsA("GuiObject") then
+				posture.Visible = true
+			end
+		end
+
+		-- Ctag
+		local mainChild = mainGui:FindFirstChild("Main")
+		if mainChild then
+			local ctag = mainChild:FindFirstChild("Ctag")
+			if ctag and ctag:IsA("GuiObject") then
+				ctag.Visible = true
+			end
+		end
+
+		-- Interact
+		local interact = mainGui:FindFirstChild("Interact")
+		if interact and interact:IsA("GuiObject") then
+			interact.Visible = true
+		end
+	end)
+
+	-- FORCE: Restore hotbar
+	pcall(function()
+		local hotbarGui = playerGui:FindFirstChild("HotbarUI")
+		if hotbarGui and hotbarGui:IsA("ScreenGui") then
+			local hotbarContainer = hotbarGui:FindFirstChildWhichIsA("Frame")
+			if hotbarContainer then
+				hotbarContainer.Visible = true
+			end
+		end
+	end)
+
+	print("[ExecutionEffectsManager] Force cleanup complete - all UI should be restored")
+end
+
 function ExecutionEffectsManager:destroy()
+	-- Force cleanup before destroying
+	self:_forceCleanupDeathUI()
+
 	-- Disconnect continue button if connected
 	if self._continueButtonConnection then
 		self._continueButtonConnection:Disconnect()

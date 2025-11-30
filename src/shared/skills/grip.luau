@@ -231,10 +231,12 @@ function Grip:_executeTarget(targetCharacter: Model)
 
 	-- Fire execution event to all clients (for VFX/SFX/death UI)
 	-- The player is NOT killed here - they click continue to actually die and respawn
+	-- Pass killer character for death UI customization
 	local executeRemote = ReplicatedStorage:FindFirstChild("PlayerExecuted") :: RemoteEvent?
 	if executeRemote then
-		print(`[Grip] Server: Firing PlayerExecuted event to all clients for {targetCharacter.Name}`)
-		executeRemote:FireAllClients(targetCharacter)
+		local killerCharacter = self.Character.Instance
+		print(`[Grip] Server: Firing PlayerExecuted event to all clients for {targetCharacter.Name} (killed by {killerCharacter.Name})`)
+		executeRemote:FireAllClients(targetCharacter, killerCharacter)
 		print("[Grip] Server: PlayerExecuted event fired successfully")
 	else
 		warn("[Grip] Server: PlayerExecuted remote event NOT FOUND in ReplicatedStorage!")

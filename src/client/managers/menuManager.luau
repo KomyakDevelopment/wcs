@@ -51,20 +51,22 @@ end
 function MenuManager:_enableGameUI()
 	local playerGui = player:WaitForChild("PlayerGui")
 
-	-- Enable Main ScreenGui
-	local mainGui = playerGui:FindFirstChild("Main")
+	-- Wait for Main ScreenGui (may not have replicated from StarterGui yet)
+	local mainGui = playerGui:WaitForChild("Main", 10) :: ScreenGui?
 	if mainGui and mainGui:IsA("ScreenGui") then
 		mainGui.Enabled = true
 		print("[MenuManager] Enabled Main ScreenGui")
 	else
-		warn("[MenuManager] Main ScreenGui not found in PlayerGui")
+		warn("[MenuManager] Main ScreenGui not found in PlayerGui after 10s wait")
 	end
 
-	-- Enable HotbarUI ScreenGui
-	local hotbarGui = playerGui:FindFirstChild("HotbarUI")
+	-- Wait for HotbarUI ScreenGui
+	local hotbarGui = playerGui:WaitForChild("HotbarUI", 5) :: ScreenGui?
 	if hotbarGui and hotbarGui:IsA("ScreenGui") then
 		hotbarGui.Enabled = true
 		print("[MenuManager] Enabled HotbarUI ScreenGui")
+	else
+		warn("[MenuManager] HotbarUI ScreenGui not found after 5s wait")
 	end
 end
 
