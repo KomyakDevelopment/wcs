@@ -75,6 +75,7 @@ local MOVEMENT_ANIMATION_IDS = {
 }
 
 local WALK_ANIM_SPEED_DURING_HEAVY = 0.3
+local MOVEMENT_SLOW_MULTIPLIER = 0.1 -- 90% slow during crit
 
 function HeavyPunch:OnConstructServer()
 	self.hitTargets = {}
@@ -84,6 +85,7 @@ end
 function HeavyPunch:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
+	self.originalWalkSpeed = nil
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
@@ -210,7 +212,8 @@ function HeavyPunch:_restoreMovementAnimations()
 end
 
 function HeavyPunch:OnStartClient()
-	-- Include Attacking to prevent move stacking on client
+	-- Check blocking status effects (server is authoritative, don't check Attacking here
+	-- since this skill creates Attacking and it may replicate before OnStartClient runs)
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -220,7 +223,6 @@ function HeavyPunch:OnStartClient()
 			Blocking,
 			Parrying,
 			Guardbroken,
-			Attacking,
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
@@ -243,6 +245,14 @@ function HeavyPunch:OnStartClient()
 				end
 			end
 		end
+	end
+
+	-- Apply movement slow
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if humanoid then
+		self.originalWalkSpeed = humanoid.WalkSpeed
+		humanoid.WalkSpeed = self.originalWalkSpeed * MOVEMENT_SLOW_MULTIPLIER
 	end
 
 	-- Play animation
@@ -692,6 +702,16 @@ end
 
 function HeavyPunch:OnEndClient()
 	self:_restoreMovementAnimations()
+
+	-- Restore movement speed
+	if self.originalWalkSpeed then
+		local character = self.Character.Instance
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if humanoid then
+			humanoid.WalkSpeed = self.originalWalkSpeed
+		end
+		self.originalWalkSpeed = nil
+	end
 
 	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 

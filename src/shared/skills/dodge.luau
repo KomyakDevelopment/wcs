@@ -43,7 +43,7 @@ local IFRAME_END = 0.55 -- Iframes end right before dodge completes (increased f
 -- Animation IDs for each direction
 local DODGE_ANIMATIONS = {
 	Forward = "rbxassetid://85622930154432",
-	Backward = "rbxassetid://85622930154432",
+	Backward = "rbxassetid://97514479751497",
 	Left = "rbxassetid://82194383365576",
 	Right = "rbxassetid://97514479751497",
 }
@@ -104,7 +104,10 @@ end
 
 function Dodge:OnStartServer()
 	-- Check if player is in hitstun, guardbroken, knocked down, or attacking
-	if self.Character.IsGuardbroken or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking }) then
+	if
+		self.Character.IsGuardbroken
+		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking })
+	then
 		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, knocked down, or attacking")
 		return
 	end
@@ -398,7 +401,9 @@ end
 
 function Dodge:OnStartClient()
 	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or attacking
-	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown, Attacking }) then
+	if
+		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown, Attacking })
+	then
 		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down/attacking")
 		return
 	end

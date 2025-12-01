@@ -15,33 +15,39 @@ local CONFIG = {
 	-- Detection
 	MAX_CLIMB_HEIGHT = 3.5, -- Maximum height difference to climb (studs)
 	MIN_CLIMB_HEIGHT = 1.5, -- Minimum height to trigger climb (increased to avoid stairs, typical stair is 0.5-1 stud)
-	DETECTION_DISTANCE = 2.5, -- How far ahead to detect ledges
-	MIN_MOVEMENT_SPEED = 3, -- Minimum velocity to trigger climb
+	DETECTION_DISTANCE = 4.5, -- How far ahead to detect ledges (generous for easy timing)
+	MIN_MOVEMENT_SPEED = 1.5, -- Minimum velocity to trigger climb (very forgiving)
 	MIN_LEDGE_DEPTH = 1.5, -- Minimum horizontal depth of ledge (avoids stairs which have short steps)
 	MIN_SURFACE_FLATNESS = 0.95, -- Minimum dot product with Y axis for flat surfaces (avoids slopes)
 
 	-- Climb motion
-	CLIMB_DURATION = 0.25, -- How long the climb takes (seconds) - quick and snappy
+	CLIMB_DURATION = 0.3, -- How long the climb takes (seconds) - smooth and fluid
 
 	-- Animation
-	ANIMATION_ID = "rbxassetid://74508440985641",
-	ANIMATION_SPEED = 2.5,
+	ANIMATION_ID = "rbxassetid://100770125981931", -- 74508440985641
+	ANIMATION_SPEED = 1.35,
 
 	-- Cooldown
 	COOLDOWN = 0.3,
+
+	-- Timing tolerance
+	VAULT_BUFFER_TIME = 0.5, -- How long to keep trying after space press (generous window)
 }
 
-export type VaultManager = typeof(setmetatable({} :: {
-	_player: Player,
-	_character: Model?,
-	_humanoid: Humanoid?,
-	_rootPart: BasePart?,
-	_animator: Animator?,
-	_vaultAnimation: AnimationTrack?,
-	_isClimbing: boolean,
-	_lastClimbTime: number,
-	_heartbeatConnection: RBXScriptConnection?,
-}, VaultManager))
+export type VaultManager = typeof(setmetatable(
+	{} :: {
+		_player: Player,
+		_character: Model?,
+		_humanoid: Humanoid?,
+		_rootPart: BasePart?,
+		_animator: Animator?,
+		_vaultAnimation: AnimationTrack?,
+		_isClimbing: boolean,
+		_lastClimbTime: number,
+		_vaultBufferEnd: number, -- When the vault buffer expires
+	},
+	VaultManager
+))
 
 function VaultManager.new(): VaultManager
 	local self = setmetatable({}, VaultManager) :: VaultManager
@@ -54,6 +60,7 @@ function VaultManager.new(): VaultManager
 	self._vaultAnimation = nil
 	self._isClimbing = false
 	self._lastClimbTime = 0
+	self._vaultBufferEnd = 0
 
 	self:_initialize()
 
@@ -71,12 +78,28 @@ function VaultManager:_initialize()
 		self:_onCharacterAdded(character)
 	end)
 
-	-- Main detection loop
-	self._heartbeatConnection = RunService.Heartbeat:Connect(function()
-		self:_update()
+	-- Listen for space key press to start vault buffer
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.Space then
+			-- Set buffer - will try to vault for the next VAULT_BUFFER_TIME seconds
+			self._vaultBufferEnd = tick() + CONFIG.VAULT_BUFFER_TIME
+			-- Try immediately first
+			self:_tryVault()
+		end
 	end)
 
-	print("[VaultManager] Initialized (Ledge Climb Mode)")
+	-- Heartbeat to check for vault during buffer window
+	RunService.Heartbeat:Connect(function()
+		-- Only check if we're in the buffer window and haven't vaulted yet
+		if tick() < self._vaultBufferEnd and not self._isClimbing then
+			self:_tryVault()
+		end
+	end)
+
+	print("[VaultManager] Initialized (Ledge Climb Mode - Press Space)")
 end
 
 function VaultManager:_onCharacterAdded(character: Model)
@@ -93,6 +116,9 @@ function VaultManager:_onCharacterAdded(character: Model)
 	self._humanoid = humanoid
 	self._rootPart = rootPart
 
+	-- Disable auto-climbing so players must use vault (press space)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+
 	-- Load animation
 	local animator = humanoid:FindFirstChildOfClass("Animator")
 	if animator then
@@ -107,10 +133,10 @@ function VaultManager:_onCharacterAdded(character: Model)
 	self._isClimbing = false
 	self._lastClimbTime = 0
 
-	print("[VaultManager] Character setup complete")
+	print("[VaultManager] Character setup complete (auto-climb disabled)")
 end
 
-function VaultManager:_update()
+function VaultManager:_tryVault()
 	-- Skip if climbing or on cooldown
 	if self._isClimbing then
 		return
@@ -154,6 +180,8 @@ function VaultManager:_update()
 	-- Detect climbable ledge
 	local ledgeData = self:_detectLedge(forwardDir)
 	if ledgeData then
+		-- Clear buffer since we're vaulting
+		self._vaultBufferEnd = 0
 		self:_performClimb(ledgeData, forwardDir, horizontalVelocity.Magnitude)
 	end
 end
@@ -253,6 +281,11 @@ function VaultManager:_detectLedge(forwardDir: Vector3): LedgeData?
 	}
 end
 
+-- Smooth easing function (ease out sine for very fluid deceleration)
+local function easeOutSine(t: number): number
+	return math.sin((t * math.pi) / 2)
+end
+
 function VaultManager:_performClimb(ledgeData: LedgeData, _forwardDir: Vector3, _currentSpeed: number)
 	if self._isClimbing or not self._humanoid or not self._rootPart then
 		return
@@ -265,27 +298,29 @@ function VaultManager:_performClimb(ledgeData: LedgeData, _forwardDir: Vector3, 
 
 	-- Play animation
 	if self._vaultAnimation then
-		self._vaultAnimation:Play(0.05)
+		self._vaultAnimation:Play(0.15) -- Smooth blend
 		self._vaultAnimation:AdjustSpeed(CONFIG.ANIMATION_SPEED)
 	end
 
 	-- Store start position and velocity
 	local startPos = self._rootPart.Position
-	local currentRotation = self._rootPart.CFrame - self._rootPart.CFrame.Position
+	local startRotation = self._rootPart.CFrame.Rotation
 	local preservedVelocity = self._rootPart.AssemblyLinearVelocity
 	local horizontalVelocity = Vector3.new(preservedVelocity.X, 0, preservedVelocity.Z)
 
-	-- Calculate target height (just the Y component we need to reach)
+	-- Calculate target height
 	local targetY = ledgeData.targetPosition.Y
+	local heightDelta = targetY - startPos.Y
 
-	-- DISABLE humanoid physics completely during climb
+	-- FULLY disable physics during climb
 	self._humanoid.PlatformStand = true
+	self._humanoid.AutoRotate = false
 
-	-- Animate the climb - maintain forward momentum while elevating
-	local startTime = tick()
+	-- Use accumulated deltaTime for frame-perfect smoothness
+	local elapsedTime = 0
 	local connection: RBXScriptConnection?
 
-	connection = RunService.RenderStepped:Connect(function(_deltaTime)
+	connection = RunService.RenderStepped:Connect(function(deltaTime: number)
 		if not self._rootPart or not self._rootPart.Parent or not self._humanoid then
 			if connection then
 				connection:Disconnect()
@@ -294,25 +329,28 @@ function VaultManager:_performClimb(ledgeData: LedgeData, _forwardDir: Vector3, 
 			return
 		end
 
-		local elapsed = tick() - startTime
-		local progress = math.clamp(elapsed / CONFIG.CLIMB_DURATION, 0, 1)
+		-- Accumulate time for smooth progression
+		elapsedTime = elapsedTime + deltaTime
+		local progress = math.clamp(elapsedTime / CONFIG.CLIMB_DURATION, 0, 1)
 
-		-- Smooth easing for vertical movement only
-		local easedProgress = 1 - math.pow(1 - progress, 3) -- Ease out cubic
+		-- Smooth sine easing for natural, fluid motion
+		local easedProgress = easeOutSine(progress)
 
-		-- Calculate current position:
-		-- - Horizontal: continue moving at preserved velocity (momentum preserved)
-		-- - Vertical: interpolate from start to target height
-		local currentY = startPos.Y + (targetY - startPos.Y) * easedProgress
-		local horizontalOffset = horizontalVelocity * elapsed
+		-- Calculate position
+		local currentY = startPos.Y + heightDelta * easedProgress
+		local horizontalOffset = horizontalVelocity * elapsedTime
 		local currentPos = Vector3.new(
 			startPos.X + horizontalOffset.X,
 			currentY,
 			startPos.Z + horizontalOffset.Z
 		)
 
-		-- Apply position while keeping current rotation
-		self._rootPart.CFrame = CFrame.new(currentPos) * currentRotation
+		-- Kill ALL velocity to prevent physics interference
+		self._rootPart.AssemblyLinearVelocity = Vector3.zero
+		self._rootPart.AssemblyAngularVelocity = Vector3.zero
+
+		-- Apply position with stored rotation
+		self._rootPart.CFrame = CFrame.new(currentPos) * startRotation
 
 		-- Check if complete
 		if progress >= 1 then
@@ -332,6 +370,7 @@ function VaultManager:_endClimb(preservedVelocity: Vector3)
 
 	-- Re-enable humanoid physics
 	self._humanoid.PlatformStand = false
+	self._humanoid.AutoRotate = true
 
 	-- Horizontal velocity we want to restore
 	local horizontalVelocity = Vector3.new(preservedVelocity.X, 0, preservedVelocity.Z)
@@ -377,11 +416,6 @@ function VaultManager:_resumeSprint()
 end
 
 function VaultManager:destroy()
-	if self._heartbeatConnection then
-		self._heartbeatConnection:Disconnect()
-		self._heartbeatConnection = nil :: any
-	end
-
 	self._isClimbing = false
 	self._vaultAnimation = nil :: any
 	self._character = nil :: any

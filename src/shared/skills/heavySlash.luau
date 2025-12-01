@@ -23,6 +23,7 @@ local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 
 -- Pre-cache skill references
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -73,6 +74,7 @@ local MOVEMENT_ANIMATION_IDS = {
 }
 
 local WALK_ANIM_SPEED_DURING_HEAVY = 0.3
+local MOVEMENT_SLOW_MULTIPLIER = 0.1 -- 90% slow during crit
 
 function HeavySlash:OnConstructServer()
 	self.hitTargets = {}
@@ -82,6 +84,7 @@ end
 function HeavySlash:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
+	self.originalWalkSpeed = nil
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
@@ -220,7 +223,8 @@ function HeavySlash:_restoreMovementAnimations()
 end
 
 function HeavySlash:OnStartClient()
-	-- Include Attacking to prevent move stacking on client
+	-- Check blocking status effects (server is authoritative, don't check Attacking here
+	-- since this skill creates Attacking and it may replicate before OnStartClient runs)
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -230,7 +234,6 @@ function HeavySlash:OnStartClient()
 			Blocking,
 			Parrying,
 			Guardbroken,
-			Attacking,
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
@@ -255,6 +258,14 @@ function HeavySlash:OnStartClient()
 		end
 	end
 
+	-- Apply movement slow
+	local character = self.Character.Instance
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if humanoid then
+		self.originalWalkSpeed = humanoid.WalkSpeed
+		humanoid.WalkSpeed = self.originalWalkSpeed * MOVEMENT_SLOW_MULTIPLIER
+	end
+
 	-- Play animation
 	if self.loadedAnimation then
 		self.loadedAnimation:Play(0.05)
@@ -273,6 +284,7 @@ function HeavySlash:OnStartClient()
 	-- Apply VFX and SFX
 	self:_applyWeaponTrail()
 	self:_playHeavySFX()
+	self:_applyHeavyVFX()
 
 	print("[HeavySlash] Client: Playing heavy slash animation")
 end
@@ -395,16 +407,41 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			return false
 		end
 
-		-- Check if target is blocking (we'll use this to determine guardbreak vs knockback)
-		-- Heavy attacks go through blocks but have different effects
-	end
+		-- Check if target is blocking - heavySlash can be blocked (no guardbreak)
+		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
+			print(`[HeavySlash] Target {targetModel.Name} BLOCKED!`)
+			self.hitTargets[targetModel] = true
 
-	-- Check if target was blocking BEFORE we hit them
-	local wasBlocking = targetWCSCharacter and targetWCSCharacter:HasStatusEffects({ Blocking })
+			-- Apply posture damage (heavy attacks deal more posture damage)
+			local postureManager = getPostureManager()
+			local postureDamage = CombatConfig.Posture.BlockDamage * CombatConfig.Posture.HeavyBlockDamageMultiplier
+			postureManager.addPosture(targetModel, postureDamage)
+
+			-- Apply BlockStunned status (brief stun, doesn't cancel block)
+			local blockStunnedEffect = BlockStunned.new(targetWCSCharacter)
+			if blockStunnedEffect then
+				blockStunnedEffect:Start(CombatConfig.StatusDurations.BlockStunned)
+			end
+
+			-- Fire block hit animation event
+			local blockHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitAnimation")
+			if blockHitAnimRemote then
+				blockHitAnimRemote:FireAllClients(targetModel)
+			end
+
+			-- Fire block hit VFX event
+			local blockHitVFXRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitVFX")
+			if blockHitVFXRemote then
+				blockHitVFXRemote:FireAllClients(targetModel)
+			end
+
+			return false -- Attack was blocked, no damage
+		end
+	end
 
 	self.hitTargets[targetModel] = true
 
-	print(`[HeavySlash] Heavy hit on: {targetModel.Name}! (was blocking: {wasBlocking})`)
+	print(`[HeavySlash] Heavy hit on: {targetModel.Name}!`)
 
 	targetHumanoid:TakeDamage(HEAVY_DAMAGE)
 
@@ -582,6 +619,105 @@ function HeavySlash:_playHeavySFX()
 	end)
 end
 
+function HeavySlash:_applyHeavyVFX()
+	if not RunService:IsClient() then
+		return
+	end
+
+	local character = self.Character.Instance
+	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not humanoidRootPart then
+		return
+	end
+
+	-- Get VFX folder for heavySlash
+	local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("VFX")
+		and ReplicatedStorage.Assets.VFX:FindFirstChild("Weapon_Classes")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes:FindFirstChild("Criticals")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild("Light_Weapons")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons:FindFirstChild("heavySlash")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons.heavySlash:FindFirstChild("vfx")
+
+	if not vfxFolder then
+		return
+	end
+
+	local animLength = self.loadedAnimation and self.loadedAnimation.Length or 0.7
+	local clonedAttachments = {}
+
+	-- Clone VFX_attachment directly to HRP
+	local vfxAttachment = vfxFolder:FindFirstChild("VFX_attachment")
+	if vfxAttachment and vfxAttachment:IsA("Attachment") then
+		local attachmentClone = vfxAttachment:Clone()
+		attachmentClone.Parent = humanoidRootPart
+		table.insert(clonedAttachments, attachmentClone)
+
+		-- Emit particles using same method as heavyPunch
+		for _, emitter in ipairs(attachmentClone:GetDescendants()) do
+			if emitter:IsA("ParticleEmitter") then
+				emitter.Enabled = false
+				local emitDelay = emitter:GetAttribute("EmitDelay") or 0
+				local emitCount = emitter:GetAttribute("EmitCount") or emitter.Rate
+				if emitDelay > 0 then
+					task.delay(emitDelay, function()
+						if emitter and emitter.Parent then
+							emitter:Emit(emitCount)
+						end
+					end)
+				else
+					emitter:Emit(emitCount)
+				end
+			end
+		end
+
+		-- Handle beams (sync with slash timings based on parent folder)
+		for _, beam in ipairs(attachmentClone:GetDescendants()) do
+			if beam:IsA("Beam") then
+				beam.Enabled = false
+				local duration = beam:GetAttribute("Duration") or 0.15
+
+				-- Determine timing based on parent hierarchy (slash1 or slash2)
+				-- VFX timings are slightly earlier than damage timings for visual sync
+				local timing = nil
+				local parent = beam.Parent
+				while parent and parent ~= attachmentClone do
+					if parent.Name == "slash1" then
+						timing = 0.55
+						break
+					elseif parent.Name == "slash2" then
+						timing = 0.8
+						break
+					end
+					parent = parent.Parent
+				end
+
+				if timing then
+					task.delay(timing, function()
+						if beam and beam.Parent then
+							beam.Enabled = true
+							task.delay(duration, function()
+								if beam and beam.Parent then
+									beam.Enabled = false
+								end
+							end)
+						end
+					end)
+				end
+			end
+		end
+	end
+
+	-- Cleanup after animation
+	task.delay(animLength + 0.5, function()
+		for _, attachment in ipairs(clonedAttachments) do
+			if attachment and attachment.Parent then
+				attachment:Destroy()
+			end
+		end
+	end)
+end
+
 function HeavySlash:_cancelAttackMomentum()
 	if not RunService:IsServer() then
 		return
@@ -620,6 +756,16 @@ end
 
 function HeavySlash:OnEndClient()
 	self:_restoreMovementAnimations()
+
+	-- Restore movement speed
+	if self.originalWalkSpeed then
+		local character = self.Character.Instance
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if humanoid then
+			humanoid.WalkSpeed = self.originalWalkSpeed
+		end
+		self.originalWalkSpeed = nil
+	end
 
 	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
