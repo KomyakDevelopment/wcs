@@ -13,6 +13,7 @@ local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 -- Configuration
 local KNOCKDOWN_DURATION = 6.0 -- Seconds before getting back up
 local MIN_KNOCKDOWN_HP = 1 -- Minimum HP while knocked down (prevents death)
+local POST_RECOVERY_IMMUNITY = 8.0 -- Seconds of immunity AFTER recovery (generous buffer)
 
 -- Remote events
 local knockdownRemote: RemoteEvent = nil
@@ -28,7 +29,7 @@ function DeathManager.new()
 	self._knockdownTimers = {} :: { [Player]: thread } -- Track knockdown timer threads
 	self._knockdownHealthConnections = {} :: { [Player]: RBXScriptConnection } -- Health protection while knocked
 	self._knockdownStatusEffects = {} :: { [Player]: any } -- Track Knockdown status effects
-	self._recoveryGraceEndTime = {} :: { [Player]: number } -- Timestamp when grace period ends (more reliable than boolean)
+	self._recoveryTime = {} :: { [Player]: number } -- Track when player RECOVERED (for post-recovery immunity)
 	self._executingPlayers = {} :: { [Player]: boolean } -- Track players being executed (skip knockdown)
 	self._executionHealthConnections = {} :: { [Player]: RBXScriptConnection } -- Prevent regen during execution
 	self._executionLeavers = {} :: { [number]: boolean } -- Track UserIds that left during execution (death on rejoin)
@@ -95,7 +96,7 @@ function DeathManager:_setup()
 			-- Clean up all state for this player
 			self._knockedPlayers[player] = nil
 			self._executingPlayers[player] = nil
-			self._recoveryGraceEndTime[player] = nil
+			self._recoveryTime[player] = nil
 
 			if self._knockdownTimers[player] then
 				task.cancel(self._knockdownTimers[player])
@@ -140,7 +141,7 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 	-- Clear any execution/knockdown state from previous character (respawn cleanup)
 	self._executingPlayers[player] = nil
 	self._knockedPlayers[player] = nil
-	self._recoveryGraceEndTime[player] = nil
+	self._recoveryTime[player] = nil
 
 	-- Disconnect any execution health clamp from previous character
 	if self._executionHealthConnections[player] then
@@ -166,6 +167,20 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 				return
 			end
 
+			-- Check post-recovery immunity - prevents re-knockdown after recently recovering
+			-- Also check the KnockdownImmunity attribute as a backup
+			local recoveryTime = self._recoveryTime[player]
+			local hasImmunityAttr = character:GetAttribute("KnockdownImmunity") == true
+			if (recoveryTime and (tick() - recoveryTime) < POST_RECOVERY_IMMUNITY) or hasImmunityAttr then
+				-- In immunity window - set HP to minimum to prevent 0 HP oscillation
+				-- This gives regen a stable base to work from
+				humanoid.Health = MIN_KNOCKDOWN_HP
+				lastKnownHP = MIN_KNOCKDOWN_HP
+				local remaining = recoveryTime and (POST_RECOVERY_IMMUNITY - (tick() - recoveryTime)) or POST_RECOVERY_IMMUNITY
+				print(`[DeathManager] {player.Name} post-recovery immunity ({string.format("%.1f", math.max(0, remaining))}s remaining) - HP set to {MIN_KNOCKDOWN_HP}`)
+				return
+			end
+
 			-- Check if this was an instant-kill (void, massive damage) vs combat knockdown
 			-- If they had significant HP before being knocked, it's an instant-kill
 			local instantKillThreshold = humanoid.MaxHealth * 0.15 -- 15% of max HP
@@ -175,6 +190,7 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 				self:_autoExecuteImmediate(player, character, humanoid)
 			else
 				-- Combat knockdown: they were already low HP from taking hits
+				print(`[DeathManager] {player.Name} combat knockdown (had {lastKnownHP} HP, now {newHealth})`)
 				self:_handleKnockdown(player, character, humanoid)
 			end
 		end
@@ -224,6 +240,10 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 	end
 
 	self._knockedPlayers[player] = true
+
+	-- Clear any previous recovery time and immunity (new knockdown starts fresh)
+	self._recoveryTime[player] = nil
+	character:SetAttribute("KnockdownImmunity", nil)
 
 	print(`[DeathManager] {player.Name} knocked down`)
 
@@ -321,20 +341,7 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 end
 
 function DeathManager:_handleRecovery(player: Player, character: Model, humanoid: Humanoid)
-	-- Disconnect health protection first
-	if self._knockdownHealthConnections[player] then
-		self._knockdownHealthConnections[player]:Disconnect()
-		self._knockdownHealthConnections[player] = nil
-	end
-
-	-- End Knockdown status effect
-	if self._knockdownStatusEffects[player] then
-		self._knockdownStatusEffects[player]:End()
-		self._knockdownStatusEffects[player] = nil
-		print(`[DeathManager] Ended Knockdown status effect for {player.Name}`)
-	end
-
-	-- Check if player/character still exists
+	-- Check if player/character still exists FIRST (before any state changes)
 	if not player or not player.Parent then
 		self._knockedPlayers[player] = nil
 		self._knockdownTimers[player] = nil
@@ -347,10 +354,45 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 		return
 	end
 
-	if not humanoid or humanoid.Health <= 0 then
+	if not humanoid then
 		self._knockedPlayers[player] = nil
 		self._knockdownTimers[player] = nil
 		return
+	end
+
+	-- CRITICAL: Set HP to minimum BEFORE disconnecting health protection
+	-- This ensures HP is never 0 when recovery completes, preventing the "stiff" bug
+	if humanoid.Health <= 0 then
+		humanoid.Health = MIN_KNOCKDOWN_HP
+		print(`[DeathManager] {player.Name} HP was 0 at recovery start - set to {MIN_KNOCKDOWN_HP}`)
+	end
+
+	-- Set recovery time for post-recovery immunity
+	self._recoveryTime[player] = tick()
+
+	-- Set immunity attribute on character so other systems can check
+	character:SetAttribute("KnockdownImmunity", true)
+
+	-- Schedule removal of immunity attribute
+	task.delay(POST_RECOVERY_IMMUNITY, function()
+		if character and character.Parent then
+			character:SetAttribute("KnockdownImmunity", nil)
+		end
+	end)
+
+	print(`[DeathManager] {player.Name} recovering - {POST_RECOVERY_IMMUNITY}s immunity started`)
+
+	-- Disconnect health protection
+	if self._knockdownHealthConnections[player] then
+		self._knockdownHealthConnections[player]:Disconnect()
+		self._knockdownHealthConnections[player] = nil
+	end
+
+	-- End Knockdown status effect
+	if self._knockdownStatusEffects[player] then
+		self._knockdownStatusEffects[player]:End()
+		self._knockdownStatusEffects[player] = nil
+		print(`[DeathManager] Ended Knockdown status effect for {player.Name}`)
 	end
 
 	print(`[DeathManager] {player.Name} recovering from knockdown`)
@@ -397,8 +439,9 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 	humanoid.JumpPower = 50 -- Default jump power
 	humanoid.JumpHeight = 7.2 -- Default jump height
 
-	-- Player keeps their current HP (MIN_KNOCKDOWN_HP)
-	-- Roblox's built-in health regen will restore HP over time
+	-- Don't set HP on recovery - Roblox's automatic health regen handles HP restoration
+	-- The grace period protects them from knockdown while their HP regenerates
+	print(`[DeathManager] {player.Name} HP at recovery: {humanoid.Health}/{humanoid.MaxHealth} (regen will heal)`)
 
 	-- Fire recovery event to all clients
 	knockdownRemote:FireAllClients(character, false)
@@ -699,11 +742,12 @@ function DeathManager:prepareForExecution(player: Player)
 
 	-- Clear knockdown state
 	self._knockedPlayers[player] = nil
-	self._recoveryGraceEndTime[player] = nil
+	self._recoveryTime[player] = nil
 
-	-- Disable ragdoll on the character
+	-- Disable ragdoll on the character and clear immunity
 	local character = player.Character
 	if character then
+		character:SetAttribute("KnockdownImmunity", nil)
 		self:_disableRagdoll(character)
 
 		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
@@ -725,7 +769,7 @@ function DeathManager:destroy()
 	end
 	self._knockdownTimers = {}
 	self._knockedPlayers = {}
-	self._recoveryGraceEndTime = {}
+	self._recoveryTime = {}
 	self._executingPlayers = {}
 	self._executionLeavers = {}
 

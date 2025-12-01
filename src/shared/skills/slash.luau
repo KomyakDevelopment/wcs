@@ -85,6 +85,7 @@ function Slash:OnConstructServer()
 	self.comboResetTimer = nil
 	self.currentAttackPhase = 1 -- Track which phase is currently executing
 	self.attackingEffect = nil
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 end
 
 function Slash:OnConstructClient()
@@ -93,6 +94,7 @@ function Slash:OnConstructClient()
 	self.comboResetTimer = nil
 	self.loadedAnimations = {}
 	self.animationsReady = false
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 
 	-- Preload all combo animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -444,6 +446,19 @@ end
 -- Apply damage to a target
 -- Returns true if it was a real hit, false if blocked/parried/iframed
 function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
+	-- TRADE PREVENTION: Check if attacker got hit first (has hitstun)
+	-- This is the key to preventing M1 trading - first hit wins
+	-- Even if both attacks were initiated, the first to land applies hitstun
+	-- When the second attack's hit detection runs, the attacker will have hitstun
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Parried }) then
+		print(`[Slash] Attack invalidated - {self.Character.Instance.Name} was hit first (has hitstun)`)
+		-- Set flag so OnEndClient knows to force stop animations (status might not have replicated yet)
+		self.attackInvalidated = true
+		-- End the skill immediately to stop animations (OnEndClient will handle cleanup)
+		self:End()
+		return false
+	end
+
 	-- Check if we already hit this target (prevent double-hitting)
 	if self.hitTargets[targetModel] then
 		return false
@@ -911,7 +926,8 @@ function Slash:OnEndClient()
 
 	-- Industry standard: Only stop animations on interrupt, let them finish naturally otherwise
 	-- Check if we were interrupted by looking for hitstun status OR Parried status
-	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
+	-- Also check attackInvalidated flag (trade prevention - status might not have replicated yet)
+	local interrupted = self.attackInvalidated or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then
 		-- Only stop animations if interrupted - use fast fade
@@ -923,6 +939,9 @@ function Slash:OnEndClient()
 		end
 	end
 	-- Otherwise let animations finish naturally - don't stop them
+
+	-- Reset the flag for next attack
+	self.attackInvalidated = false
 end
 
 -- Client-side prediction for rollcancel (plays sound immediately when detecting iframe targets)

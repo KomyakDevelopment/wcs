@@ -79,12 +79,14 @@ local MOVEMENT_SLOW_MULTIPLIER = 0.1 -- 90% slow during crit
 function HeavySlash:OnConstructServer()
 	self.hitTargets = {}
 	self.attackingEffect = nil
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 end
 
 function HeavySlash:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
 	self.originalWalkSpeed = nil
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
@@ -367,6 +369,17 @@ function HeavySlash:_detectHit()
 end
 
 function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
+	-- TRADE PREVENTION: Check if attacker got hit first (has hitstun)
+	-- This is the key to preventing trading - first hit wins
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Parried }) then
+		print(`[HeavySlash] Attack invalidated - {self.Character.Instance.Name} was hit first (has hitstun)`)
+		-- Set flag so OnEndClient knows to force stop animations (status might not have replicated yet)
+		self.attackInvalidated = true
+		-- End the skill immediately to stop animations
+		self:End()
+		return false
+	end
+
 	if self.hitTargets[targetModel] then
 		return false
 	end
@@ -450,6 +463,13 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	end
 
 	if targetWCSCharacter then
+		-- Apply soft hitstun (same duration as M1 for kunai crit)
+		local hitstun = SoftHitstun.new(targetWCSCharacter)
+		if hitstun then
+			hitstun:Start(WeaponConfig.HitstunDuration)
+			print(`[HeavySlash] Applied SoftHitstun ({WeaponConfig.HitstunDuration}s) to {targetModel.Name}`)
+		end
+
 		-- Cancel target's attacks
 		local Slash = require(ReplicatedStorage.Shared.skills.slash)
 		local targetSlashSkill = targetWCSCharacter:GetSkillFromConstructor(Slash)
@@ -459,8 +479,6 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 				targetSlashSkill:End()
 			end
 		end
-
-		-- No knockback or guardbreak - pure damage skill
 	end
 
 	return true
@@ -767,13 +785,18 @@ function HeavySlash:OnEndClient()
 		self.originalWalkSpeed = nil
 	end
 
-	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
+	-- Also check attackInvalidated flag (trade prevention - status might not have replicated yet)
+	local interrupted = self.attackInvalidated or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then
 		if self.loadedAnimation and self.loadedAnimation.IsPlaying then
 			self.loadedAnimation:Stop(0.05)
+			print("[HeavySlash] Client: Stopped animation due to interrupt")
 		end
 	end
+
+	-- Reset the flag for next attack
+	self.attackInvalidated = false
 end
 
 return HeavySlash

@@ -258,6 +258,8 @@ function Block:OnStartClient()
 	-- SoftHitstun prevents blocking (player must wait for hitstun to end before blocking)
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Attacking, Knockdown }) then
 		print("[Block] Client: Blocked - Player is in hitstun/stun/dashing/block recovery/guardbroken/attacking/knocked down")
+		-- Play failed parry animation for visual feedback (shows player tried to parry but couldn't)
+		self:_playFailedParryAnimation()
 		return
 	end
 
@@ -265,6 +267,8 @@ function Block:OnStartClient()
 	-- SprintManager sets IsSprinting attribute on character
 	if self.Character.Instance:GetAttribute("IsSprinting") == true then
 		print("[Block] Client: Blocked - Player is sprinting")
+		-- Play failed parry animation for visual feedback
+		self:_playFailedParryAnimation()
 		return
 	end
 
@@ -305,6 +309,24 @@ function Block:OnStartClient()
 		end)
 	else
 		warn("[Block] Client: Parry transition animation not loaded")
+	end
+end
+
+-- Play a brief animation when player tries to parry but can't (failed parry feedback)
+function Block:_playFailedParryAnimation()
+	local parryTransTrack = self.loadedAnimations.ParryTransition
+	if parryTransTrack then
+		-- Play at faster speed for a quick "failed" feeling
+		parryTransTrack:Play(0.05)
+		parryTransTrack:AdjustSpeed(1.5)
+		print("[Block] Client: Playing failed parry animation")
+
+		-- Stop the animation after a short duration (don't let it complete fully)
+		task.delay(0.2, function()
+			if parryTransTrack and parryTransTrack.IsPlaying then
+				parryTransTrack:Stop(0.1)
+			end
+		end)
 	end
 end
 

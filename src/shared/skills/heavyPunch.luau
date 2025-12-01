@@ -80,12 +80,14 @@ local MOVEMENT_SLOW_MULTIPLIER = 0.1 -- 90% slow during crit
 function HeavyPunch:OnConstructServer()
 	self.hitTargets = {}
 	self.attackingEffect = nil
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 end
 
 function HeavyPunch:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
 	self.originalWalkSpeed = nil
+	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
@@ -331,6 +333,17 @@ function HeavyPunch:_detectHit()
 end
 
 function HeavyPunch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
+	-- TRADE PREVENTION: Check if attacker got hit first (has hitstun)
+	-- This is the key to preventing trading - first hit wins
+	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Parried }) then
+		print(`[HeavyPunch] Attack invalidated - {self.Character.Instance.Name} was hit first (has hitstun)`)
+		-- Set flag so OnEndClient knows to force stop animations (status might not have replicated yet)
+		self.attackInvalidated = true
+		-- End the skill immediately to stop animations
+		self:End()
+		return false
+	end
+
 	if self.hitTargets[targetModel] then
 		return false
 	end
@@ -389,6 +402,14 @@ function HeavyPunch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	end
 
 	if targetWCSCharacter then
+		-- Apply soft hitstun (0.2s longer than M1 for fist crit)
+		local critHitstunDuration = WeaponConfig.HitstunDuration + 0.2
+		local hitstun = SoftHitstun.new(targetWCSCharacter)
+		if hitstun then
+			hitstun:Start(critHitstunDuration)
+			print(`[HeavyPunch] Applied SoftHitstun ({critHitstunDuration}s) to {targetModel.Name}`)
+		end
+
 		-- Cancel target's attacks
 		local Punch = require(ReplicatedStorage.Shared.skills.punch)
 		local targetPunchSkill = targetWCSCharacter:GetSkillFromConstructor(Punch)
@@ -713,13 +734,18 @@ function HeavyPunch:OnEndClient()
 		self.originalWalkSpeed = nil
 	end
 
-	local interrupted = self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
+	-- Also check attackInvalidated flag (trade prevention - status might not have replicated yet)
+	local interrupted = self.attackInvalidated or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then
 		if self.loadedAnimation and self.loadedAnimation.IsPlaying then
 			self.loadedAnimation:Stop(0.05)
+			print("[HeavyPunch] Client: Stopped animation due to interrupt")
 		end
 	end
+
+	-- Reset the flag for next attack
+	self.attackInvalidated = false
 end
 
 return HeavyPunch
