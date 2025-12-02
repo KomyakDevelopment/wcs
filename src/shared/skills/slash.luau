@@ -95,6 +95,7 @@ function Slash:OnConstructClient()
 	self.loadedAnimations = {}
 	self.animationsReady = false
 	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
+	self.hitstunMonitor = nil :: RBXScriptConnection? -- Monitor for hitstun during attack
 
 	-- Preload all combo animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -349,6 +350,30 @@ function Slash:OnStartClient()
 	-- Client-side prediction: check for nearby targets with iframes and play rollcancel immediately
 	self:_predictRollCancel()
 
+	-- Start hitstun monitoring (for M1 trade animation cancellation)
+	-- This actively monitors for hitstun and cancels animation immediately when detected
+	if self.hitstunMonitor then
+		self.hitstunMonitor:Disconnect()
+	end
+	self.hitstunMonitor = RunService.Heartbeat:Connect(function()
+		-- Check if we got hit (have hitstun)
+		if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Parried }) then
+			-- Stop all slash animations immediately
+			for _, track in pairs(self.loadedAnimations) do
+				if track and track.IsPlaying then
+					track:Stop(0.05)
+				end
+			end
+			-- Set flag and disconnect
+			self.attackInvalidated = true
+			if self.hitstunMonitor then
+				self.hitstunMonitor:Disconnect()
+				self.hitstunMonitor = nil
+			end
+			print("[Slash] Client: Animation cancelled - Got hit during attack")
+		end
+	end)
+
 	-- Advance combo phase
 	if self.comboPhase < MAX_COMBO_PHASE then
 		self.comboPhase = self.comboPhase + 1
@@ -494,24 +519,32 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
 			print(`[Slash] Target {targetModel.Name} has iframes - No damage`)
 
-			-- End target's dodge skill (cancel the roll)
-			local targetDodgeSkill = targetWCSCharacter:GetSkillFromConstructor(Dodge)
-			if targetDodgeSkill then
-				local dodgeState = targetDodgeSkill:GetState()
-				if dodgeState.IsActive then
-					targetDodgeSkill:End()
-					print(`[Slash] Ended dodge skill for {targetModel.Name} - Rollcancel`)
+			-- Check if we're within the rollcancel window (first 75% of iframe duration)
+			local rollcancelWindowEnd = targetModel:GetAttribute("_RollcancelWindowEnd")
+			local canRollcancel = rollcancelWindowEnd and tick() < rollcancelWindowEnd
+
+			if canRollcancel then
+				-- End target's dodge skill (cancel the roll)
+				local targetDodgeSkill = targetWCSCharacter:GetSkillFromConstructor(Dodge)
+				if targetDodgeSkill then
+					local dodgeState = targetDodgeSkill:GetState()
+					if dodgeState.IsActive then
+						targetDodgeSkill:End()
+						print(`[Slash] Ended dodge skill for {targetModel.Name} - Rollcancel`)
+					end
 				end
-			end
 
-			-- Fire rollcancel effect on the target (plays cancel animation/sound/VFX)
-			local rollCancelRemote = ReplicatedStorage:FindFirstChild("PlayRollCancel")
-			if rollCancelRemote then
-				rollCancelRemote:FireAllClients(targetModel)
-			end
+				-- Fire rollcancel effect on the target (plays cancel animation/sound/VFX)
+				local rollCancelRemote = ReplicatedStorage:FindFirstChild("PlayRollCancel")
+				if rollCancelRemote then
+					rollCancelRemote:FireAllClients(targetModel)
+				end
 
-			-- Cancel attacker's momentum and attack
-			self:_cancelAttackMomentum()
+				-- Cancel attacker's momentum and attack
+				self:_cancelAttackMomentum()
+			else
+				print(`[Slash] Target {targetModel.Name} is past rollcancel window - No rollcancel`)
+			end
 
 			return false
 		end
@@ -562,7 +595,8 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		end
 
 		-- Apply Shakyblock if target was in failed parry window (failed parry punishment)
-		if inFailedParryWindow then
+		-- Only apply if they don't already have Shakyblock (prevents double activation)
+		if inFailedParryWindow and not targetWCSCharacter:HasStatusEffects({ Shakyblock }) then
 			local shakyblock = Shakyblock.new(targetWCSCharacter)
 			if shakyblock then
 				shakyblock:Start(CombatConfig.StatusDurations.Shakyblock)
@@ -921,6 +955,12 @@ function Slash:OnEndServer()
 end
 
 function Slash:OnEndClient()
+	-- Clean up hitstun monitor connection
+	if self.hitstunMonitor then
+		self.hitstunMonitor:Disconnect()
+		self.hitstunMonitor = nil
+	end
+
 	-- Restore walking animation speeds when slash ends
 	self:_restoreMovementAnimations()
 
@@ -1056,13 +1096,6 @@ function Slash:_cancelAttackMomentum()
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 		self.attackingEffect = nil
-	end
-
-	-- Apply very brief stun (0.15s) to create a punish window
-	local stunEffect = Stun.new(self.Character)
-	if stunEffect then
-		stunEffect:Start(CombatConfig.StatusDurations.RollcancelStun)
-		print(`[Slash] Applied rollcancel stun (0.15s) to attacker {character.Name}`)
 	end
 
 	print(`[Slash] Cancelled attack momentum for {character.Name} - Hit iframes`)

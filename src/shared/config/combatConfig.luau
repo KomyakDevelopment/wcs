@@ -46,14 +46,17 @@ CombatConfig.HeavyAttacks = {
 	DamageDelay = 0.8, -- Total time before damage (includes windup)
 	KnockbackDuration = 0.2,
 	GuardbreakDuration = 1.5, -- When hitting a blocking target
+	DefaultSlowMultiplier = 0.1, -- Default 90% slow (10% of normal speed)
 
 	-- Per-skill overrides (if needed)
 	HeavyPunch = {
 		Range = 11,
 		KnockbackPower = 40,
+		SlowMultiplier = 0.5, -- 60% slow (40% of normal speed)
 	},
 	HeavySlash = {
 		Range = 11,
+		SlowMultiplier = 0.7, -- 75% slow (25% of normal speed)
 	},
 }
 

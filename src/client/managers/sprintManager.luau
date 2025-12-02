@@ -11,6 +11,11 @@ local Players = game:GetService("Players")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
+
+-- Pre-cache attack skill references for client-side state checks
+local Punch = require(ReplicatedStorage.Shared.skills.punch)
+local Slash = require(ReplicatedStorage.Shared.skills.slash)
 
 local SprintManager = {}
 SprintManager.__index = SprintManager
@@ -111,15 +116,31 @@ function SprintManager:_setupCharacter(character: Model)
 	self.baseWalkSpeed = humanoid.WalkSpeed
 
 	-- Load sprint animation for this character's animator
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		local animation = Instance.new("Animation")
-		animation.AnimationId = SPRINT_ANIMATION_ID
-		self.loadedAnimation = animator:LoadAnimation(animation)
-		print("[SprintManager] Sprint animation loaded for character")
-	else
-		warn("[SprintManager] Animator not found")
-	end
+	-- Use robust retry logic since Animator may not exist immediately on fast loads
+	task.spawn(function()
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+
+		-- If no animator, wait for it to be added (up to 5 seconds)
+		if not animator then
+			local waitStart = tick()
+			while not animator and tick() - waitStart < 5 do
+				animator = humanoid:WaitForChild("Animator", 1)
+				if animator then
+					break
+				end
+				task.wait(0.1)
+			end
+		end
+
+		if animator then
+			local animation = Instance.new("Animation")
+			animation.AnimationId = SPRINT_ANIMATION_ID
+			self.loadedAnimation = animator:LoadAnimation(animation)
+			print("[SprintManager] Sprint animation loaded for character")
+		else
+			warn("[SprintManager] Animator not found after 5 second wait - sprint animation unavailable")
+		end
+	end)
 
 	-- Store base walk speed on character setup
 	self.baseWalkSpeed = humanoid.WalkSpeed
@@ -234,7 +255,8 @@ function SprintManager:_handleDoubleTap(direction: string)
 	self:_startSprint()
 end
 
--- Check if player is currently attacking (has Attacking status effect)
+-- Check if player is currently attacking (has Attacking status effect OR attack skill is active)
+-- We check BOTH because status effect might not replicate fast enough from server
 function SprintManager:_isAttacking(): boolean
 	local player = Players.LocalPlayer
 	local character = player.Character
@@ -247,7 +269,29 @@ function SprintManager:_isAttacking(): boolean
 		return false
 	end
 
-	return wcsCharacter:HasStatusEffects({ Attacking })
+	-- Check status effect first (authoritative from server)
+	if wcsCharacter:HasStatusEffects({ Attacking, HeavyAttacking }) then
+		return true
+	end
+
+	-- Also check if M1 skill is currently active (client-side state check for faster response)
+	local punchSkill = wcsCharacter:GetSkillFromConstructor(Punch)
+	if punchSkill then
+		local state = punchSkill:GetState()
+		if state.IsActive then
+			return true
+		end
+	end
+
+	local slashSkill = wcsCharacter:GetSkillFromConstructor(Slash)
+	if slashSkill then
+		local state = slashSkill:GetState()
+		if state.IsActive then
+			return true
+		end
+	end
+
+	return false
 end
 
 -- Check if player is currently blocking

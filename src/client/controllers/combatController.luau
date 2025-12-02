@@ -24,6 +24,10 @@ local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentMana
 -- Status effects for validation
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 
 -- Lookup table: maps CriticalSkill names to their constructors
 -- Add new heavy attacks here when creating them
@@ -475,8 +479,21 @@ function CombatController:_canPerformM1(): boolean
 	end
 
 	local character = self:getCharacter()
-	if character and character:HasStatusEffects({ Guardbroken }) then
+	if not character then
 		return false
+	end
+
+	if character:HasStatusEffects({ Guardbroken }) then
+		return false
+	end
+
+	-- Check if heavy attack is currently active (prevents M1 during heavy)
+	local heavySkill = self:getHeavyAttackSkill()
+	if heavySkill then
+		local heavyState = heavySkill:GetState()
+		if heavyState.IsActive then
+			return false
+		end
 	end
 
 	local state = attackSkill:GetState()
@@ -516,12 +533,18 @@ function CombatController:_canPerformHeavy(): boolean
 	end
 
 	local character = self:getCharacter()
-	if character and character:HasStatusEffects({ Guardbroken }) then
+	if not character then
+		return false
+	end
+
+	-- Check guardbroken, attacking, or any hitstun (prevents spam during endlag/flourish recovery)
+	if character:HasStatusEffects({ Guardbroken, Attacking, HeavyAttacking, SoftHitstun, TrueHitstun, Stun }) then
 		return false
 	end
 
 	local state = heavySkill:GetState()
-	if state.Debounce then
+	-- Check both debounce AND if skill is currently active
+	if state.Debounce or state.IsActive then
 		return false
 	end
 
@@ -552,8 +575,40 @@ function CombatController:_canPerformDodge(): boolean
 	end
 
 	local character = self:getCharacter()
-	if character and character:HasStatusEffects({ Guardbroken }) then
+	if not character then
 		return false
+	end
+
+	-- Check guardbroken OR attacking (can't dodge during attack windup/endlag)
+	if character:HasStatusEffects({ Guardbroken, Attacking, HeavyAttacking }) then
+		return false
+	end
+
+	-- Also check if M1 skill is currently active (client-side state for faster response)
+	-- This catches the case where Attacking status hasn't replicated yet
+	local punchSkill = self:getPunchSkill()
+	if punchSkill then
+		local punchState = punchSkill:GetState()
+		if punchState.IsActive then
+			return false
+		end
+	end
+
+	local slashSkill = self:getSlashSkill()
+	if slashSkill then
+		local slashState = slashSkill:GetState()
+		if slashState.IsActive then
+			return false
+		end
+	end
+
+	-- Also check heavy skills
+	local heavySkill = self:getHeavyAttackSkill()
+	if heavySkill then
+		local heavyState = heavySkill:GetState()
+		if heavyState.IsActive then
+			return false
+		end
 	end
 
 	local state = dodgeSkill:GetState()
@@ -578,7 +633,7 @@ function CombatController:_canPerformBlock(): boolean
 	end
 
 	-- Check if player is attacking (main reason for block buffer)
-	if character:HasStatusEffects({ Attacking }) then
+	if character:HasStatusEffects({ Attacking, HeavyAttacking }) then
 		return false
 	end
 

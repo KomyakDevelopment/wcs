@@ -23,6 +23,7 @@ local REQUIRED_REMOTES = {
 	"ConfirmExecution", -- Execution confirmation
 	"RequestRespawn", -- Respawn request
 	"RequestSpawn", -- Initial spawn request (after continue)
+	"PlayCritVFX", -- Crit attack VFX (heavy punch, heavy slash)
 }
 
 -- Assets to preload (animation IDs, sounds, etc.)

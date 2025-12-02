@@ -86,6 +86,10 @@ local sprintStateRemote = Instance.new("RemoteEvent")
 sprintStateRemote.Name = "SprintStateChanged"
 sprintStateRemote.Parent = ReplicatedStorage
 
+local critVFXRemote = Instance.new("RemoteEvent")
+critVFXRemote.Name = "PlayCritVFX"
+critVFXRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 

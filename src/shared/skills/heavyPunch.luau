@@ -18,6 +18,7 @@ local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
 local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
 local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Autoparry = require(ReplicatedStorage.Shared.statusEffects.autoparry)
 local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
@@ -74,8 +75,7 @@ local MOVEMENT_ANIMATION_IDS = {
 	["rbxassetid://104453488066690"] = true,
 }
 
-local WALK_ANIM_SPEED_DURING_HEAVY = 0.3
-local MOVEMENT_SLOW_MULTIPLIER = 0.1 -- 90% slow during crit
+local WALK_ANIM_SPEED_DURING_HEAVY = 0.3 -- Slows walk animation to match slowed movement
 
 function HeavyPunch:OnConstructServer()
 	self.hitTargets = {}
@@ -86,7 +86,6 @@ end
 function HeavyPunch:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
-	self.originalWalkSpeed = nil
 	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -137,12 +136,19 @@ function HeavyPunch:OnStartServer()
 
 	self:ApplyCooldown(HEAVY_COOLDOWN)
 
-	-- Apply Attacking status (includes endlag after attack completes)
+	-- Apply HeavyAttacking status with configurable slowdown via SetHumanoidData
+	-- This uses WCS's managed humanoid data system for reliable slowdown
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 	end
-	self.attackingEffect = Attacking.new(self.Character)
+
+	-- Get slowdown multiplier from config (per-skill configurable)
+	local slowMultiplier = SkillConfig.SlowMultiplier or HeavyConfig.DefaultSlowMultiplier or 0.1
+
+	self.attackingEffect = HeavyAttacking.new(self.Character)
 	if self.attackingEffect then
+		-- Pass slowdown via metadata
+		self.attackingEffect:SetMetadata({ SlowMultiplier = slowMultiplier })
 		self.attackingEffect:Start(DAMAGE_DELAY + ENDLAG_DURATION)
 	end
 
@@ -153,6 +159,12 @@ function HeavyPunch:OnStartServer()
 			parryFlashRemote:FireAllClients(self.Character.Instance, 4) -- Use phase 4 style
 		end
 	end)
+
+	-- Broadcast crit VFX to all clients
+	local critVFXRemote = ReplicatedStorage:FindFirstChild("PlayCritVFX")
+	if critVFXRemote then
+		critVFXRemote:FireAllClients(self.Character.Instance, "heavyPunch")
+	end
 
 	-- Delayed hitbox detection
 	task.delay(DAMAGE_DELAY, function()
@@ -249,13 +261,8 @@ function HeavyPunch:OnStartClient()
 		end
 	end
 
-	-- Apply movement slow
-	local character = self.Character.Instance
-	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
-	if humanoid then
-		self.originalWalkSpeed = humanoid.WalkSpeed
-		humanoid.WalkSpeed = self.originalWalkSpeed * MOVEMENT_SLOW_MULTIPLIER
-	end
+	-- NOTE: Movement slowdown is handled server-side via HeavyAttacking status effect
+	-- DO NOT set humanoid.WalkSpeed here - it conflicts with SetHumanoidData
 
 	-- Play animation
 	if self.loadedAnimation then
@@ -710,29 +717,18 @@ function HeavyPunch:_cancelAttackMomentum()
 		self.attackingEffect:Stop()
 		self.attackingEffect = nil
 	end
-
-	local stunEffect = Stun.new(self.Character)
-	if stunEffect then
-		stunEffect:Start(CombatConfig.StatusDurations.RollcancelStun)
-	end
 end
 
 function HeavyPunch:OnEndServer()
 	self.hitTargets = {}
+	-- WalkSpeed restoration is handled automatically by HeavyAttacking status via SetHumanoidData
 end
 
 function HeavyPunch:OnEndClient()
 	self:_restoreMovementAnimations()
 
-	-- Restore movement speed
-	if self.originalWalkSpeed then
-		local character = self.Character.Instance
-		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
-		if humanoid then
-			humanoid.WalkSpeed = self.originalWalkSpeed
-		end
-		self.originalWalkSpeed = nil
-	end
+	-- NOTE: Movement speed restoration is handled server-side via HeavyAttacking status effect
+	-- DO NOT restore humanoid.WalkSpeed here - it conflicts with SetHumanoidData
 
 	-- Also check attackInvalidated flag (trade prevention - status might not have replicated yet)
 	local interrupted = self.attackInvalidated or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })

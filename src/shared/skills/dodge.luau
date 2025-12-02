@@ -13,9 +13,11 @@ local Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
 
 -- Lazy-loaded to avoid circular dependency (punch requires dodge)
 local Punch = nil
+local Slash = nil
 
 local Dodge = WCS.RegisterSkill("Dodge")
 
@@ -33,7 +35,7 @@ local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 to
 -- Air dash configuration
 local AIR_DASH_DISTANCE = 17 -- Same distance as ground dodge
 local AIR_DASH_DURATION = 0.295 -- Faster than ground dodge 79892666286494
-local AIR_DASH_ANIMATION = "rbxassetid://82297491214356" -- Different animation for air dash 96765830085186
+local AIR_DASH_ANIMATION = "rbxassetid://127043982553357" -- Different animation for air dash 96765830085186
 local AIR_DASH_Y_INFLUENCE = 0.3 -- How much camera pitch tilts the dash direction (0 = horizontal only, 1 = full camera direction)
 
 -- Iframes configuration
@@ -106,23 +108,36 @@ function Dodge:OnStartServer()
 	-- Check if player is in hitstun, guardbroken, knocked down, or attacking
 	if
 		self.Character.IsGuardbroken
-		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking })
+		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking })
 	then
 		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, knocked down, or attacking")
 		return
 	end
 
-	-- Cancel any active punch skill (dodge takes priority)
-	-- Lazy-load Punch to avoid circular dependency
+	-- ALSO check if M1 skills are active (catches race condition before Attacking status applies)
+	-- Lazy-load skills to avoid circular dependency
 	if not Punch then
 		Punch = require(ReplicatedStorage.Shared.skills.punch)
 	end
+	if not Slash then
+		Slash = require(ReplicatedStorage.Shared.skills.slash)
+	end
+
 	local punchSkill = self.Character:GetSkillFromConstructor(Punch)
 	if punchSkill then
 		local punchState = punchSkill:GetState()
 		if punchState.IsActive then
-			punchSkill:Stop()
-			print("[Dodge] Server: Cancelled active punch")
+			print("[Dodge] Server: Cannot dodge - Punch skill is active")
+			return
+		end
+	end
+
+	local slashSkill = self.Character:GetSkillFromConstructor(Slash)
+	if slashSkill then
+		local slashState = slashSkill:GetState()
+		if slashState.IsActive then
+			print("[Dodge] Server: Cannot dodge - Slash skill is active")
+			return
 		end
 	end
 
@@ -198,7 +213,12 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 		if self.iframesEffect then
 			local iframeDuration = IFRAME_END - IFRAME_START
 			self.iframesEffect:Start(iframeDuration)
-			print(`[Dodge] Server: Applied iframes immediately for {iframeDuration}s`)
+			-- Set rollcancel window end time (first 75% of DODGE duration, not iframe duration)
+			-- This ensures rollcancel only works in the early part of the actual roll animation
+			self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (DODGE_DURATION * 0.75))
+			print(
+				`[Dodge] Server: Applied iframes immediately for {iframeDuration}s, rollcancel window: {DODGE_DURATION * 0.75}s`
+			)
 		end
 	else
 		-- Schedule iframes to start after IFRAME_START delay
@@ -211,7 +231,11 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 			if self.iframesEffect then
 				local iframeDuration = IFRAME_END - IFRAME_START
 				self.iframesEffect:Start(iframeDuration)
-				print(`[Dodge] Server: Applied iframes for {iframeDuration}s`)
+				-- Set rollcancel window end time (first 75% of DODGE duration, not iframe duration)
+				self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (DODGE_DURATION * 0.75))
+				print(
+					`[Dodge] Server: Applied iframes for {iframeDuration}s, rollcancel window: {DODGE_DURATION * 0.75}s`
+				)
 			end
 		end)
 	end
@@ -303,7 +327,11 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 		if self.iframesEffect then
 			local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
 			self.iframesEffect:Start(iframeDuration)
-			print(`[Dodge] Server: Applied iframes immediately for {iframeDuration}s (air dash)`)
+			-- Set rollcancel window end time (first 75% of AIR_DASH duration)
+			self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (AIR_DASH_DURATION * 0.75))
+			print(
+				`[Dodge] Server: Applied iframes immediately for {iframeDuration}s (air dash), rollcancel window: {AIR_DASH_DURATION * 0.75}s`
+			)
 		end
 	else
 		-- Schedule iframes
@@ -316,7 +344,11 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 			if self.iframesEffect then
 				local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
 				self.iframesEffect:Start(iframeDuration)
-				print(`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash)`)
+				-- Set rollcancel window end time (first 75% of AIR_DASH duration)
+				self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (AIR_DASH_DURATION * 0.75))
+				print(
+					`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash), rollcancel window: {AIR_DASH_DURATION * 0.75}s`
+				)
 			end
 		end)
 	end
@@ -402,7 +434,16 @@ end
 function Dodge:OnStartClient()
 	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or attacking
 	if
-		self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Dashing, Guardbroken, Knockdown, Attacking })
+		self.Character:HasStatusEffects({
+			SoftHitstun,
+			TrueHitstun,
+			Stun,
+			Dashing,
+			Guardbroken,
+			Knockdown,
+			Attacking,
+			HeavyAttacking,
+		})
 	then
 		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down/attacking")
 		return
