@@ -216,6 +216,63 @@ PostureManager.initializeCharacter(dummy, dummyWcsChar)
 -- Note: Test dummies (BlockingDummy, ParryingDummy, MissParryDummy, DodgingDummy)
 -- are initialized in testDummies.server.luau
 
+-- Apply player's avatar hair to their character
+local function applyPlayerHair(player: Player, character: Model)
+	local success, description = pcall(function()
+		return Players:GetHumanoidDescriptionFromUserId(player.UserId)
+	end)
+
+	if not success or not description then
+		warn(`[Server] Failed to get avatar description for {player.Name}`)
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	-- Get hair accessory IDs from the description
+	local hairAccessories = description.HairAccessory
+	if not hairAccessories or hairAccessories == "" then
+		print(`[Server] {player.Name} has no hair accessories`)
+		return
+	end
+
+	-- HairAccessory can be comma-separated list of asset IDs
+	local hairIds = string.split(hairAccessories, ",")
+
+	for _, hairIdStr in hairIds do
+		local hairId = tonumber(hairIdStr)
+		if hairId then
+			local assetSuccess, accessory = pcall(function()
+				return game:GetService("InsertService"):LoadAsset(hairId)
+			end)
+
+			if assetSuccess and accessory then
+				-- The loaded asset is a Model containing the accessory
+				local actualAccessory = accessory:FindFirstChildOfClass("Accessory")
+				if actualAccessory then
+					-- Apply custom hair texture by finding SpecialMesh in Handle
+					local handle = actualAccessory:FindFirstChild("Handle")
+					if handle then
+						for _, descendant in handle:GetDescendants() do
+							if descendant:IsA("SpecialMesh") then
+								descendant.TextureId = "rbxassetid://9780804670"
+							end
+						end
+					end
+					actualAccessory.Parent = character
+					print(`[Server] Applied hair accessory {hairId} to {player.Name}`)
+				end
+				accessory:Destroy() -- Clean up the container model
+			else
+				warn(`[Server] Failed to load hair accessory {hairId} for {player.Name}`)
+			end
+		end
+	end
+end
+
 -- Setup character with WCS, moveset, equipment, and posture
 local function setupCharacter(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
@@ -236,6 +293,9 @@ local function setupCharacter(player: Player, character: Model)
 
 	-- Initialize posture for this character (pass WCS character to avoid lookup)
 	PostureManager.initializeCharacter(character, wcsCharacter)
+
+	-- Apply player's avatar hair to their character
+	applyPlayerHair(player, character)
 
 	print(`[Server] Character setup complete for {player.Name}`)
 
