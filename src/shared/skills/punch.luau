@@ -215,7 +215,7 @@ end
 
 -- Animation IDs that should be stopped when punching (movement animations)
 local MOVEMENT_ANIMATION_IDS = {
-	["rbxassetid://104453488066690"] = true, -- Sprint animation
+	["rbxassetid://94461174611915"] = true, -- Sprint animation
 }
 
 -- Walking animation speed multiplier during punch

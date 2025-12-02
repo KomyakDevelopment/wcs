@@ -23,6 +23,7 @@ local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentMana
 
 -- Status effects for validation
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 
 -- Lookup table: maps CriticalSkill names to their constructors
 -- Add new heavy attacks here when creating them
@@ -52,12 +53,16 @@ function CombatController.new()
 	local bufferConfig = CombatConfig.InputBuffer
 	self.inputBufferEnabled = bufferConfig.EnabledByDefault
 	self.inputBufferWindow = bufferConfig.BufferWindow
+	self.blockBufferWindow = 1.5 -- Longer buffer window for block (covers full crit duration ~1.13s)
 	self.inputBuffer = {
 		m1 = { pressed = false, timestamp = 0 },
 		heavy = { pressed = false, timestamp = 0 },
 		dodge = { pressed = false, timestamp = 0 },
-		-- Note: Block is hold-based, not buffered
+		block = { pressed = false, timestamp = 0 }, -- Block buffer for hold-based input
 	}
+
+	-- Track if block button is currently held
+	self.blockHeld = false
 
 	-- Hold to M1 system
 	local holdToM1Config = CombatConfig.HoldToM1
@@ -251,16 +256,27 @@ function CombatController:performBlock(state: Enum.UserInputState)
 
 	if state == Enum.UserInputState.Begin then
 		print("[CombatController] Block started")
+		self.blockHeld = true
 
 		-- Cancel sprint if active
 		if self.sprintManager then
 			self.sprintManager:stopSprint()
 		end
 
-		-- Start blocking
-		blockSkill:Start()
+		-- Check if we can block right now
+		if self:_canPerformBlock() then
+			blockSkill:Start()
+		else
+			-- Buffer the block input for when we can block
+			self:_bufferInput("block")
+			print("[CombatController] Block buffered - waiting for attack to end")
+		end
 	elseif state == Enum.UserInputState.End then
 		print("[CombatController] Block ended")
+		self.blockHeld = false
+
+		-- Clear block buffer when released
+		self:_clearBuffer("block")
 
 		-- Stop blocking
 		blockSkill:End()
@@ -378,8 +394,11 @@ function CombatController:_getBufferedInput(action: string): boolean
 		return false
 	end
 
+	-- Use longer buffer window for block
+	local bufferWindow = action == "block" and self.blockBufferWindow or self.inputBufferWindow
+
 	local age = tick() - buffer.timestamp
-	if age > self.inputBufferWindow then
+	if age > bufferWindow then
 		buffer.pressed = false -- Expired
 		return false
 	end
@@ -428,6 +447,18 @@ function CombatController:_processInputBuffer()
 		if self:_canPerformDodge() then
 			self:_clearBuffer("dodge")
 			self:_executeDodge()
+		end
+	end
+
+	-- Check Block buffer (only execute if block button is still held)
+	if self:_getBufferedInput("block") then
+		if self.blockHeld and self:_canPerformBlock() then
+			self:_clearBuffer("block")
+			local blockSkill = self:getBlockSkill()
+			if blockSkill then
+				blockSkill:Start()
+				print("[CombatController] Block executed from buffer")
+			end
 		end
 	end
 end
@@ -527,6 +558,32 @@ function CombatController:_canPerformDodge(): boolean
 
 	local state = dodgeSkill:GetState()
 	if state.Debounce then
+		return false
+	end
+
+	return true
+end
+
+-- Check if block can be performed (for buffering)
+-- This checks the main blocker: Attacking status
+function CombatController:_canPerformBlock(): boolean
+	local blockSkill = self:getBlockSkill()
+	if not blockSkill then
+		return false
+	end
+
+	local character = self:getCharacter()
+	if not character then
+		return false
+	end
+
+	-- Check if player is attacking (main reason for block buffer)
+	if character:HasStatusEffects({ Attacking }) then
+		return false
+	end
+
+	-- Check if player is sprinting
+	if character.Instance:GetAttribute("IsSprinting") == true then
 		return false
 	end
 

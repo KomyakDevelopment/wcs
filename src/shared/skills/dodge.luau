@@ -33,7 +33,7 @@ local MAX_CANCELS = 1 -- Maximum number of times you can cancel (1 cancel = 2 to
 -- Air dash configuration
 local AIR_DASH_DISTANCE = 17 -- Same distance as ground dodge
 local AIR_DASH_DURATION = 0.295 -- Faster than ground dodge 79892666286494
-local AIR_DASH_ANIMATION = "rbxassetid://106453469592395" -- Different animation for air dash 96765830085186
+local AIR_DASH_ANIMATION = "rbxassetid://82297491214356" -- Different animation for air dash 96765830085186
 local AIR_DASH_Y_INFLUENCE = 0.3 -- How much camera pitch tilts the dash direction (0 = horizontal only, 1 = full camera direction)
 
 -- Iframes configuration

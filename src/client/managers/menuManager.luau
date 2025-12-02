@@ -167,6 +167,11 @@ function MenuManager:_initialize()
 		end
 	end)
 
+	-- Start camera pan immediately from initial screen
+	local cameraCFrame = CFrame.new(CAMERA_POSITION)
+	self:_startCameraPan(cameraCFrame)
+	print("[MenuManager] Camera pan started from initial screen")
+
 	-- Create continue screen (hidden for now)
 	self._continueScreenGui = Instance.new("ScreenGui")
 	self._continueScreenGui.Name = "ContinueLoadingScreen"
@@ -286,10 +291,7 @@ function MenuManager:_showContinueScreen(initialUI: Frame, continueUI: Frame, co
 	-- Hide initial screen
 	initialUI.Visible = false
 
-	-- Position camera at cinematic backdrop position
-	local cameraCFrame = CFrame.new(CAMERA_POSITION)
-	self:_startCameraPan(cameraCFrame)
-	print("[MenuManager] Camera positioned at backdrop")
+	-- Camera pan already started from initial screen
 
 	-- Show continue UI
 	continueUI.Visible = true

@@ -10,6 +10,7 @@ local Players = game:GetService("Players")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
+local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 
 local SprintManager = {}
 SprintManager.__index = SprintManager
@@ -201,9 +202,9 @@ function SprintManager:_handleDoubleTap(direction: string)
 		return
 	end
 
-	-- Check if punch animation is playing - don't start sprint (animation priority)
-	if self:_isPunchAnimationPlaying() then
-		print("[SprintManager] Double-tap ignored - Punch animation playing")
+	-- Check if player is attacking (M1 windup) - don't start sprint
+	if self:_isAttacking() then
+		print("[SprintManager] Double-tap ignored - Player is attacking")
 		return
 	end
 
@@ -233,40 +234,20 @@ function SprintManager:_handleDoubleTap(direction: string)
 	self:_startSprint()
 end
 
--- Punch animation IDs to check against
-local PUNCH_ANIMATION_IDS = {
-	["rbxassetid://100518847191051"] = true, -- M1 phase 1
-	["rbxassetid://76103103515407"] = true, -- M1 phase 2
-	["rbxassetid://128845445156895"] = true, -- M1 phase 3
-	["rbxassetid://77003004079538"] = true, -- Flourish (phase 4)
-}
-
--- Check if player is currently in a punch animation
-function SprintManager:_isPunchAnimationPlaying(): boolean
+-- Check if player is currently attacking (has Attacking status effect)
+function SprintManager:_isAttacking(): boolean
 	local player = Players.LocalPlayer
 	local character = player.Character
 	if not character then
 		return false
 	end
 
-	local humanoid = character:FindFirstChild("Humanoid")
-	if not humanoid then
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if not wcsCharacter then
 		return false
 	end
 
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if not animator then
-		return false
-	end
-
-	-- Check all playing animations for punch animations
-	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-		if track.Animation and PUNCH_ANIMATION_IDS[track.Animation.AnimationId] then
-			return true
-		end
-	end
-
-	return false
+	return wcsCharacter:HasStatusEffects({ Attacking })
 end
 
 -- Check if player is currently blocking
@@ -307,9 +288,9 @@ function SprintManager:_startSprint()
 		end
 	end
 
-	-- Check if punch animation is playing - don't start sprint (animation priority)
-	if self:_isPunchAnimationPlaying() then
-		print("[SprintManager] Blocked - Punch animation playing")
+	-- Check if player is attacking (M1 windup) - don't start sprint
+	if self:_isAttacking() then
+		print("[SprintManager] Blocked - Player is attacking")
 		return
 	end
 
@@ -626,9 +607,9 @@ function SprintManager:_shouldCancelSprint(): boolean
 		end
 	end
 
-	-- Check if punch animation started - cancel sprint (animation priority)
-	if self:_isPunchAnimationPlaying() then
-		print("[SprintManager] Sprint cancelled - Punch animation playing")
+	-- Check if player started attacking - cancel sprint
+	if self:_isAttacking() then
+		print("[SprintManager] Sprint cancelled - Player is attacking")
 		return true
 	end
 
