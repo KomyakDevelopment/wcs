@@ -1,7 +1,7 @@
 --!strict
--- Heavy Slash Skill
--- A slower, more powerful weapon attack with windup
--- Triggered by pressing R when using a weapon (kunai, etc.)
+-- Heavy Swing Skill
+-- A slower, more powerful weapon attack for medium weapons (ninjato, katana, etc.)
+-- Triggered by pressing R when using a medium weapon
 
 local ContentProvider = game:GetService("ContentProvider")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -39,19 +39,16 @@ local function getPostureManager()
 	return PostureManager
 end
 
-local HeavySlash = WCS.RegisterSkill("HeavySlash")
+local HeavySwing = WCS.RegisterSkill("HeavySwing")
 
 -- WCS Client Prediction Configuration
-HeavySlash.CheckClientState = false
-HeavySlash.CheckOthersActive = false
+HeavySwing.CheckClientState = false
+HeavySwing.CheckOthersActive = false
 
 -- Configuration (from central combatConfig)
-local WeaponConfig = CombatConfig.Weapons.kunai
 local HeavyConfig = CombatConfig.HeavyAttacks
-local SkillConfig = HeavyConfig.HeavySlash
+local SkillConfig = HeavyConfig.HeavySlash -- Uses same config as HeavySlash for now
 
-local HEAVY_DAMAGE = math.floor(WeaponConfig.Damage * 0.8)
-local HEAVY_RANGE = SkillConfig.Range
 local HEAVY_COOLDOWN = HeavyConfig.Cooldown
 
 -- Hitbox configuration
@@ -66,8 +63,8 @@ local SLASH_2_TIMING = 0.83 -- Second slash
 -- Endlag after crit completes (cannot attack during this time)
 local ENDLAG_DURATION = 0.3
 
--- Animation ID for heavy slash (placeholder - replace with actual heavy slash anim)
-local HEAVY_ANIMATION_ID = "rbxassetid://136860865307002" -- Using flourish for now
+-- Animation ID for heavy swing (medium weapons critical)
+local HEAVY_ANIMATION_ID = "rbxassetid://136860865307002"
 
 -- Animation IDs that should be stopped
 local MOVEMENT_ANIMATION_IDS = {
@@ -76,16 +73,25 @@ local MOVEMENT_ANIMATION_IDS = {
 
 local WALK_ANIM_SPEED_DURING_HEAVY = 0.3 -- Slows walk animation to match slowed movement
 
-function HeavySlash:OnConstructServer()
-	self.hitTargets = {}
-	self.attackingEffect = nil
-	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
+-- Default weapon for fallback
+local DEFAULT_WEAPON = "ninjato"
+
+-- Helper to get weapon config dynamically
+local function getWeaponConfig(weaponType: string)
+	return CombatConfig.Weapons[weaponType] or CombatConfig.Weapons[DEFAULT_WEAPON]
 end
 
-function HeavySlash:OnConstructClient()
+function HeavySwing:OnConstructServer()
+	self.hitTargets = {}
+	self.attackingEffect = nil
+	self.attackInvalidated = false
+	self.currentWeaponType = DEFAULT_WEAPON
+end
+
+function HeavySwing:OnConstructClient()
 	self.loadedAnimation = nil
 	self.animationReady = false
-	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
+	self.attackInvalidated = false
 
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
@@ -98,13 +104,13 @@ function HeavySlash:OnConstructClient()
 
 			task.spawn(function()
 				ContentProvider:PreloadAsync({ animation })
-				print("[HeavySlash] Client: Animation preloaded")
+				print("[HeavySwing] Client: Animation preloaded")
 			end)
 		end
 	end
 end
 
-function HeavySlash:OnStartServer()
+function HeavySwing:OnStartServer()
 	-- Check equipment manager
 	if not self.Character.EquipmentManager then
 		return
@@ -116,11 +122,11 @@ function HeavySlash:OnStartServer()
 
 	-- Check if weapon is in hand (not just on back)
 	if not self.Character.EquipmentManager:isWeaponInHand() then
-		print("[HeavySlash] Blocked - Weapon not in hand")
+		print("[HeavySwing] Blocked - Weapon not in hand")
 		return
 	end
 
-	-- Check blocking status effects (includes Attacking to prevent move stacking)
+	-- Check blocking status effects
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -130,45 +136,46 @@ function HeavySlash:OnStartServer()
 			Dashing,
 			Blocking,
 			Parrying,
-			Attacking, -- Prevent stacking with M1
-			Knockdown, -- Can't attack while knocked down
+			Attacking,
+			Knockdown,
 		})
 	then
 		return
 	end
 
-	print("[HeavySlash] Server: Heavy slash activated!")
+	-- Get weapon type and config
+	self.currentWeaponType = self:_getCurrentWeaponType()
+	local weaponConfig = getWeaponConfig(self.currentWeaponType)
+
+	print(`[HeavySwing] Server: Heavy swing activated with {self.currentWeaponType}!`)
 
 	self:ApplyCooldown(HEAVY_COOLDOWN)
 
-	-- Apply HeavyAttacking status with configurable slowdown via SetHumanoidData
-	-- This uses WCS's managed humanoid data system for reliable slowdown
+	-- Apply HeavyAttacking status
 	if self.attackingEffect then
 		self.attackingEffect:Stop()
 	end
 
-	-- Get slowdown multiplier from config (per-skill configurable)
 	local slowMultiplier = SkillConfig.SlowMultiplier or HeavyConfig.DefaultSlowMultiplier or 0.1
 
 	self.attackingEffect = HeavyAttacking.new(self.Character)
 	if self.attackingEffect then
-		-- Pass slowdown via metadata
 		self.attackingEffect:SetMetadata({ SlowMultiplier = slowMultiplier })
 		self.attackingEffect:Start(SLASH_2_TIMING + ENDLAG_DURATION)
 	end
 
-	-- Broadcast parry flash AFTER windup (so parry window timing is correct)
+	-- Broadcast parry flash AFTER windup
 	task.delay(WINDUP_DURATION, function()
 		local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
 		if parryFlashRemote then
-			parryFlashRemote:FireAllClients(self.Character.Instance, 4) -- Use phase 4 style
+			parryFlashRemote:FireAllClients(self.Character.Instance, 4)
 		end
 	end)
 
-	-- Broadcast crit VFX to all clients
+	-- Broadcast crit VFX
 	local critVFXRemote = ReplicatedStorage:FindFirstChild("PlayCritVFX")
 	if critVFXRemote then
-		critVFXRemote:FireAllClients(self.Character.Instance, "heavySlash")
+		critVFXRemote:FireAllClients(self.Character.Instance, "heavySwing")
 	end
 
 	-- First slash hit detection
@@ -176,14 +183,14 @@ function HeavySlash:OnStartServer()
 		self:_detectHit()
 	end)
 
-	-- Second slash hit detection (reset hitTargets so same target can be hit twice)
+	-- Second slash hit detection
 	task.delay(SLASH_2_TIMING, function()
-		self.hitTargets = {} -- Reset so second slash can hit same targets
+		self.hitTargets = {}
 		self:_detectHit()
 	end)
 end
 
-function HeavySlash:_stopMovementAnimations()
+function HeavySwing:_stopMovementAnimations()
 	if not RunService:IsClient() then
 		return
 	end
@@ -218,7 +225,7 @@ function HeavySlash:_stopMovementAnimations()
 	end
 end
 
-function HeavySlash:_restoreMovementAnimations()
+function HeavySwing:_restoreMovementAnimations()
 	if not RunService:IsClient() then
 		return
 	end
@@ -236,14 +243,11 @@ function HeavySlash:_restoreMovementAnimations()
 	self.originalWalkAnimSpeeds = {}
 end
 
-function HeavySlash:OnStartClient()
-	-- Prevent animation spam - check if animation is already playing
+function HeavySwing:OnStartClient()
 	if self.loadedAnimation and self.loadedAnimation.IsPlaying then
 		return
 	end
 
-	-- Check blocking status effects (server is authoritative, don't check Attacking here
-	-- since this skill creates Attacking and it may replicate before OnStartClient runs)
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -253,32 +257,29 @@ function HeavySlash:OnStartClient()
 			Blocking,
 			Parrying,
 			Guardbroken,
-			Knockdown, -- Can't attack while knocked down
+			Knockdown,
 		})
 	then
 		return
 	end
 
-	-- Stop any M1 (slash) animations that might be lingering
+	-- Stop any M1 (slash) animations
 	local Slash = require(ReplicatedStorage.Shared.skills.slash)
 	local slashSkill = self.Character:GetSkillFromConstructor(Slash)
 	if slashSkill then
-		-- Stop current animation track if playing
 		if slashSkill.currentTrack and slashSkill.currentTrack.IsPlaying then
 			slashSkill.currentTrack:Stop(0.05)
 		end
-		-- Also stop any loaded animations that might be playing
 		if slashSkill.loadedAnimations then
-			for _, track in pairs(slashSkill.loadedAnimations) do
-				if track and track.IsPlaying then
-					track:Stop(0.05)
+			for _, weaponAnims in pairs(slashSkill.loadedAnimations) do
+				for _, track in pairs(weaponAnims) do
+					if track and track.IsPlaying then
+						track:Stop(0.05)
+					end
 				end
 			end
 		end
 	end
-
-	-- NOTE: Movement slowdown is handled server-side via HeavyAttacking status effect
-	-- DO NOT set humanoid.WalkSpeed here - it conflicts with SetHumanoidData
 
 	-- Play animation
 	if self.loadedAnimation then
@@ -300,33 +301,31 @@ function HeavySlash:OnStartClient()
 	self:_playHeavySFX()
 	self:_applyHeavyVFX()
 
-	print("[HeavySlash] Client: Playing heavy slash animation")
+	print("[HeavySwing] Client: Playing heavy swing animation")
 end
 
--- Get the current weapon type from equipped weapon model
-function HeavySlash:_getClientWeaponType(): string
+function HeavySwing:_getClientWeaponType(): string
 	local characterInstance = self.Character.Instance
 	for _, child in ipairs(characterInstance:GetChildren()) do
 		if child:IsA("Model") and string.find(child.Name, "_Equipped") then
 			local weaponName = string.gsub(child.Name, "_Equipped", "")
-			return weaponName
+			return string.lower(weaponName)
 		end
 	end
-	return "Kunai" -- Default
+	return "ninjato"
 end
 
--- Get the current weapon type on server
-function HeavySlash:_getCurrentWeaponType(): string
+function HeavySwing:_getCurrentWeaponType(): string
 	if self.Character.EquipmentManager then
 		local equipped = self.Character.EquipmentManager:getEquipped()
 		if equipped then
 			return equipped
 		end
 	end
-	return "kunai"
+	return "ninjato"
 end
 
-function HeavySlash:_detectHit()
+function HeavySwing:_detectHit()
 	if not RunService:IsServer() then
 		return
 	end
@@ -337,6 +336,9 @@ function HeavySlash:_detectHit()
 	if not humanoidRootPart then
 		return
 	end
+
+	local weaponConfig = getWeaponConfig(self.currentWeaponType)
+	local HEAVY_RANGE = SkillConfig.Range or weaponConfig.Range
 
 	local lookDirection = humanoidRootPart.CFrame.LookVector
 	local origin = humanoidRootPart.Position - (lookDirection * 2)
@@ -370,7 +372,6 @@ function HeavySlash:_detectHit()
 		end
 	end
 
-	-- Fire hit effects with weapon type
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
 		if hitEffectsRemote then
@@ -380,14 +381,10 @@ function HeavySlash:_detectHit()
 	end
 end
 
-function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
-	-- TRADE PREVENTION: Check if attacker got hit first (has hitstun)
-	-- This is the key to preventing trading - first hit wins
+function HeavySwing:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	if self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun, Parried }) then
-		print(`[HeavySlash] Attack invalidated - {self.Character.Instance.Name} was hit first (has hitstun)`)
-		-- Set flag so OnEndClient knows to force stop animations (status might not have replicated yet)
+		print(`[HeavySwing] Attack invalidated - {self.Character.Instance.Name} was hit first`)
 		self.attackInvalidated = true
-		-- End the skill immediately to stop animations
 		self:End()
 		return false
 	end
@@ -396,17 +393,15 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		return false
 	end
 
-	-- Check if target is marked for execution (complete iframes)
 	if targetModel:GetAttribute("MarkedForExecution") == true then
-		print(`[HeavySlash] Target {targetModel.Name} is marked for execution - No damage`)
+		print(`[HeavySwing] Target {targetModel.Name} is marked for execution - No damage`)
 		return false
 	end
 
 	local targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
 	if targetWCSCharacter then
-		-- Check for iframes
 		if targetWCSCharacter:HasStatusEffects({ Iframes }) then
-			print(`[HeavySlash] Target {targetModel.Name} has iframes`)
+			print(`[HeavySwing] Target {targetModel.Name} has iframes`)
 
 			local targetDodgeSkill = targetWCSCharacter:GetSkillFromConstructor(Dodge)
 			if targetDodgeSkill then
@@ -425,48 +420,46 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			return false
 		end
 
-		-- Check for parry (heavy attacks can still be parried)
 		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
-			print(`[HeavySlash] Target {targetModel.Name} PARRIED!`)
+			print(`[HeavySwing] Target {targetModel.Name} PARRIED!`)
 			self:_handleParry(targetWCSCharacter)
 			return false
 		end
 
-		-- Check if target is blocking - heavySlash can be blocked (no guardbreak)
 		if targetWCSCharacter:HasStatusEffects({ Blocking }) then
-			print(`[HeavySlash] Target {targetModel.Name} BLOCKED!`)
+			print(`[HeavySwing] Target {targetModel.Name} BLOCKED!`)
 			self.hitTargets[targetModel] = true
 
-			-- Apply posture damage (heavy attacks deal more posture damage)
 			local postureManager = getPostureManager()
 			local postureDamage = CombatConfig.Posture.BlockDamage * CombatConfig.Posture.HeavyBlockDamageMultiplier
 			postureManager.addPosture(targetModel, postureDamage)
 
-			-- Apply BlockStunned status (brief stun, doesn't cancel block)
 			local blockStunnedEffect = BlockStunned.new(targetWCSCharacter)
 			if blockStunnedEffect then
 				blockStunnedEffect:Start(CombatConfig.StatusDurations.BlockStunned)
 			end
 
-			-- Fire block hit animation event
 			local blockHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitAnimation")
 			if blockHitAnimRemote then
 				blockHitAnimRemote:FireAllClients(targetModel)
 			end
 
-			-- Fire block hit VFX event
 			local blockHitVFXRemote = ReplicatedStorage:FindFirstChild("PlayBlockHitVFX")
 			if blockHitVFXRemote then
 				blockHitVFXRemote:FireAllClients(targetModel)
 			end
 
-			return false -- Attack was blocked, no damage
+			return false
 		end
 	end
 
 	self.hitTargets[targetModel] = true
 
-	print(`[HeavySlash] Heavy hit on: {targetModel.Name}!`)
+	-- Get weapon config for damage
+	local weaponConfig = getWeaponConfig(self.currentWeaponType)
+	local HEAVY_DAMAGE = math.floor(weaponConfig.Damage * 0.8)
+
+	print(`[HeavySwing] Heavy hit on: {targetModel.Name}!`)
 
 	targetHumanoid:TakeDamage(HEAVY_DAMAGE)
 
@@ -475,14 +468,12 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	end
 
 	if targetWCSCharacter then
-		-- Apply soft hitstun (same duration as M1 for kunai crit)
 		local hitstun = SoftHitstun.new(targetWCSCharacter)
 		if hitstun then
-			hitstun:Start(WeaponConfig.HitstunDuration)
-			print(`[HeavySlash] Applied SoftHitstun ({WeaponConfig.HitstunDuration}s) to {targetModel.Name}`)
+			hitstun:Start(weaponConfig.HitstunDuration)
+			print(`[HeavySwing] Applied SoftHitstun ({weaponConfig.HitstunDuration}s) to {targetModel.Name}`)
 		end
 
-		-- Cancel target's attacks
 		local Slash = require(ReplicatedStorage.Shared.skills.slash)
 		local targetSlashSkill = targetWCSCharacter:GetSkillFromConstructor(Slash)
 		if targetSlashSkill then
@@ -496,7 +487,7 @@ function HeavySlash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	return true
 end
 
-function HeavySlash:_handleParry(defenderWCSCharacter)
+function HeavySwing:_handleParry(defenderWCSCharacter)
 	local blockSkill = defenderWCSCharacter:GetSkillFromConstructor(Block)
 	if blockSkill then
 		local blockState = blockSkill:GetState()
@@ -542,12 +533,11 @@ function HeavySlash:_handleParry(defenderWCSCharacter)
 	postureManager.removePosture(defenderWCSCharacter.Instance, postureManager.getParryPostureReward())
 end
 
-function HeavySlash:_applyWeaponTrail()
+function HeavySwing:_applyWeaponTrail()
 	if not RunService:IsClient() then
 		return
 	end
 
-	-- Find the weapon model
 	local characterInstance = self.Character.Instance
 	local weaponModel = nil
 
@@ -562,13 +552,11 @@ function HeavySlash:_applyWeaponTrail()
 		return
 	end
 
-	-- Find the Grip part in the weapon model
 	local gripPart = weaponModel:FindFirstChild("Grip")
 	if not gripPart then
 		return
 	end
 
-	-- Get trail attachments
 	local trail0 = gripPart:FindFirstChild("trail0")
 	if not trail0 then
 		return
@@ -579,7 +567,6 @@ function HeavySlash:_applyWeaponTrail()
 		return
 	end
 
-	-- Find the Trail object
 	local trail = gripPart:FindFirstChildOfClass("Trail") or trail0:FindFirstChildOfClass("Trail")
 	if trail then
 		trail.Enabled = true
@@ -593,16 +580,19 @@ function HeavySlash:_applyWeaponTrail()
 	end
 end
 
-function HeavySlash:_playHeavySFX()
+function HeavySwing:_playHeavySFX()
 	if not RunService:IsClient() then
 		return
 	end
 
 	local animLength = self.loadedAnimation and self.loadedAnimation.Length or 0.7
-	local sfxDelay = animLength * 0.35 -- Later in the animation due to windup
+	local sfxDelay = animLength * 0.35
 
 	task.delay(sfxDelay, function()
 		local weaponType = self:_getClientWeaponType()
+
+		-- Determine weapon category
+		local weaponCategory = "Medium_Weapons"
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
 		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
@@ -610,9 +600,9 @@ function HeavySlash:_playHeavySFX()
 		local swingSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
 			and ReplicatedStorage.Assets:FindFirstChild("SFX")
 			and ReplicatedStorage.Assets.SFX:FindFirstChild("Weapon_Classes")
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes:FindFirstChild("Light_Weapons")
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons:FindFirstChild(weaponFolderName)
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons[weaponFolderName]:FindFirstChild("swings")
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes:FindFirstChild(weaponCategory)
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes[weaponCategory]:FindFirstChild(weaponFolderName)
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes[weaponCategory][weaponFolderName]:FindFirstChild("swings")
 
 		if not swingSFXFolder then
 			return
@@ -652,7 +642,7 @@ function HeavySlash:_playHeavySFX()
 	end)
 end
 
-function HeavySlash:_applyHeavyVFX()
+function HeavySwing:_applyHeavyVFX()
 	if not RunService:IsClient() then
 		return
 	end
@@ -663,14 +653,14 @@ function HeavySlash:_applyHeavyVFX()
 		return
 	end
 
-	-- Get VFX folder for heavySlash
+	-- Get VFX folder for heavySwing (medium weapons)
 	local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("VFX")
 		and ReplicatedStorage.Assets.VFX:FindFirstChild("Weapon_Classes")
 		and ReplicatedStorage.Assets.VFX.Weapon_Classes:FindFirstChild("Criticals")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild("Light_Weapons")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons:FindFirstChild("heavySlash")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Light_Weapons.heavySlash:FindFirstChild("vfx")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild("Medium_Weapons")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Medium_Weapons:FindFirstChild("heavySwing")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Medium_Weapons.heavySwing:FindFirstChild("vfx")
 
 	if not vfxFolder then
 		return
@@ -679,14 +669,12 @@ function HeavySlash:_applyHeavyVFX()
 	local animLength = self.loadedAnimation and self.loadedAnimation.Length or 0.7
 	local clonedAttachments = {}
 
-	-- Clone VFX_attachment directly to HRP
 	local vfxAttachment = vfxFolder:FindFirstChild("VFX_attachment")
 	if vfxAttachment and vfxAttachment:IsA("Attachment") then
 		local attachmentClone = vfxAttachment:Clone()
 		attachmentClone.Parent = humanoidRootPart
 		table.insert(clonedAttachments, attachmentClone)
 
-		-- Emit particles using same method as heavyPunch
 		for _, emitter in ipairs(attachmentClone:GetDescendants()) do
 			if emitter:IsA("ParticleEmitter") then
 				emitter.Enabled = false
@@ -704,14 +692,11 @@ function HeavySlash:_applyHeavyVFX()
 			end
 		end
 
-		-- Handle beams (sync with slash timings based on parent folder)
 		for _, beam in ipairs(attachmentClone:GetDescendants()) do
 			if beam:IsA("Beam") then
 				beam.Enabled = false
 				local duration = beam:GetAttribute("Duration") or 0.15
 
-				-- Determine timing based on parent hierarchy (slash1 or slash2)
-				-- VFX timings are slightly earlier than damage timings for visual sync
 				local timing = nil
 				local parent = beam.Parent
 				while parent and parent ~= attachmentClone do
@@ -741,7 +726,6 @@ function HeavySlash:_applyHeavyVFX()
 		end
 	end
 
-	-- Cleanup after animation
 	task.delay(animLength + 0.5, function()
 		for _, attachment in ipairs(clonedAttachments) do
 			if attachment and attachment.Parent then
@@ -751,7 +735,7 @@ function HeavySlash:_applyHeavyVFX()
 	end)
 end
 
-function HeavySlash:_cancelAttackMomentum()
+function HeavySwing:_cancelAttackMomentum()
 	if not RunService:IsServer() then
 		return
 	end
@@ -778,29 +762,23 @@ function HeavySlash:_cancelAttackMomentum()
 	end
 end
 
-function HeavySlash:OnEndServer()
+function HeavySwing:OnEndServer()
 	self.hitTargets = {}
-	-- WalkSpeed restoration is handled automatically by HeavyAttacking status via SetHumanoidData
 end
 
-function HeavySlash:OnEndClient()
+function HeavySwing:OnEndClient()
 	self:_restoreMovementAnimations()
 
-	-- NOTE: Movement speed restoration is handled server-side via HeavyAttacking status effect
-	-- DO NOT restore humanoid.WalkSpeed here - it conflicts with SetHumanoidData
-
-	-- Also check attackInvalidated flag (trade prevention - status might not have replicated yet)
 	local interrupted = self.attackInvalidated or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Parried })
 
 	if interrupted then
 		if self.loadedAnimation and self.loadedAnimation.IsPlaying then
 			self.loadedAnimation:Stop(0.05)
-			print("[HeavySlash] Client: Stopped animation due to interrupt")
+			print("[HeavySwing] Client: Stopped animation due to interrupt")
 		end
 	end
 
-	-- Reset the flag for next attack
 	self.attackInvalidated = false
 end
 
-return HeavySlash
+return HeavySwing

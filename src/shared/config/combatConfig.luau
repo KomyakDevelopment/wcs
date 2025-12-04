@@ -33,6 +33,18 @@ CombatConfig.Weapons = {
 		FlourishKnockbackDuration = 0.2,
 		FlourishSelfHitstun = 0.5,
 	},
+	ninjato = {
+		Damage = 11,
+		Range = 12,
+		Cooldown = 0.8,
+		HitstunDuration = 0.7,
+		-- Combo damage delays (synced to animation timing)
+		DamageDelays = { 0.42, 0.42, 0.42, 0.52 },
+		-- Flourish (combo finisher)
+		FlourishKnockbackPower = 65,
+		FlourishKnockbackDuration = 0.22,
+		FlourishSelfHitstun = 0.55,
+	},
 }
 
 --============================================================================--

@@ -31,9 +31,10 @@ function HotbarUI.new()
 	self.slotData = {} -- Track what weapon is in each slot
 	self.onSlotClicked = nil -- Callback for slot clicks: function(slotNumber)
 
-	-- Initialize slot data (slot 1 = fists, slot 2 = kunai by default)
+	-- Initialize slot data (slot 1 = fists, slot 2 = kunai, slot 3 = ninjato by default)
 	self.slotData[1] = { weaponId = "fists", displayName = "Fists" }
 	self.slotData[2] = { weaponId = "kunai", displayName = "Kunai" }
+	self.slotData[3] = { weaponId = "ninjato", displayName = "Ninjato" }
 
 	self:_createUI()
 
@@ -55,7 +56,7 @@ function HotbarUI:_createUI()
 	self.screenGui = screenGui
 
 	-- Create container frame at bottom left
-	local totalWidth = (2 * SLOT_SIZE_SELECTED) + SLOT_PADDING + 20
+	local totalWidth = (3 * SLOT_SIZE_SELECTED) + (2 * SLOT_PADDING) + 20
 	local container = Instance.new("Frame")
 	container.Name = "HotbarContainer"
 	container.Size = UDim2.new(0, totalWidth, 0, SLOT_SIZE_SELECTED + 10)
@@ -72,7 +73,7 @@ function HotbarUI:_createUI()
 	layout.Parent = container
 
 	-- Create slots
-	for i = 1, 2 do
+	for i = 1, 3 do
 		local slot = self:_createSlot(i)
 		slot.Parent = container
 		self.slots[i] = slot
@@ -309,7 +310,7 @@ end
 
 -- Get total number of slots
 function HotbarUI.getSlotCount(): number
-	return 2
+	return 3
 end
 
 -- Clear selection visual

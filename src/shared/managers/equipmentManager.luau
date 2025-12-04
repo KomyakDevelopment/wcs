@@ -13,9 +13,11 @@ export type EquipmentManager = typeof(setmetatable(
 		character: any, -- WCS Character
 		equipped: string?, -- Currently equipped weapon ID
 		idleAnimation: { AnimationTrack }?,
-		weaponModel: Model?, -- Physical weapon model instance
+		weaponModel: Model?, -- Physical weapon model instance (blade for scabbard weapons)
 		weaponMotor: Motor6D?, -- Motor6D joint for weapon attachment
 		weaponInHand: boolean, -- Is weapon in hand (true) or on back (false)
+		scabbardModel: Model?, -- Scabbard model for medium weapons (stays on torso)
+		scabbardMotor: Motor6D?, -- Motor6D joint for scabbard attachment
 		_weaponJointsFolder: Instance?, -- Reference to weapon's joints folder
 	},
 	EquipmentManager
@@ -43,6 +45,21 @@ local EQUIPMENT = {
 		HandAttachment = "Right Arm", -- Where to attach when in hand
 		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
 	},
+	ninjato = {
+		Name = "Ninjato",
+		IdleAnimationIds = { 115261994832101, 116358842043289 }, -- torso, hands
+		Moveset = "Armed",
+		CriticalSkill = "HeavySwing", -- Heavy attack for medium weapons
+		IsPhysical = true,
+		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Medium_Weapons.Ninjato", -- Path to weapon folder
+		BackAttachment = "Torso", -- Where to attach when on back
+		HandAttachment = "Right Arm", -- Where to attach when in hand
+		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
+		-- Scabbard configuration for medium weapons
+		HasScabbard = true, -- This weapon has a separate scabbard
+		ScabbardPart = "Scabbard", -- Name of scabbard model/part in weapon model
+		ScabbardAttachment = "Torso", -- Where scabbard attaches (always stays here)
+	},
 }
 
 function EquipmentManager.new(wcsCharacter): EquipmentManager
@@ -54,6 +71,8 @@ function EquipmentManager.new(wcsCharacter): EquipmentManager
 	self.weaponModel = nil
 	self.weaponMotor = nil
 	self.weaponInHand = false
+	self.scabbardModel = nil
+	self.scabbardMotor = nil
 	self._weaponJointsFolder = nil
 
 	return self
@@ -206,35 +225,125 @@ function EquipmentManager:_spawnWeaponModel(weapon)
 	local weaponClone = modelTemplate:Clone()
 	weaponClone.Name = weapon.Name .. "_Equipped"
 
+	-- Disable all trails in the weapon model (they get enabled during swings)
+	for _, descendant in ipairs(weaponClone:GetDescendants()) do
+		if descendant:IsA("Trail") then
+			descendant.Enabled = false
+		end
+	end
+
 	print(`[EquipmentManager] Cloned model, parenting to: {self.character.Instance:GetFullName()}`)
 
-	-- Parent to character
+	-- Handle scabbard weapons (medium weapons like ninjato)
+	if weapon.HasScabbard then
+		-- Find scabbard_handle (attachment point) and Scabbard (visual mesh)
+		local scabbardHandle = weaponClone:FindFirstChild("scabbard_handle")
+		local scabbardMesh = weaponClone:FindFirstChild("Scabbard")
+
+		if scabbardHandle then
+			print(`[EquipmentManager] Found scabbard_handle`)
+
+			-- Create a model to hold scabbard parts
+			local scabbardModel = Instance.new("Model")
+			scabbardModel.Name = weapon.Name .. "_Scabbard"
+
+			-- Move scabbard parts into the model
+			scabbardHandle.Parent = scabbardModel
+			if scabbardMesh then
+				scabbardMesh.Parent = scabbardModel
+				print(`[EquipmentManager] Found Scabbard mesh`)
+			end
+
+			-- Parent scabbard model to character
+			scabbardModel.Parent = self.character.Instance
+			self.scabbardModel = scabbardModel
+
+			-- Attach scabbard to torso permanently
+			self:_attachScabbardToTorso(weapon)
+
+			print(`[EquipmentManager] Scabbard separated and attached to torso`)
+		else
+			warn(`[EquipmentManager] scabbard_handle not found in weapon model`)
+		end
+	end
+
+	-- Parent blade/weapon to character
 	weaponClone.Parent = self.character.Instance
 
 	self.weaponModel = weaponClone
 
 	print(`[EquipmentManager] Weapon model parented successfully: {weaponClone:GetFullName()}`)
 
-	-- Attach to back initially
+	-- Attach to back initially (for scabbard weapons, this positions blade in scabbard)
 	self:_attachWeaponToBack(weapon)
 
 	print(`[EquipmentManager] Spawned weapon model: {weapon.Name}`)
 end
 
--- Attach weapon to character's back (Torso)
+-- Attach scabbard to character's torso (permanent position for medium weapons)
+function EquipmentManager:_attachScabbardToTorso(weapon)
+	if not self.scabbardModel then
+		return
+	end
+
+	local character = self.character.Instance
+	local attachPartName = weapon.ScabbardAttachment or "Torso"
+	local attachPart = character:FindFirstChild(attachPartName)
+
+	if not attachPart then
+		warn(`[EquipmentManager] Scabbard attachment part not found: {attachPartName}`)
+		return
+	end
+
+	-- Find the scabbard handle part
+	local scabbardHandle = self.scabbardModel:FindFirstChild("scabbard_handle")
+		or self.scabbardModel:FindFirstChild("handle")
+		or self.scabbardModel:FindFirstChild("Handle")
+
+	if not scabbardHandle then
+		warn("[EquipmentManager] Scabbard has no handle part")
+		return
+	end
+
+	-- Remove existing scabbard motor if any
+	if self.scabbardMotor then
+		self.scabbardMotor:Destroy()
+		self.scabbardMotor = nil
+	end
+
+	-- Use pre-made joint from joints folder: joints/Torso/scabbard_handle
+	local motor: Motor6D? = nil
+	if self._weaponJointsFolder then
+		local bodyPartFolder = self._weaponJointsFolder:FindFirstChild(attachPartName)
+		if bodyPartFolder then
+			local jointTemplate = bodyPartFolder:FindFirstChild("scabbard_handle")
+			if jointTemplate and jointTemplate:IsA("Motor6D") then
+				motor = jointTemplate:Clone()
+				motor.Part0 = attachPart
+				motor.Part1 = scabbardHandle
+				motor.Parent = attachPart
+				print(`[EquipmentManager] Using pre-made scabbard joint from joints/{attachPartName}/scabbard_handle`)
+			end
+		end
+	end
+
+	if not motor then
+		warn("[EquipmentManager] No scabbard joint found in joints folder - scabbard attachment failed")
+		return
+	end
+
+	self.scabbardMotor = motor
+
+	print("[EquipmentManager] Scabbard attached to torso")
+end
+
+-- Attach weapon to character's back (Torso) or into scabbard for scabbard weapons
 function EquipmentManager:_attachWeaponToBack(weapon)
 	if not self.weaponModel then
 		return
 	end
 
 	local character = self.character.Instance
-	local attachPartName = weapon.BackAttachment or "Torso"
-	local attachPart = character:FindFirstChild(attachPartName)
-
-	if not attachPart then
-		warn(`[EquipmentManager] Back attachment part not found: {attachPartName}`)
-		return
-	end
 
 	-- Find the handle part in the weapon model (connects to character)
 	local handlePartName = weapon.WeaponHandlePart or "handle"
@@ -250,36 +359,83 @@ function EquipmentManager:_attachWeaponToBack(weapon)
 		self.weaponMotor = nil
 	end
 
-	-- Try to use pre-made joint from joints folder
 	local motor: Motor6D? = nil
-	if self._weaponJointsFolder then
-		local jointFolder = self._weaponJointsFolder:FindFirstChild(attachPartName)
-		if jointFolder then
-			local jointTemplate = jointFolder:FindFirstChild(handlePartName)
-			if jointTemplate and jointTemplate:IsA("Motor6D") then
-				motor = jointTemplate:Clone()
-				print(`[EquipmentManager] Using pre-made joint from joints/{attachPartName}/{handlePartName}`)
+
+	-- For scabbard weapons, try to attach blade to scabbard first
+	if weapon.HasScabbard and self.scabbardModel then
+		-- Find scabbard handle to attach blade to
+		local scabbardHandle = self.scabbardModel:FindFirstChild("scabbard_handle")
+			or self.scabbardModel:FindFirstChild("handle")
+
+		if scabbardHandle and self._weaponJointsFolder then
+			-- Try joints/Scabbard/handle first (blade positioned relative to scabbard)
+			local scabbardJointsFolder = self._weaponJointsFolder:FindFirstChild("Scabbard")
+			if scabbardJointsFolder then
+				local jointTemplate = scabbardJointsFolder:FindFirstChild(handlePartName)
+				if jointTemplate and jointTemplate:IsA("Motor6D") then
+					local clonedMotor = jointTemplate:Clone() :: Motor6D
+					clonedMotor.Part0 = scabbardHandle
+					clonedMotor.Part1 = handlePart
+					clonedMotor.Parent = scabbardHandle
+					motor = clonedMotor
+					print(`[EquipmentManager] Using pre-made joint from joints/Scabbard/{handlePartName}`)
+				end
 			end
 		end
 	end
 
-	-- Fallback: create Motor6D manually if no pre-made joint found
+	-- If no scabbard joint found (or not a scabbard weapon), attach to torso
 	if not motor then
-		motor = Instance.new("Motor6D")
-		motor.Name = "WeaponMotor"
-		motor.C0 = CFrame.new(0, 0.5, 0.5) * CFrame.Angles(0, math.rad(90), math.rad(-45))
-		motor.C1 = CFrame.new()
-		print("[EquipmentManager] Creating Motor6D manually (no pre-made joint found)")
+		local attachPartName = weapon.BackAttachment or "Torso"
+		local attachPart = character:FindFirstChild(attachPartName)
+
+		if not attachPart then
+			warn(`[EquipmentManager] Back attachment part not found: {attachPartName}`)
+			return
+		end
+
+		if self._weaponJointsFolder then
+			-- First try joints/Torso/handle
+			local bodyPartFolder = self._weaponJointsFolder:FindFirstChild(attachPartName)
+			if bodyPartFolder then
+				local jointTemplate = bodyPartFolder:FindFirstChild(handlePartName)
+				if jointTemplate and jointTemplate:IsA("Motor6D") then
+					local clonedMotor = jointTemplate:Clone() :: Motor6D
+					clonedMotor.Part0 = attachPart
+					clonedMotor.Part1 = handlePart
+					clonedMotor.Parent = attachPart
+					motor = clonedMotor
+					print(`[EquipmentManager] Using pre-made joint from joints/{attachPartName}/{handlePartName} (sheathed to torso)`)
+				end
+			end
+
+			-- Fallback: use Right Arm/handle joint but reparent to Torso
+			if not motor then
+				local handPartName = weapon.HandAttachment or "Right Arm"
+				local handFolder = self._weaponJointsFolder:FindFirstChild(handPartName)
+				if handFolder then
+					local jointTemplate = handFolder:FindFirstChild(handlePartName)
+					if jointTemplate and jointTemplate:IsA("Motor6D") then
+						local clonedMotor = jointTemplate:Clone() :: Motor6D
+						clonedMotor.Part0 = attachPart -- Use Torso instead of Right Arm
+						clonedMotor.Part1 = handlePart
+						clonedMotor.Parent = attachPart
+						motor = clonedMotor
+						print(`[EquipmentManager] Using joints/{handPartName}/{handlePartName} reparented to {attachPartName} (sheathed)`)
+					end
+				end
+			end
+		end
 	end
 
-	-- Connect the motor
-	motor.Part0 = attachPart
-	motor.Part1 = handlePart
-	motor.Parent = attachPart
+	if not motor then
+		warn(`[EquipmentManager] No back joint found in joints folder - weapon attachment failed`)
+		return
+	end
 
 	self.weaponMotor = motor
 
-	print("[EquipmentManager] Weapon attached to back")
+	print("[EquipmentManager] Weapon sheathed/attached to back")
 end
 
 -- Attach weapon to character's hand (Right Arm)
@@ -311,39 +467,26 @@ function EquipmentManager:_attachWeaponToHand(weapon)
 		self.weaponMotor = nil
 	end
 
-	-- Try to use pre-made joint from joints folder
+	-- Use pre-made joint from joints folder: joints/["Right Arm"]/handle
 	local motor: Motor6D? = nil
 	if self._weaponJointsFolder then
-		local jointFolder = self._weaponJointsFolder:FindFirstChild(attachPartName)
-		if jointFolder then
-			local jointTemplate = jointFolder:FindFirstChild(handlePartName)
+		local bodyPartFolder = self._weaponJointsFolder:FindFirstChild(attachPartName)
+		if bodyPartFolder then
+			local jointTemplate = bodyPartFolder:FindFirstChild(handlePartName)
 			if jointTemplate and jointTemplate:IsA("Motor6D") then
 				motor = jointTemplate:Clone()
+				motor.Part0 = attachPart
+				motor.Part1 = handlePart
+				motor.Parent = attachPart
 				print(`[EquipmentManager] Using pre-made joint from joints/{attachPartName}/{handlePartName}`)
 			end
 		end
 	end
 
-	-- Fallback: create Motor6D manually if no pre-made joint found
 	if not motor then
-		motor = Instance.new("Motor6D")
-		motor.Name = "WeaponMotor"
-		-- Position weapon in hand (use RightGripAttachment if available)
-		local gripAttachment = attachPart:FindFirstChild("RightGripAttachment")
-		if gripAttachment then
-			motor.C0 = gripAttachment.CFrame
-		else
-			-- Fallback positioning
-			motor.C0 = CFrame.new(0, -1, 0) * CFrame.Angles(math.rad(-90), 0, 0)
-		end
-		motor.C1 = CFrame.new()
-		print("[EquipmentManager] Creating Motor6D manually (no pre-made joint found)")
+		warn(`[EquipmentManager] No hand joint found in joints folder - weapon attachment failed`)
+		return
 	end
-
-	-- Connect the motor
-	motor.Part0 = attachPart
-	motor.Part1 = handlePart
-	motor.Parent = attachPart
 
 	self.weaponMotor = motor
 
@@ -378,6 +521,18 @@ function EquipmentManager:unequip()
 	if self.weaponModel then
 		self.weaponModel:Destroy()
 		self.weaponModel = nil
+	end
+
+	-- Destroy scabbard motor (for medium weapons)
+	if self.scabbardMotor then
+		self.scabbardMotor:Destroy()
+		self.scabbardMotor = nil
+	end
+
+	-- Destroy scabbard model (for medium weapons)
+	if self.scabbardModel then
+		self.scabbardModel:Destroy()
+		self.scabbardModel = nil
 	end
 
 	-- Clear joints folder reference

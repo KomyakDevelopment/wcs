@@ -43,40 +43,41 @@ Slash.CheckClientState = false -- Don't wait for server to validate before playi
 Slash.CheckOthersActive = false -- Don't check if other skills are active (we handle this manually)
 
 -- Configuration (from central combatConfig)
-local WeaponConfig = CombatConfig.Weapons.kunai
 local ComboConfig = CombatConfig.Combo
-
-local SLASH_DAMAGE = WeaponConfig.Damage
-local SLASH_RANGE = WeaponConfig.Range
-local SLASH_COOLDOWN = WeaponConfig.Cooldown
 
 -- Hitbox configuration
 local HIT_ANGLE_THRESHOLD = CombatConfig.Hitbox.HitAngleThreshold
 local BLOCK_ANGLE_THRESHOLD = CombatConfig.Hitbox.BlockAngleThreshold
 
--- Hitstun duration for weapon attacks
-local SOFT_HITSTUN_DURATION = WeaponConfig.HitstunDuration
-local FLOURISH_SELF_HITSTUN_DURATION = WeaponConfig.FlourishSelfHitstun
-
 -- Combo system configuration
 local COMBO_RESET_TIME = ComboConfig.ResetTime
 local MAX_COMBO_PHASE = ComboConfig.MaxPhase
 
--- Knockback configuration for flourish
-local FLOURISH_KNOCKBACK_POWER = WeaponConfig.FlourishKnockbackPower
-local FLOURISH_KNOCKBACK_DURATION = WeaponConfig.FlourishKnockbackDuration
+-- Default weapon config (kunai) for fallback
+local DEFAULT_WEAPON = "kunai"
 
--- Animation IDs for each combo phase (same as punch for now)
+-- Animation IDs for each combo phase per weapon
 local COMBO_ANIMATIONS = {
-	[1] = "rbxassetid://91619051516074",
-	[2] = "rbxassetid://131141876861809",
-	[3] = "rbxassetid://122892720764576",
-	[4] = "rbxassetid://128565870055276", -- Flourish
+	kunai = {
+		[1] = "rbxassetid://91619051516074",
+		[2] = "rbxassetid://131141876861809",
+		[3] = "rbxassetid://122892720764576",
+		[4] = "rbxassetid://128565870055276", -- Flourish
+	},
+	ninjato = {
+		[1] = "rbxassetid://96737060211137",
+		[2] = "rbxassetid://122493653126120",
+		[3] = "rbxassetid://125186682440764",
+		[4] = "rbxassetid://128565870055276", -- Flourish (same for now)
+	},
 }
 
--- Damage delays for each combo phase (in seconds)
--- Synced to when the weapon connects in each animation
-local DAMAGE_DELAYS = WeaponConfig.DamageDelays
+-- Helper to get weapon config dynamically
+local function getWeaponConfig(weaponType: string)
+	return CombatConfig.Weapons[weaponType] or CombatConfig.Weapons[DEFAULT_WEAPON]
+end
+
+-- Damage delays are now fetched dynamically per weapon via getWeaponConfig()
 
 function Slash:OnConstructServer()
 	-- Setup server-side skill data
@@ -84,6 +85,7 @@ function Slash:OnConstructServer()
 	self.comboPhase = 1
 	self.comboResetTimer = nil
 	self.currentAttackPhase = 1 -- Track which phase is currently executing
+	self.currentWeaponType = DEFAULT_WEAPON -- Current weapon for this attack
 	self.attackingEffect = nil
 	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 end
@@ -92,24 +94,28 @@ function Slash:OnConstructClient()
 	-- Setup client-side skill data
 	self.comboPhase = 1
 	self.comboResetTimer = nil
-	self.loadedAnimations = {}
+	self.loadedAnimations = {} -- Now keyed by weapon type: { kunai = { [1] = track, ... }, ninjato = { ... } }
 	self.animationsReady = false
 	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 	self.hitstunMonitor = nil :: RBXScriptConnection? -- Monitor for hitstun during attack
 
-	-- Preload all combo animations
+	-- Preload combo animations for ALL weapons
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if animator then
-			-- Create animation instances first
-			local animationInstances = {}
-			for phase, animId in pairs(COMBO_ANIMATIONS) do
-				local animation = Instance.new("Animation")
-				animation.AnimationId = animId
-				animationInstances[phase] = animation
-				-- Load into animator
-				self.loadedAnimations[phase] = animator:LoadAnimation(animation)
+			local animsToPreload = {}
+
+			-- Load animations for each weapon type
+			for weaponType, phases in pairs(COMBO_ANIMATIONS) do
+				self.loadedAnimations[weaponType] = {}
+				for phase, animId in pairs(phases) do
+					local animation = Instance.new("Animation")
+					animation.AnimationId = animId
+					table.insert(animsToPreload, animation)
+					-- Load into animator
+					self.loadedAnimations[weaponType][phase] = animator:LoadAnimation(animation)
+				end
 			end
 
 			-- Mark as ready immediately (LoadAnimation is synchronous)
@@ -117,12 +123,8 @@ function Slash:OnConstructClient()
 
 			-- Preload in background via ContentProvider for smoother first play
 			task.spawn(function()
-				local animsToPreload = {}
-				for _, anim in pairs(animationInstances) do
-					table.insert(animsToPreload, anim)
-				end
 				ContentProvider:PreloadAsync(animsToPreload)
-				print("[Slash] Client: Animations preloaded via ContentProvider")
+				print("[Slash] Client: Animations preloaded via ContentProvider for all weapons")
 			end)
 		end
 	end
@@ -171,10 +173,14 @@ function Slash:OnStartServer()
 	-- Store the current attack phase before advancing
 	self.currentAttackPhase = self.comboPhase
 
-	print(`[Slash] Server: Slash activated - Phase {self.currentAttackPhase}`)
+	-- Get weapon type and config for this attack
+	self.currentWeaponType = self:_getCurrentWeaponType()
+	local weaponConfig = getWeaponConfig(self.currentWeaponType)
+
+	print(`[Slash] Server: Slash activated - Phase {self.currentAttackPhase} with {self.currentWeaponType}`)
 
 	-- Apply cooldown
-	self:ApplyCooldown(SLASH_COOLDOWN)
+	self:ApplyCooldown(weaponConfig.Cooldown)
 
 	-- Apply Attacking status effect FIRST (prevents dodging and slows movement during attack)
 	-- This MUST be applied before parry flash remote so clients can validate the status
@@ -184,7 +190,7 @@ function Slash:OnStartServer()
 	self.attackingEffect = Attacking.new(self.Character)
 	if self.attackingEffect then
 		-- Duration matches the damage delay (when attack animation is active)
-		local attackDuration = DAMAGE_DELAYS[self.currentAttackPhase] or 0.4
+		local attackDuration = weaponConfig.DamageDelays[self.currentAttackPhase] or 0.4
 		self.attackingEffect:Start(attackDuration)
 		print(`[Slash] Applied Attacking status for {attackDuration}s`)
 	end
@@ -198,7 +204,7 @@ function Slash:OnStartServer()
 	end
 
 	-- Perform hitbox detection with delay based on animation timing
-	local damageDelay = DAMAGE_DELAYS[self.currentAttackPhase] or 0.1
+	local damageDelay = weaponConfig.DamageDelays[self.currentAttackPhase] or 0.1
 	task.delay(damageDelay, function()
 		self:_detectHit()
 	end)
@@ -312,8 +318,12 @@ function Slash:OnStartClient()
 	-- Store current phase before advancing
 	local currentPhase = self.comboPhase
 
+	-- Get current weapon type for animation lookup
+	local clientWeaponType = self:_getClientWeaponType()
+	local weaponAnims = self.loadedAnimations[clientWeaponType] or self.loadedAnimations[DEFAULT_WEAPON]
+
 	-- PRIORITY: Play animation FIRST for immediate visual feedback
-	local animTrack = self.loadedAnimations[currentPhase]
+	local animTrack = weaponAnims and weaponAnims[currentPhase]
 	if animTrack then
 		animTrack:Play(0.05)
 		animTrack.Priority = Enum.AnimationPriority.Action4
@@ -324,10 +334,12 @@ function Slash:OnStartClient()
 		task.cancel(self.comboResetTimer)
 	end
 
-	-- Stop any other slash animations that might be playing
-	for phase, track in pairs(self.loadedAnimations) do
-		if track and track.IsPlaying and phase ~= currentPhase then
-			track:Stop(0.05)
+	-- Stop any other slash animations that might be playing (for current weapon)
+	if weaponAnims then
+		for phase, track in pairs(weaponAnims) do
+			if track and track.IsPlaying and phase ~= currentPhase then
+				track:Stop(0.05)
+			end
 		end
 	end
 
@@ -416,8 +428,9 @@ function Slash:_detectHit()
 			if targetHumanoid and targetHumanoid.Health > 0 and targetRootPart then
 				-- Check if target is in range
 				local distance = (targetRootPart.Position - origin).Magnitude
+				local weaponConfig = getWeaponConfig(self.currentWeaponType or DEFAULT_WEAPON)
 
-				if distance <= SLASH_RANGE then
+				if distance <= weaponConfig.Range then
 					-- Check if target is in front of attacker
 					local directionToTarget = (targetRootPart.Position - origin).Unit
 					local dotProduct = lookDirection:Dot(directionToTarget)
@@ -574,11 +587,14 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 
 	print(`[Slash] Hit target: {targetModel.Name} - Phase {self.currentAttackPhase}`)
 
+	-- Get weapon config for this attack
+	local weaponConfig = getWeaponConfig(self.currentWeaponType or DEFAULT_WEAPON)
+
 	-- Mark damage as M1 (so knockdown system knows not to auto-execute from M1s)
 	targetModel:SetAttribute("LastDamageWasM1", true)
 
 	-- Apply damage
-	targetHumanoid:TakeDamage(SLASH_DAMAGE)
+	targetHumanoid:TakeDamage(weaponConfig.Damage)
 
 	-- Apply soft hitstun to the target (if they have WCS character)
 	if not targetWCSCharacter then
@@ -588,8 +604,8 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		local hitstun = SoftHitstun.new(targetWCSCharacter)
 		if hitstun then
 			-- Start with duration per WCS docs (will refresh if already active)
-			hitstun:Start(SOFT_HITSTUN_DURATION)
-			print(`[Slash] Applied SoftHitstun ({SOFT_HITSTUN_DURATION}s) to {targetModel.Name}`)
+			hitstun:Start(weaponConfig.HitstunDuration)
+			print(`[Slash] Applied SoftHitstun ({weaponConfig.HitstunDuration}s) to {targetModel.Name}`)
 		else
 			warn(`[Slash] Failed to create SoftHitstun for {targetModel.Name}`)
 		end
@@ -632,9 +648,9 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 		elseif targetRootPart and attackerRootPart then
 			local knockbackDirection = (targetRootPart.Position - attackerRootPart.Position).Unit
 			local knockbackVelocity = Vector3.new(
-				knockbackDirection.X * FLOURISH_KNOCKBACK_POWER,
+				knockbackDirection.X * weaponConfig.FlourishKnockbackPower,
 				0, -- No vertical knockback
-				knockbackDirection.Z * FLOURISH_KNOCKBACK_POWER
+				knockbackDirection.Z * weaponConfig.FlourishKnockbackPower
 			)
 
 			local bodyVelocity = Instance.new("BodyVelocity")
@@ -642,16 +658,16 @@ function Slash:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			bodyVelocity.Velocity = knockbackVelocity
 			bodyVelocity.Parent = targetRootPart
 
-			game:GetService("Debris"):AddItem(bodyVelocity, FLOURISH_KNOCKBACK_DURATION)
+			game:GetService("Debris"):AddItem(bodyVelocity, weaponConfig.FlourishKnockbackDuration)
 			print(`[Slash] Applied flourish knockback to {targetModel.Name}`)
 
 			-- Apply self-hitstun to attacker for recovery period
 			local selfHitstun = SoftHitstun.new(self.Character)
 
 			if selfHitstun then
-				selfHitstun:Start(FLOURISH_SELF_HITSTUN_DURATION)
+				selfHitstun:Start(weaponConfig.FlourishSelfHitstun)
 				print(
-					`[Slash] Applied self-hitstun ({FLOURISH_SELF_HITSTUN_DURATION}s) to attacker for flourish recovery`
+					`[Slash] Applied self-hitstun ({weaponConfig.FlourishSelfHitstun}s) to attacker for flourish recovery`
 				)
 			else
 				warn("[Slash] Failed to create self-hitstun for flourish recovery")
@@ -816,41 +832,34 @@ function Slash:_applyWeaponTrail(animTrack: AnimationTrack, currentPhase: number
 		return
 	end
 
-	-- Find the Grip part in the weapon model
-	local gripPart = weaponModel:FindFirstChild("Grip")
-	if not gripPart then
-		warn("[Slash] No Grip part found in weapon model")
-		return
+	-- Find trail0 attachment anywhere in the weapon model (recursive search)
+	local trail0: Instance? = nil
+	for _, descendant in ipairs(weaponModel:GetDescendants()) do
+		if descendant.Name == "trail0" then
+			trail0 = descendant
+			break
+		end
 	end
 
-	-- Get trail attachments (trail0 and trail1)
-	-- trail1 is a child of trail0 in the weapon model structure
-	local trail0 = gripPart:FindFirstChild("trail0")
 	if not trail0 then
-		warn("[Slash] Trail attachment (trail0) not found in Grip")
+		warn("[Slash] Trail attachment (trail0) not found in weapon model")
 		return
 	end
 
-	-- trail1 is inside trail0
-	local trail1 = trail0:FindFirstChild("trail1")
-	if not trail1 then
-		-- Fallback: check if trail1 is a sibling
-		trail1 = gripPart:FindFirstChild("trail1")
-	end
-
-	if not trail1 then
-		warn("[Slash] Trail attachment (trail1) not found in trail0 or Grip")
-		return
-	end
-
-	-- Find the Trail object (could be in Grip or trail0)
-	local trail = gripPart:FindFirstChildOfClass("Trail") or trail0:FindFirstChildOfClass("Trail")
+	-- Find the Trail object inside trail0
+	local trail = trail0:FindFirstChildOfClass("Trail")
 	if trail then
-		trail.Enabled = true
-		print(`[Slash] Enabled weapon trail for phase {currentPhase}`)
-
-		-- Disable trail when animation ends
 		local animLength = animTrack.Length or 0.5
+
+		-- Enable trail at 10% of animation (delayed start)
+		task.delay(animLength * 0.1, function()
+			if trail and trail.Parent then
+				trail.Enabled = true
+				print(`[Slash] Enabled weapon trail for phase {currentPhase}`)
+			end
+		end)
+
+		-- Disable trail at 80% of animation
 		task.delay(animLength * 0.8, function()
 			if trail and trail.Parent then
 				trail.Enabled = false
@@ -858,7 +867,7 @@ function Slash:_applyWeaponTrail(animTrack: AnimationTrack, currentPhase: number
 			end
 		end)
 	else
-		warn("[Slash] No Trail object found in Grip")
+		warn("[Slash] No Trail object found in trail0")
 	end
 end
 
@@ -877,13 +886,22 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 		-- Get the equipped weapon type for SFX path
 		local weaponType = self:_getClientWeaponType()
 
+		-- Determine weapon category based on weapon type
+		local weaponCategory = "Light_Weapons"
+		if weaponType == "ninjato" then
+			weaponCategory = "Medium_Weapons"
+		end
+
+		-- Capitalize weapon type for folder name (folders use PascalCase)
+		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+
 		-- Get swing SFX folder for this weapon
 		local swingSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
 			and ReplicatedStorage.Assets:FindFirstChild("SFX")
 			and ReplicatedStorage.Assets.SFX:FindFirstChild("Weapon_Classes")
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes:FindFirstChild("Light_Weapons")
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons:FindFirstChild(weaponType)
-			and ReplicatedStorage.Assets.SFX.Weapon_Classes.Light_Weapons[weaponType]:FindFirstChild("swings")
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes:FindFirstChild(weaponCategory)
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes[weaponCategory]:FindFirstChild(weaponFolderName)
+			and ReplicatedStorage.Assets.SFX.Weapon_Classes[weaponCategory][weaponFolderName]:FindFirstChild("swings")
 
 		if not swingSFXFolder then
 			warn(`[Slash] Swing SFX folder not found for weapon: {weaponType}`)
@@ -941,12 +959,12 @@ function Slash:_getClientWeaponType(): string
 	local characterInstance = self.Character.Instance
 	for _, child in ipairs(characterInstance:GetChildren()) do
 		if child:IsA("Model") and string.find(child.Name, "_Equipped") then
-			-- Extract weapon name from "Kunai_Equipped" -> "Kunai"
+			-- Extract weapon name from "Kunai_Equipped" -> "kunai" (lowercase for config lookup)
 			local weaponName = string.gsub(child.Name, "_Equipped", "")
-			return weaponName
+			return string.lower(weaponName)
 		end
 	end
-	return "Kunai" -- Default
+	return "kunai" -- Default (lowercase)
 end
 
 function Slash:OnEndServer()
@@ -971,10 +989,13 @@ function Slash:OnEndClient()
 
 	if interrupted then
 		-- Only stop animations if interrupted - use fast fade
-		for _, animTrack in pairs(self.loadedAnimations) do
-			if animTrack and animTrack.IsPlaying then
-				animTrack:Stop(0.05)
-				print("[Slash] Client: Stopped animation due to interrupt")
+		-- loadedAnimations is now { weaponType = { phase = track } }
+		for _, weaponAnims in pairs(self.loadedAnimations) do
+			for _, animTrack in pairs(weaponAnims) do
+				if animTrack and animTrack.IsPlaying then
+					animTrack:Stop(0.05)
+					print("[Slash] Client: Stopped animation due to interrupt")
+				end
 			end
 		end
 	end
@@ -999,6 +1020,10 @@ function Slash:_predictRollCancel()
 	local myPosition = rootPart.Position
 	local myLookVector = rootPart.CFrame.LookVector
 
+	-- Get weapon config for range check
+	local clientWeaponType = self:_getClientWeaponType()
+	local weaponConfig = getWeaponConfig(clientWeaponType)
+
 	-- Check nearby characters for iframes
 	for _, otherCharacter in ipairs(workspace:GetChildren()) do
 		if otherCharacter:IsA("Model") and otherCharacter ~= character then
@@ -1008,7 +1033,7 @@ function Slash:_predictRollCancel()
 			if otherHumanoid and otherRootPart and otherHumanoid.Health > 0 then
 				-- Check distance
 				local distance = (otherRootPart.Position - myPosition).Magnitude
-				if distance <= SLASH_RANGE then
+				if distance <= weaponConfig.Range then
 					-- Check angle (in front of attacker)
 					local directionToTarget = (otherRootPart.Position - myPosition).Unit
 					local dotProduct = myLookVector:Dot(directionToTarget)

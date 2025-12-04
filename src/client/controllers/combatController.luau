@@ -17,6 +17,7 @@ local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 local HeavyPunch = require(ReplicatedStorage.Shared.skills.heavyPunch)
 local HeavySlash = require(ReplicatedStorage.Shared.skills.heavySlash)
+local HeavySwing = require(ReplicatedStorage.Shared.skills.heavySwing)
 
 -- Equipment manager for looking up weapon configs
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
@@ -34,7 +35,7 @@ local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
 local CRITICAL_SKILLS = {
 	HeavyPunch = HeavyPunch,
 	HeavySlash = HeavySlash,
-	-- Future: HeavyGreatswordSpin = HeavyGreatswordSpin,
+	HeavySwing = HeavySwing,
 }
 
 local CombatController = {}
