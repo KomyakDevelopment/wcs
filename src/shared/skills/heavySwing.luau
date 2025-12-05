@@ -57,15 +57,14 @@ local HIT_ANGLE_THRESHOLD = CombatConfig.Hitbox.HitAngleThreshold
 
 -- Timing configuration
 local WINDUP_DURATION = HeavyConfig.WindupDuration
--- Two-slash timing (times from animation start)
-local SLASH_1_TIMING = 0.60 -- First slash
-local SLASH_2_TIMING = 0.83 -- Second slash
+-- Single swing timing (time from animation start)
+local SWING_TIMING = 0.95 -- When the swing connects
 
 -- Endlag after crit completes (cannot attack during this time)
 local ENDLAG_DURATION = 0.3
 
 -- Animation ID for heavy swing (medium weapons critical)
-local HEAVY_ANIMATION_ID = "rbxassetid://136860865307002"
+local HEAVY_ANIMATION_ID = "rbxassetid://128798989058056"
 
 -- Animation IDs that should be stopped
 local MOVEMENT_ANIMATION_IDS = {
@@ -162,7 +161,7 @@ function HeavySwing:OnStartServer()
 	self.attackingEffect = HeavyAttacking.new(self.Character)
 	if self.attackingEffect then
 		self.attackingEffect:SetMetadata({ SlowMultiplier = slowMultiplier })
-		self.attackingEffect:Start(SLASH_2_TIMING + ENDLAG_DURATION)
+		self.attackingEffect:Start(SWING_TIMING + ENDLAG_DURATION)
 	end
 
 	-- Broadcast parry flash AFTER windup
@@ -179,14 +178,8 @@ function HeavySwing:OnStartServer()
 		critVFXRemote:FireAllClients(self.Character.Instance, "heavySwing")
 	end
 
-	-- First slash hit detection
-	task.delay(SLASH_1_TIMING, function()
-		self:_detectHit()
-	end)
-
-	-- Second slash hit detection
-	task.delay(SLASH_2_TIMING, function()
-		self.hitTargets = {}
+	-- Single swing hit detection
+	task.delay(SWING_TIMING, function()
 		self:_detectHit()
 	end)
 end
@@ -707,31 +700,17 @@ function HeavySwing:_applyHeavyVFX()
 				beam.Enabled = false
 				local duration = beam:GetAttribute("Duration") or 0.15
 
-				local timing = nil
-				local parent = beam.Parent
-				while parent and parent ~= attachmentClone do
-					if parent.Name == "slash1" then
-						timing = 0.55
-						break
-					elseif parent.Name == "slash2" then
-						timing = 0.8
-						break
+				-- Single swing beam timing
+				task.delay(SWING_TIMING, function()
+					if beam and beam.Parent then
+						beam.Enabled = true
+						task.delay(duration, function()
+							if beam and beam.Parent then
+								beam.Enabled = false
+							end
+						end)
 					end
-					parent = parent.Parent
-				end
-
-				if timing then
-					task.delay(timing, function()
-						if beam and beam.Parent then
-							beam.Enabled = true
-							task.delay(duration, function()
-								if beam and beam.Parent then
-									beam.Enabled = false
-								end
-							end)
-						end
-					end)
-				end
+				end)
 			end
 		end
 	end
