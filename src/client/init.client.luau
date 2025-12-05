@@ -33,6 +33,7 @@ local KnockdownEffectsManager = require(ReplicatedStorage.Client.managers.knockd
 local ExecutionEffectsManager = require(ReplicatedStorage.Client.managers.executionEffectsManager)
 local InteractionManager = require(ReplicatedStorage.Client.managers.interactionManager)
 local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
+local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
@@ -60,6 +61,7 @@ local knockdownEffectsManager = KnockdownEffectsManager.new()
 local executionEffectsManager = ExecutionEffectsManager.new() -- Event-driven, listens for PlayerExecuted
 local interactionManager = InteractionManager.new()
 local critVFXManager = CritVFXManager.new() -- Event-driven, listens for PlayCritVFX
+local combatTagUIManager = CombatTagUIManager.new() -- Event-driven, listens for CombatTagUpdate
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 

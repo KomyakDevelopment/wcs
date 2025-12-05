@@ -7,6 +7,8 @@ local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentMana
 local PostureManager = require(ReplicatedStorage.Shared.managers.postureManager)
 local DeathManager = require(script.managers.deathManager)
 local CollisionManager = require(script.managers.collisionManager)
+local CombatTagManager = require(script.managers.combatTagManager)
+local HealthRegenManager = require(script.managers.healthRegenManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
@@ -116,9 +118,14 @@ local _stunIndicatorManager = StunIndicatorManager.new()
 local _postureManager = PostureManager.new()
 local deathManager = DeathManager.new()
 local _collisionManager = CollisionManager.new()
+local combatTagManager = CombatTagManager.new()
+local _healthRegenManager = HealthRegenManager.new()
 
 -- Expose DeathManager for grip skill to use for executions
 _G.DeathManager = deathManager
+
+-- Expose CombatTagManager for skills to tag players after damage
+_G.CombatTagManager = combatTagManager
 
 -- Handle equip requests from clients
 equipRemote.OnServerEvent:Connect(function(player, weaponId)

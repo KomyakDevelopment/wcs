@@ -1,5 +1,6 @@
 --!strict
 local ContentProvider = game:GetService("ContentProvider")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -555,6 +556,15 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 
 	-- Apply damage
 	targetHumanoid:TakeDamage(PUNCH_DAMAGE)
+
+	-- Combat tag the target (PvP only)
+	if _G.CombatTagManager then
+		local attackerPlayer = Players:GetPlayerFromCharacter(self.Character.Instance)
+		local targetPlayer = Players:GetPlayerFromCharacter(targetModel)
+		if attackerPlayer and targetPlayer then
+			_G.CombatTagManager:tagPlayer(targetPlayer, attackerPlayer)
+		end
+	end
 
 	-- Apply soft hitstun to the target (if they have WCS character)
 	if not targetWCSCharacter then

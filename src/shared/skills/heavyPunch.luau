@@ -4,6 +4,7 @@
 -- Triggered by pressing R when using fists Test
 
 local ContentProvider = game:GetService("ContentProvider")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -403,6 +404,15 @@ function HeavyPunch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	print(`[HeavyPunch] Heavy hit on: {targetModel.Name}! (was blocking: {wasBlocking})`)
 
 	targetHumanoid:TakeDamage(HEAVY_DAMAGE)
+
+	-- Combat tag the target (PvP only)
+	if _G.CombatTagManager then
+		local attackerPlayer = Players:GetPlayerFromCharacter(self.Character.Instance)
+		local targetPlayer = Players:GetPlayerFromCharacter(targetModel)
+		if attackerPlayer and targetPlayer then
+			_G.CombatTagManager:tagPlayer(targetPlayer, attackerPlayer)
+		end
+	end
 
 	if not targetWCSCharacter then
 		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)

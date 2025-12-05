@@ -4,6 +4,7 @@
 -- Triggered by pressing R when using a medium weapon
 
 local ContentProvider = game:GetService("ContentProvider")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -462,6 +463,15 @@ function HeavySwing:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 	print(`[HeavySwing] Heavy hit on: {targetModel.Name}!`)
 
 	targetHumanoid:TakeDamage(HEAVY_DAMAGE)
+
+	-- Combat tag the target (PvP only)
+	if _G.CombatTagManager then
+		local attackerPlayer = Players:GetPlayerFromCharacter(self.Character.Instance)
+		local targetPlayer = Players:GetPlayerFromCharacter(targetModel)
+		if attackerPlayer and targetPlayer then
+			_G.CombatTagManager:tagPlayer(targetPlayer, attackerPlayer)
+		end
+	end
 
 	if not targetWCSCharacter then
 		targetWCSCharacter = WCS.Character.GetCharacterFromInstance(targetModel)
