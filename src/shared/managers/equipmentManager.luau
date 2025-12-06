@@ -124,6 +124,7 @@ function EquipmentManager:equip(weaponId: string): boolean
 		self:_spawnWeaponModel(weapon)
 		-- Physical weapons start on back, not in hand
 		self.weaponInHand = false
+		self.character.Instance:SetAttribute("WeaponInHand", false)
 		-- Don't play idle animations until weapon is in hand
 	else
 		-- Non-physical weapons (fists) play idle animation immediately
@@ -132,6 +133,7 @@ function EquipmentManager:equip(weaponId: string): boolean
 		end
 		-- Fists are always "in hand"
 		self.weaponInHand = true
+		self.character.Instance:SetAttribute("WeaponInHand", true)
 	end
 
 	self.equipped = weaponId
@@ -161,6 +163,8 @@ function EquipmentManager:toggleWeaponInHand(): boolean
 		-- Move weapon from hand to back
 		self:_attachWeaponToBack(weapon)
 		self.weaponInHand = false
+		-- Set attribute so other systems can check
+		self.character.Instance:SetAttribute("WeaponInHand", false)
 		-- Stop idle animations
 		if self.idleAnimation then
 			for _, track in ipairs(self.idleAnimation) do
@@ -175,6 +179,8 @@ function EquipmentManager:toggleWeaponInHand(): boolean
 		-- Move weapon from back to hand
 		self:_attachWeaponToHand(weapon)
 		self.weaponInHand = true
+		-- Set attribute so other systems can check
+		self.character.Instance:SetAttribute("WeaponInHand", true)
 		-- Start idle animations
 		if weapon.IdleAnimationIds then
 			self:_playIdleAnimation(weapon.IdleAnimationIds)
@@ -552,6 +558,7 @@ function EquipmentManager:unequip()
 
 	-- Clear equipped weapon attribute
 	self.character.Instance:SetAttribute("EquippedWeapon", nil)
+	self.character.Instance:SetAttribute("WeaponInHand", nil)
 
 	print(`[EquipmentManager] Weapon unequipped - Base moveset (Dodge) restored`)
 end

@@ -313,6 +313,12 @@ local function setupCharacter(player: Player, character: Model)
 	-- Note: Death cleanup is handled by DeathManager
 	-- We only need to destroy WCS character when humanoid dies
 	humanoid.Died:Once(function()
+		-- Clear combat tags on death:
+		-- 1. Clear this player's own combat tag
+		-- 2. Clear combat tags of anyone who was tagged BY this player (their enemy died)
+		combatTagManager:clearTag(player)
+		combatTagManager:clearTagsFromAttacker(player)
+
 		-- DeathManager handles equipment, posture, status effects cleanup
 		-- We just need to destroy the WCS character wrapper
 		task.defer(function()

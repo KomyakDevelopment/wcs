@@ -115,6 +115,37 @@ function CombatTagManager:getLastAttacker(player: Player): Player?
 	return state and state.lastAttacker
 end
 
+-- Clear combat tag for a player (called on death)
+function CombatTagManager:clearTag(player: Player)
+	if not self._taggedPlayers[player] then
+		return
+	end
+
+	self._taggedPlayers[player] = nil
+	print(`[CombatTagManager] {player.Name}'s combat tag cleared`)
+
+	-- Notify client
+	if self._updateRemote and player.Parent then
+		self._updateRemote:FireClient(player, false, 0)
+	end
+end
+
+-- Clear combat tags for all players who were tagged by a specific attacker
+-- Called when the attacker dies - their victims are no longer in combat with them
+function CombatTagManager:clearTagsFromAttacker(attacker: Player)
+	for player, state in pairs(self._taggedPlayers) do
+		if state.lastAttacker == attacker then
+			self._taggedPlayers[player] = nil
+			print(`[CombatTagManager] {player.Name}'s combat tag cleared (attacker {attacker.Name} died)`)
+
+			-- Notify client
+			if self._updateRemote and player.Parent then
+				self._updateRemote:FireClient(player, false, 0)
+			end
+		end
+	end
+end
+
 -- Called when a player leaves
 function CombatTagManager:_onPlayerRemoving(player: Player)
 	local state = self._taggedPlayers[player]

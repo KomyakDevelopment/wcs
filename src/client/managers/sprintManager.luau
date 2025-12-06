@@ -321,17 +321,20 @@ function SprintManager:_isBlocking(): boolean
 	return wcsCharacter:HasStatusEffects({ Blocking })
 end
 
--- Check if player has a weapon equipped (not fists)
-function SprintManager:_isWeaponEquipped(): boolean
+-- Check if player has a weapon in hand (selected and drawn, not just equipped)
+function SprintManager:_isWeaponInHand(): boolean
 	local player = Players.LocalPlayer
 	local character = player.Character
 	if not character then
 		return false
 	end
 
-	-- Check the EquippedWeapon attribute set by equipment system
+	-- Check both conditions: weapon must be equipped (not fists) AND in hand
 	local equippedWeapon = character:GetAttribute("EquippedWeapon")
-	if equippedWeapon and equippedWeapon ~= "fists" then
+	local weaponInHand = character:GetAttribute("WeaponInHand")
+
+	-- Must have a real weapon (not fists) and it must be in hand
+	if equippedWeapon and equippedWeapon ~= "fists" and weaponInHand == true then
 		return true
 	end
 
@@ -403,11 +406,11 @@ function SprintManager:_startSprint()
 		end
 	end
 
-	-- Play right arm animation if weapon is equipped
-	if self.loadedRightArmAnimation and self:_isWeaponEquipped() then
+	-- Play right arm animation if weapon is in hand (selected)
+	if self.loadedRightArmAnimation and self:_isWeaponInHand() then
 		self.currentRightArmTrack = self.loadedRightArmAnimation
 		self.currentRightArmTrack:Play(0.1)
-		print("[SprintManager] Playing sprint right arm animation (weapon equipped)")
+		print("[SprintManager] Playing sprint right arm animation (weapon in hand)")
 	end
 
 	-- Apply sprint speed (backward penalty handled in _monitorBackwardMovement)
@@ -628,19 +631,19 @@ function SprintManager:_monitorSprint()
 		end
 
 		-- Monitor weapon equip state for right arm animation
-		local hasWeapon = self:_isWeaponEquipped()
+		local hasWeapon = self:_isWeaponInHand()
 		local hasRightArmAnim = self.currentRightArmTrack ~= nil
 
 		if hasWeapon and not hasRightArmAnim and self.loadedRightArmAnimation then
-			-- Weapon was just equipped while sprinting - start right arm animation
+			-- Weapon was just drawn while sprinting - start right arm animation
 			self.currentRightArmTrack = self.loadedRightArmAnimation
 			self.currentRightArmTrack:Play(0.1)
-			print("[SprintManager] Started right arm animation (weapon equipped during sprint)")
+			print("[SprintManager] Started right arm animation (weapon drawn during sprint)")
 		elseif not hasWeapon and hasRightArmAnim then
-			-- Weapon was just unequipped while sprinting - stop right arm animation
+			-- Weapon was just sheathed while sprinting - stop right arm animation
 			self.currentRightArmTrack:Stop(0.1)
 			self.currentRightArmTrack = nil
-			print("[SprintManager] Stopped right arm animation (weapon unequipped during sprint)")
+			print("[SprintManager] Stopped right arm animation (weapon sheathed during sprint)")
 		end
 	end)
 end

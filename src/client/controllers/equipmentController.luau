@@ -14,6 +14,9 @@ EquipmentController.__index = EquipmentController
 local EquipRemote: RemoteEvent
 local ToggleWeaponInHandRemote: RemoteEvent
 
+-- Combat tag state (updated by remote event)
+local isInCombatTag = false
+
 -- Track which weapons are physical (have a model that needs to be in hand)
 local PHYSICAL_WEAPONS = {
 	kunai = true,
@@ -26,6 +29,14 @@ function EquipmentController.new()
 	-- Wait for remote events
 	EquipRemote = ReplicatedStorage:WaitForChild("EquipWeapon") :: RemoteEvent
 	ToggleWeaponInHandRemote = ReplicatedStorage:WaitForChild("ToggleWeaponInHand") :: RemoteEvent
+
+	-- Listen for combat tag updates
+	local combatTagRemote = ReplicatedStorage:WaitForChild("CombatTagUpdate", 5) :: RemoteEvent?
+	if combatTagRemote then
+		combatTagRemote.OnClientEvent:Connect(function(tagged: boolean, _timeRemaining: number)
+			isInCombatTag = tagged
+		end)
+	end
 
 	-- Track selected slot and equipped state
 	self.selectedSlot = nil :: number? -- Currently selected hotbar slot (waiting for confirm)
@@ -64,6 +75,13 @@ function EquipmentController:selectSlot(slotNumber: number)
 
 	if not slotWeapon then
 		print(`[EquipmentController] Slot {slotNumber} is empty`)
+		return
+	end
+
+	-- Block weapon switching during combat tag (can still toggle current weapon in/out of hand)
+	-- Allow equipping if no weapon is currently equipped
+	if isInCombatTag and self.equipped ~= nil and slotWeapon ~= self.equipped then
+		print("[EquipmentController] Cannot switch weapons during combat tag")
 		return
 	end
 
