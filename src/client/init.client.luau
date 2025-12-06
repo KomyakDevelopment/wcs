@@ -34,6 +34,7 @@ local ExecutionEffectsManager = require(ReplicatedStorage.Client.managers.execut
 local InteractionManager = require(ReplicatedStorage.Client.managers.interactionManager)
 local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
 local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
+local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
 
