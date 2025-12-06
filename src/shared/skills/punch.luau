@@ -22,6 +22,7 @@ local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -143,7 +144,7 @@ function Punch:OnStartServer()
 	end
 
 	-- Check if player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or already attacking
-	-- Attacking check prevents move stacking with heavy attacks
+	-- Attacking/HeavyAttacking check prevents move stacking with other attacks
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -153,7 +154,8 @@ function Punch:OnStartServer()
 			Dashing,
 			Blocking,
 			Parrying,
-			Attacking, -- Prevents stacking M1 with heavy attack
+			Attacking, -- Prevents stacking M1 with M1
+			HeavyAttacking, -- Prevents stacking M1 with heavy attack
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
@@ -286,7 +288,7 @@ end
 
 function Punch:OnStartClient()
 	-- Check if player has any hitstun status effects active, is guardbroken, dashing, blocking/parrying, knocked down, or attacking
-	-- Attacking check prevents move stacking with heavy attacks
+	-- Attacking/HeavyAttacking check prevents move stacking with other attacks
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -296,7 +298,8 @@ function Punch:OnStartClient()
 			Blocking,
 			Parrying,
 			Guardbroken,
-			Attacking,
+			Attacking, -- Prevents stacking M1 with M1
+			HeavyAttacking, -- Prevents stacking M1 with heavy attack
 			Knockdown, -- Can't attack while knocked down
 		})
 	then

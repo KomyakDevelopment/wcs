@@ -22,6 +22,7 @@ local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -161,7 +162,8 @@ function Slash:OnStartServer()
 			Dashing,
 			Blocking,
 			Parrying,
-			Attacking, -- Prevents stacking M1 with heavy attack
+			Attacking, -- Prevents stacking M1 with M1
+			HeavyAttacking, -- Prevents stacking M1 with heavy attack
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
@@ -309,7 +311,8 @@ function Slash:OnStartClient()
 			Blocking,
 			Parrying,
 			Guardbroken,
-			Attacking, -- Prevents stacking M1 with heavy attack
+			Attacking, -- Prevents stacking M1 with M1
+			HeavyAttacking, -- Prevents stacking M1 with heavy attack
 			Knockdown, -- Can't attack while knocked down
 		})
 	then
