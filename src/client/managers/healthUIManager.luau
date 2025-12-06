@@ -12,7 +12,6 @@ function HealthUIManager.new()
 
 	self.player = Players.LocalPlayer
 	self.healthBar = nil
-	self.healthPercentageLabel = nil
 	self.healthConnection = nil
 	self.characterConnection = nil
 
@@ -23,27 +22,27 @@ function HealthUIManager.new()
 end
 
 function HealthUIManager:_setup()
-	-- Find the health bar UI
+	-- Find the health bar UI at new path: Main.NGUI.ScreenGui.main_bars.health.bar
 	local playerGui = self.player:WaitForChild("PlayerGui")
 	local mainGui = playerGui:WaitForChild("Main", 5)
 	if mainGui then
-		-- Try both case variants (HealthGui and HealthGUI)
-		local healthGui = mainGui:FindFirstChild("HealthGui") or mainGui:FindFirstChild("HealthGUI")
-		if healthGui then
-			self.healthGuiName = healthGui.Name -- Store actual name for debugging
-			local health = healthGui:FindFirstChild("Health")
-			if health then
-				self.healthBar = health:FindFirstChild("Bar")
-				self.healthPercentageLabel = health:FindFirstChild("Percentage")
+		local ngui = mainGui:FindFirstChild("NGUI")
+		if ngui then
+			local screenGui = ngui:FindFirstChild("ScreenGui")
+			if screenGui then
+				local mainBars = screenGui:FindFirstChild("main_bars")
+				if mainBars then
+					local health = mainBars:FindFirstChild("health")
+					if health then
+						self.healthBar = health:FindFirstChild("bar")
+					end
+				end
 			end
 		end
 	end
 
 	if not self.healthBar then
-		warn("[HealthUIManager] Health bar not found - check Main.HealthGui.Health.Bar or Main.HealthGUI.Health.Bar")
-	end
-	if not self.healthPercentageLabel then
-		warn("[HealthUIManager] Health percentage label not found")
+		warn("[HealthUIManager] Health bar not found at Main.NGUI.ScreenGui.main_bars.health.bar")
 	end
 
 	-- Setup for current character
@@ -92,12 +91,6 @@ function HealthUIManager:_updateUI(humanoid: Humanoid)
 	-- Update the bar size (only X size, keep Y at {1, 0})
 	if self.healthBar then
 		self.healthBar.Size = UDim2.fromScale(percentage, 1)
-	end
-
-	-- Update percentage text (e.g., "58%")
-	if self.healthPercentageLabel then
-		local percentageText = math.floor(percentage * 100)
-		self.healthPercentageLabel.Text = `{percentageText}%`
 	end
 end
 

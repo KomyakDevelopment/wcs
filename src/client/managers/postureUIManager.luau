@@ -12,7 +12,6 @@ function PostureUIManager.new()
 
 	self.player = Players.LocalPlayer
 	self.postureBar = nil
-	self.posturePercentageLabel = nil
 	self.attributeConnection = nil
 	self.characterConnection = nil
 
@@ -23,25 +22,27 @@ function PostureUIManager.new()
 end
 
 function PostureUIManager:_setup()
-	-- Find the posture bar UI
+	-- Find the posture bar UI at new path: Main.NGUI.ScreenGui.main_bars.posture.bar
 	local playerGui = self.player:WaitForChild("PlayerGui")
 	local mainGui = playerGui:WaitForChild("Main", 5)
 	if mainGui then
-		local postureGUI = mainGui:FindFirstChild("PostureGUI")
-		if postureGUI then
-			local posture = postureGUI:FindFirstChild("Posture")
-			if posture then
-				self.postureBar = posture:FindFirstChild("Bar")
-				self.posturePercentageLabel = posture:FindFirstChild("Percentage")
+		local ngui = mainGui:FindFirstChild("NGUI")
+		if ngui then
+			local screenGui = ngui:FindFirstChild("ScreenGui")
+			if screenGui then
+				local mainBars = screenGui:FindFirstChild("main_bars")
+				if mainBars then
+					local posture = mainBars:FindFirstChild("posture")
+					if posture then
+						self.postureBar = posture:FindFirstChild("bar")
+					end
+				end
 			end
 		end
 	end
 
 	if not self.postureBar then
-		warn("[PostureUIManager] Posture bar not found at StarterGui.Main.PostureGUI.Posture.Bar")
-	end
-	if not self.posturePercentageLabel then
-		warn("[PostureUIManager] Posture percentage label not found at StarterGui.Main.PostureGUI.Posture.Percentage")
+		warn("[PostureUIManager] Posture bar not found at Main.NGUI.ScreenGui.main_bars.posture.bar")
 	end
 
 	-- Setup for current character
@@ -103,12 +104,6 @@ function PostureUIManager:_updateUI(character: Model)
 	-- Update the bar size (only X size, keep Y at {1, 0})
 	if self.postureBar then
 		self.postureBar.Size = UDim2.fromScale(percentage, 1)
-	end
-
-	-- Update percentage text (e.g., "58%")
-	if self.posturePercentageLabel then
-		local percentageText = math.floor(percentage * 100)
-		self.posturePercentageLabel.Text = `{percentageText}%`
 	end
 end
 

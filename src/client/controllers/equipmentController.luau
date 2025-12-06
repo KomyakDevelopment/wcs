@@ -47,10 +47,8 @@ function EquipmentController.new()
 		self.selectedSlot = nil
 		self.weaponInHand = false
 
-		-- Reset UI
-		for i = 1, HotbarUI.getSlotCount() do
-			self.hotbarUI:updateSlot(i, "none")
-		end
+		-- Reset UI - clear all slot selections
+		self.hotbarUI:clearSelection()
 
 		print("[EquipmentController] Reset equipment state on respawn")
 	end)

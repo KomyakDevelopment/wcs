@@ -42,29 +42,8 @@ InputConfig.Movement = {
 	},
 }
 
--- Ability Hotkeys (Skills 1-4)
-InputConfig.Abilities = {
-	Ability1 = {
-		InputType = Enum.UserInputType.Keyboard,
-		KeyCode = Enum.KeyCode.One,
-		Description = "Ability slot 1",
-	},
-	Ability2 = {
-		InputType = Enum.UserInputType.Keyboard,
-		KeyCode = Enum.KeyCode.Two,
-		Description = "Ability slot 2",
-	},
-	Ability3 = {
-		InputType = Enum.UserInputType.Keyboard,
-		KeyCode = Enum.KeyCode.Three,
-		Description = "Ability slot 3",
-	},
-	Ability4 = {
-		InputType = Enum.UserInputType.Keyboard,
-		KeyCode = Enum.KeyCode.Four,
-		Description = "Ability slot 4",
-	},
-}
+-- Ability Hotkeys (removed - hotbar handles 1-9, 0 internally)
+InputConfig.Abilities = {}
 
 -- Equipment Actions (reserved for future use)
 InputConfig.Equipment = {}

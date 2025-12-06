@@ -60,14 +60,7 @@ function MenuManager:_enableGameUI()
 		warn("[MenuManager] Main ScreenGui not found in PlayerGui after 10s wait")
 	end
 
-	-- Wait for HotbarUI ScreenGui
-	local hotbarGui = playerGui:WaitForChild("HotbarUI", 5) :: ScreenGui?
-	if hotbarGui and hotbarGui:IsA("ScreenGui") then
-		hotbarGui.Enabled = true
-		print("[MenuManager] Enabled HotbarUI ScreenGui")
-	else
-		warn("[MenuManager] HotbarUI ScreenGui not found after 5s wait")
-	end
+	-- Hotbar is now part of Main.NGUI.ScreenGui.hotbar_container, no separate ScreenGui needed
 end
 
 function MenuManager:_initialize()

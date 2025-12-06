@@ -136,6 +136,9 @@ function EquipmentManager:equip(weaponId: string): boolean
 
 	self.equipped = weaponId
 
+	-- Set attribute so other systems can check what weapon is equipped
+	self.character.Instance:SetAttribute("EquippedWeapon", weaponId)
+
 	print(`[EquipmentManager] {weapon.Name} equipped successfully (in hand: {self.weaponInHand})`)
 
 	return true
@@ -546,6 +549,9 @@ function EquipmentManager:unequip()
 	self.character:ApplyMoveset("Base")
 
 	self.equipped = nil
+
+	-- Clear equipped weapon attribute
+	self.character.Instance:SetAttribute("EquippedWeapon", nil)
 
 	print(`[EquipmentManager] Weapon unequipped - Base moveset (Dodge) restored`)
 end

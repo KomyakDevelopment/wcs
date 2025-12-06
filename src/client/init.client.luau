@@ -111,21 +111,8 @@ inputManager:bindAction("Combat.CriticalAttack", function(actionName, state, inp
 	end
 end)
 
--- Bind hotbar slots (1 = fists, 2 = kunai, 3 = ninjato)
-for i = 1, 3 do
-	inputManager:bindAction(`Abilities.Ability{i}`, function(actionName, state, input)
-		if state == Enum.UserInputState.Begin then
-			equipmentController:selectSlot(i)
-		end
-	end)
-end
-
--- Slot 4 for future abilities
-inputManager:bindAction(`Abilities.Ability4`, function(actionName, state, input)
-	if state == Enum.UserInputState.Begin then
-		combatController:useAbility(4)
-	end
-end)
+-- Hotbar keybinds (1-9, 0) are handled internally by HotbarUI
+-- No need to bind them here anymore
 
 -- Bind UI actions (placeholders for now)
 inputManager:bindAction("UI.ToggleInventory", function(actionName, state, input)
