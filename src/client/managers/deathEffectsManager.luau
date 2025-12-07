@@ -123,88 +123,10 @@ function DeathEffectsManager:_playDeathSequence(remainingLives: number, respawnD
 end
 
 function DeathEffectsManager:_enableRagdoll()
-	local character = self.player.Character
-	if not character then
-		return
-	end
-
-	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
-	if not humanoid then
-		return
-	end
-
-	-- CRITICAL: PlatformStand makes the humanoid stop trying to stand up
-	humanoid.PlatformStand = true
-
-	-- Disable auto-rotate so character doesn't face camera
-	humanoid.AutoRotate = false
-
-	-- Change humanoid state to ragdoll
-	humanoid:ChangeState(Enum.HumanoidStateType.Physics)
-
-	-- Disable GettingUp so they stay ragdolled
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-
-	-- Disable all motor6ds to allow physics ragdoll
-	for _, motor in ipairs(character:GetDescendants()) do
-		if motor:IsA("Motor6D") then
-			-- Create a BallSocketConstraint to replace the motor (basic ragdoll)
-			local part0 = motor.Part0
-			local part1 = motor.Part1
-
-			if part0 and part1 then
-				-- Disable the motor
-				motor.Enabled = false
-
-				-- Create attachment on part0
-				local attachment0 = Instance.new("Attachment")
-				attachment0.Name = "RagdollAttachment0"
-				attachment0.CFrame = motor.C0
-				attachment0.Parent = part0
-
-				-- Create attachment on part1
-				local attachment1 = Instance.new("Attachment")
-				attachment1.Name = "RagdollAttachment1"
-				attachment1.CFrame = motor.C1
-				attachment1.Parent = part1
-
-				-- Create ball socket constraint
-				local constraint = Instance.new("BallSocketConstraint")
-				constraint.Name = "RagdollConstraint"
-				constraint.Attachment0 = attachment0
-				constraint.Attachment1 = attachment1
-				constraint.LimitsEnabled = true
-				constraint.TwistLimitsEnabled = true
-				constraint.UpperAngle = 45
-				constraint.TwistLowerAngle = -45
-				constraint.TwistUpperAngle = 45
-				constraint.Parent = part0
-			end
-		end
-	end
-
-	-- Apply impulse to knock them over (trip them)
-	local upperTorso = character:FindFirstChild("UpperTorso") :: BasePart?
-	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-
-	-- Use UpperTorso for R15, fallback to HumanoidRootPart
-	local targetPart = upperTorso or rootPart
-	if targetPart then
-		-- Apply angular impulse to make them fall backwards/forwards
-		local tripDirection = Vector3.new(
-			math.random() - 0.5, -- Slight random X
-			0,
-			math.random() - 0.5  -- Slight random Z
-		).Unit
-
-		-- Angular impulse makes them spin/fall over
-		targetPart:ApplyAngularImpulse(tripDirection * 50)
-
-		-- Also apply a small regular impulse to push them
-		targetPart:ApplyImpulse(Vector3.new(0, -20, 0) + tripDirection * 30)
-	end
-
-	print("[DeathEffectsManager] Ragdoll enabled with trip impulse")
+	-- Ragdoll is now handled by the trigger system via ragdollSystem.server.luau
+	-- The server sets RagdollTrigger.Value = true which handles all ragdoll physics
+	-- This function is kept for any additional client-side death effects
+	print("[DeathEffectsManager] Death ragdoll effect triggered (handled by ragdoll system)")
 end
 
 function DeathEffectsManager:_playDeathSound()

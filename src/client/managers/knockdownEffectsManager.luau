@@ -1,10 +1,10 @@
 --!strict
 -- Knockdown Effects Manager (Client)
--- Handles client-side effects for knockdown system (camera, UI, etc.)
+-- Handles client-side effects for knockdown system (UI, sounds, etc.)
+-- NOTE: Camera and shiftlock are now handled by ragdollClient.client.luau via RagdollTrigger
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 
 local KnockdownEffectsManager = {}
 KnockdownEffectsManager.__index = KnockdownEffectsManager
@@ -15,7 +15,6 @@ function KnockdownEffectsManager.new()
 	self._player = Players.LocalPlayer
 	self._connections = {} :: { RBXScriptConnection }
 	self._isKnockedDown = false
-	self._originalCameraSubject = nil
 
 	self:_setup()
 
@@ -51,7 +50,7 @@ function KnockdownEffectsManager:_handleKnockdownEvent(character: Model, isKnock
 	end
 end
 
-function KnockdownEffectsManager:_onKnockdown(character: Model)
+function KnockdownEffectsManager:_onKnockdown(_character: Model)
 	if self._isKnockedDown then
 		return
 	end
@@ -59,20 +58,11 @@ function KnockdownEffectsManager:_onKnockdown(character: Model)
 
 	print("[KnockdownEffectsManager] Local player knocked down")
 
-	-- Store original camera subject
-	local camera = workspace.CurrentCamera
-	if camera then
-		self._originalCameraSubject = camera.CameraSubject
-	end
-
-	-- Switch camera to follow head for better ragdoll view
-	local head = character:FindFirstChild("Head") :: BasePart?
-	if head and camera then
-		camera.CameraSubject = head
-	end
+	-- Camera and shiftlock are now handled by ragdollClient.client.luau
+	-- Add any knockdown-specific UI effects here (screen effects, sounds, etc.)
 end
 
-function KnockdownEffectsManager:_onRecovery(character: Model)
+function KnockdownEffectsManager:_onRecovery(_character: Model)
 	if not self._isKnockedDown then
 		return
 	end
@@ -80,15 +70,8 @@ function KnockdownEffectsManager:_onRecovery(character: Model)
 
 	print("[KnockdownEffectsManager] Local player recovering")
 
-	-- Restore camera subject
-	local camera = workspace.CurrentCamera
-	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
-
-	if camera and humanoid then
-		camera.CameraSubject = humanoid
-	end
-
-	self._originalCameraSubject = nil
+	-- Camera is now restored by ragdollClient.client.luau
+	-- Add any recovery-specific UI effects here
 end
 
 function KnockdownEffectsManager:isKnockedDown(): boolean

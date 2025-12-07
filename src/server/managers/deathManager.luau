@@ -262,18 +262,15 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 		end
 	end
 
-	-- Set ragdoll properties on SERVER
+	-- Set knockdown-specific properties
 	humanoid.PlatformStand = true
-	humanoid.AutoRotate = false
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
-	humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 
 	-- Lock movement
 	humanoid.WalkSpeed = 0
 	humanoid.JumpPower = 0
 	humanoid.JumpHeight = 0
 
-	-- Enable ragdoll physics using EasyRagdoll
+	-- Enable ragdoll via trigger system (handles AutoRotate, Physics state, etc.)
 	EasyRagdoll.SetRagdoll(character, true, true, 100)
 
 	-- Fire knockdown event to all clients (for any client-side effects)
@@ -398,9 +395,6 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 
 	print(`[DeathManager] {player.Name} recovering from knockdown`)
 
-	-- Get the HumanoidRootPart for positioning
-	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-
 	-- Clear all velocities BEFORE disabling ragdoll to prevent flinging
 	for _, part in ipairs(character:GetDescendants()) do
 		if part:IsA("BasePart") then
@@ -409,31 +403,11 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 		end
 	end
 
-	-- Disable ragdoll FIRST using EasyRagdoll
+	-- Disable ragdoll via trigger system (handles velocities, upright position, AutoRotate, Running state)
 	EasyRagdoll.SetRagdoll(character, false)
 
-	-- Reset HumanoidRootPart to upright position (keep XZ position, reset rotation)
-	if rootPart then
-		local currentPos = rootPart.Position
-		-- Set upright CFrame - keep position, remove all rotation
-		rootPart.CFrame = CFrame.new(currentPos) * CFrame.new(0, 0.5, 0) -- Slight lift to prevent clipping
-	end
-
-	-- Clear velocities AGAIN after repositioning
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.AssemblyLinearVelocity = Vector3.zero
-			part.AssemblyAngularVelocity = Vector3.zero
-		end
-	end
-
-	-- Restore humanoid properties
+	-- Restore knockdown-specific properties
 	humanoid.PlatformStand = false
-	humanoid.AutoRotate = true
-	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
-
-	-- Force to running state
-	humanoid:ChangeState(Enum.HumanoidStateType.Running)
 
 	-- Restore movement
 	humanoid.WalkSpeed = 16 -- Default walk speed
@@ -494,148 +468,6 @@ function DeathManager:_autoExecuteKnocked(player: Player, _character: Model, hum
 			print(`[DeathManager] {player.Name} respawned after lethal damage while knocked`)
 		end
 	end)
-end
-
--- Enable ragdoll physics by disabling Motor6Ds and creating constraints
-function DeathManager:_enableRagdoll(character: Model)
-	-- Joint-specific constraint settings to prevent crazy limb rotation
-	local jointSettings = {
-		-- Neck - very limited movement
-		Neck = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-		-- Shoulders - moderate movement
-		RightShoulder = { upperAngle = 20, twistLower = -20, twistUpper = 20 },
-		LeftShoulder = { upperAngle = 20, twistLower = -20, twistUpper = 20 },
-		-- Elbows - hinge-like, limited twist
-		RightElbow = { upperAngle = 10, twistLower = -5, twistUpper = 60 },
-		LeftElbow = { upperAngle = 10, twistLower = -5, twistUpper = 60 },
-		-- Wrists - limited
-		RightWrist = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-		LeftWrist = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-		-- Waist/Root - moderate
-		Waist = { upperAngle = 15, twistLower = -15, twistUpper = 15 },
-		Root = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-		-- Hips - moderate movement
-		RightHip = { upperAngle = 20, twistLower = -20, twistUpper = 20 },
-		LeftHip = { upperAngle = 20, twistLower = -20, twistUpper = 20 },
-		-- Knees - hinge-like
-		RightKnee = { upperAngle = 10, twistLower = -5, twistUpper = 60 },
-		LeftKnee = { upperAngle = 10, twistLower = -5, twistUpper = 60 },
-		-- Ankles - limited
-		RightAnkle = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-		LeftAnkle = { upperAngle = 10, twistLower = -10, twistUpper = 10 },
-	}
-
-	-- Default settings for any joint not in the list
-	local defaultSettings = { upperAngle = 15, twistLower = -15, twistUpper = 15 }
-
-	-- Ensure all body parts have collision enabled and proper collision group
-	-- Remove from "Players" collision group temporarily so limbs collide with ground
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CanCollide = true
-			-- Reset to Default collision group so limbs collide with terrain
-			part.CollisionGroup = "Default"
-		end
-	end
-
-	-- Disable all Motor6Ds and create ball socket constraints
-	for _, motor in ipairs(character:GetDescendants()) do
-		if motor:IsA("Motor6D") then
-			local part0 = motor.Part0
-			local part1 = motor.Part1
-
-			if part0 and part1 then
-				-- Disable the motor (don't destroy - need to restore later)
-				motor.Enabled = false
-
-				-- Create attachment on part0
-				local attachment0 = Instance.new("Attachment")
-				attachment0.Name = "RagdollAttachment0"
-				attachment0.CFrame = motor.C0
-				attachment0.Parent = part0
-
-				-- Create attachment on part1
-				local attachment1 = Instance.new("Attachment")
-				attachment1.Name = "RagdollAttachment1"
-				attachment1.CFrame = motor.C1
-				attachment1.Parent = part1
-
-				-- Get joint-specific settings
-				local settings = jointSettings[motor.Name] or defaultSettings
-
-				-- Create ball socket constraint with tighter limits and HIGH FRICTION to prevent spasms
-				local constraint = Instance.new("BallSocketConstraint")
-				constraint.Name = "RagdollConstraint"
-				constraint.Attachment0 = attachment0
-				constraint.Attachment1 = attachment1
-				constraint.LimitsEnabled = true
-				constraint.TwistLimitsEnabled = true
-				constraint.UpperAngle = settings.upperAngle
-				constraint.TwistLowerAngle = settings.twistLower
-				constraint.TwistUpperAngle = settings.twistUpper
-				-- HIGH friction torque to dampen joint movement and prevent spasms
-				constraint.MaxFrictionTorque = 500
-				constraint.Parent = part0
-			end
-		end
-	end
-
-	-- Apply trip to knock them over (strong enough for stationary players)
-	local rootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-
-	if rootPart then
-		-- Random fall direction (horizontal)
-		local fallDirection = Vector3.new(
-			math.random() - 0.5,
-			0,
-			math.random() - 0.5
-		).Unit
-
-		-- Calculate rotation axis (perpendicular to fall direction, horizontal)
-		local rotationAxis = Vector3.new(0, 1, 0):Cross(fallDirection).Unit
-
-		-- DIRECTLY TILT the root CFrame to put them off-balance BEFORE physics kicks in
-		-- This physically rotates the entire body ~45 degrees in the fall direction
-		local currentCFrame = rootPart.CFrame
-		local tiltAngle = math.rad(50) -- 50 degree tilt
-		local tiltRotation = CFrame.fromAxisAngle(rotationAxis, tiltAngle)
-		rootPart.CFrame = CFrame.new(currentCFrame.Position) * tiltRotation * currentCFrame.Rotation
-
-		-- Wait for physics to initialize
-		task.wait()
-
-		-- Now add some velocity to help them fall the rest of the way
-		rootPart.AssemblyAngularVelocity = rotationAxis * 5
-		rootPart.AssemblyLinearVelocity = fallDirection * 10 + Vector3.new(0, -5, 0)
-	end
-
-	print("[DeathManager] Ragdoll enabled with trip")
-end
-
--- Disable ragdoll and restore Motor6Ds
-function DeathManager:_disableRagdoll(character: Model)
-	-- Remove all ragdoll constraints and attachments
-	for _, obj in ipairs(character:GetDescendants()) do
-		if obj.Name == "RagdollConstraint" or obj.Name == "RagdollAttachment0" or obj.Name == "RagdollAttachment1" then
-			obj:Destroy()
-		end
-	end
-
-	-- Re-enable all Motor6Ds
-	for _, motor in ipairs(character:GetDescendants()) do
-		if motor:IsA("Motor6D") then
-			motor.Enabled = true
-		end
-	end
-
-	-- Restore collision group to "Players" so player-player collision is disabled again
-	for _, part in ipairs(character:GetDescendants()) do
-		if part:IsA("BasePart") then
-			part.CollisionGroup = "Players"
-		end
-	end
-
-	print("[DeathManager] Ragdoll disabled")
 end
 
 -- Check if a player is currently knocked down
@@ -749,14 +581,13 @@ function DeathManager:prepareForExecution(player: Player)
 	local character = player.Character
 	if character then
 		character:SetAttribute("KnockdownImmunity", nil)
+		-- Disable ragdoll via trigger system (handles AutoRotate, Running state, etc.)
 		EasyRagdoll.SetRagdoll(character, false)
 
 		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
 		if humanoid then
-			-- Restore humanoid properties
+			-- Restore knockdown-specific property
 			humanoid.PlatformStand = false
-			humanoid.AutoRotate = true
-			humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true)
 		end
 	end
 
