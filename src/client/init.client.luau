@@ -32,6 +32,8 @@ local DeathEffectsManager = require(ReplicatedStorage.Client.managers.deathEffec
 local KnockdownEffectsManager = require(ReplicatedStorage.Client.managers.knockdownEffectsManager)
 local ExecutionEffectsManager = require(ReplicatedStorage.Client.managers.executionEffectsManager)
 local InteractionManager = require(ReplicatedStorage.Client.managers.interactionManager)
+local CarryManager = require(ReplicatedStorage.Client.managers.carryManager)
+local GripEffectsManager = require(ReplicatedStorage.Client.managers.gripEffectsManager)
 local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
 local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
 local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
@@ -61,6 +63,8 @@ local deathEffectsManager = DeathEffectsManager.new()
 local knockdownEffectsManager = KnockdownEffectsManager.new()
 local executionEffectsManager = ExecutionEffectsManager.new() -- Event-driven, listens for PlayerExecuted
 local interactionManager = InteractionManager.new()
+local carryManager = CarryManager.new()
+local gripEffectsManager = GripEffectsManager.new() -- Event-driven, listens for GripStart/GripCancel
 local critVFXManager = CritVFXManager.new() -- Event-driven, listens for PlayCritVFX
 local combatTagUIManager = CombatTagUIManager.new() -- Event-driven, listens for CombatTagUpdate
 local combatController = CombatController.new()
@@ -143,7 +147,7 @@ end)
 
 inputManager:bindAction("Interaction.Carry", function(actionName, state, input)
 	if state == Enum.UserInputState.Begin then
-		interactionManager:performCarry()
+		carryManager:performCarry()
 	end
 end)
 

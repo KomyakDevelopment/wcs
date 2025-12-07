@@ -9,6 +9,7 @@ local DeathManager = require(script.managers.deathManager)
 local CollisionManager = require(script.managers.collisionManager)
 local CombatTagManager = require(script.managers.combatTagManager)
 local HealthRegenManager = require(script.managers.healthRegenManager)
+local CarryManager = require(script.managers.carryManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
@@ -92,6 +93,18 @@ local critVFXRemote = Instance.new("RemoteEvent")
 critVFXRemote.Name = "PlayCritVFX"
 critVFXRemote.Parent = ReplicatedStorage
 
+local gripStartRemote = Instance.new("RemoteEvent")
+gripStartRemote.Name = "GripStart"
+gripStartRemote.Parent = ReplicatedStorage
+
+local gripCancelRemote = Instance.new("RemoteEvent")
+gripCancelRemote.Name = "GripCancel"
+gripCancelRemote.Parent = ReplicatedStorage
+
+local gripCancelBroadcastRemote = Instance.new("RemoteEvent")
+gripCancelBroadcastRemote.Name = "GripCancelBroadcast"
+gripCancelBroadcastRemote.Parent = ReplicatedStorage
+
 -- Expose AirdashCameraStore to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 
@@ -120,6 +133,7 @@ local deathManager = DeathManager.new()
 local _collisionManager = CollisionManager.new()
 local combatTagManager = CombatTagManager.new()
 local _healthRegenManager = HealthRegenManager.new()
+local _carryManager = CarryManager.new()
 
 -- Expose DeathManager for grip skill to use for executions
 _G.DeathManager = deathManager

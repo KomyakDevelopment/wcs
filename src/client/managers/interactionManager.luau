@@ -249,11 +249,6 @@ end
 
 -- Perform grip action (called when B is pressed)
 function InteractionManager:performGrip()
-	if not self._nearbyKnockedPlayer then
-		print("[InteractionManager] No grip target nearby")
-		return
-	end
-
 	-- Get WCS character and grip skill
 	local character = self._player.Character
 	if not character then
@@ -272,6 +267,19 @@ function InteractionManager:performGrip()
 		return
 	end
 
+	-- Check if grip is active - if so, cancel it
+	if gripSkill:IsGripActive() then
+		print("[InteractionManager] Cancelling active grip")
+		gripSkill:CancelGrip()
+		return
+	end
+
+	-- Need a target to start grip
+	if not self._nearbyKnockedPlayer then
+		print("[InteractionManager] No grip target nearby")
+		return
+	end
+
 	-- Check if skill is on cooldown
 	local state = gripSkill:GetState()
 	if state.Debounce then
@@ -284,16 +292,7 @@ function InteractionManager:performGrip()
 	print(`[InteractionManager] Started grip on {self._nearbyKnockedPlayer.Name}`)
 end
 
--- Perform carry action (called when V is pressed) - placeholder for future implementation
-function InteractionManager:performCarry()
-	if not self._nearbyKnockedPlayer then
-		print("[InteractionManager] No carry target nearby")
-		return
-	end
-
-	print(`[InteractionManager] Carry not implemented yet - target: {self._nearbyKnockedPlayer.Name}`)
-	-- TODO: Implement carry functionality
-end
+-- Note: Carry is now handled by CarryManager directly, not through this manager
 
 function InteractionManager:destroy()
 	-- Cancel any ongoing tween

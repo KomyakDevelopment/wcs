@@ -475,6 +475,48 @@ function DeathManager:isKnockedDown(player: Player): boolean
 	return self._knockedPlayers[player] == true
 end
 
+-- Pause knockdown timer (for carry - player is being carried so shouldn't recover)
+function DeathManager:pauseKnockdown(player: Player)
+	if not self._knockedPlayers[player] then return end
+
+	-- Cancel the knockdown timer
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+		self._knockdownTimers[player] = nil
+		print(`[DeathManager] {player.Name} knockdown timer paused (being carried)`)
+	end
+end
+
+-- Resume knockdown timer (for carry drop - restart the timer)
+function DeathManager:resumeKnockdown(player: Player)
+	if not self._knockedPlayers[player] then return end
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then return end
+
+	-- Re-apply knockdown movement restrictions
+	humanoid.PlatformStand = true
+	humanoid.WalkSpeed = 0
+	humanoid.JumpPower = 0
+	humanoid.JumpHeight = 0
+
+	-- Re-enable ragdoll
+	EasyRagdoll.SetRagdoll(character, true, true, 100)
+
+	-- Start fresh knockdown timer
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+	end
+	self._knockdownTimers[player] = task.delay(KNOCKDOWN_DURATION, function()
+		self:_handleRecovery(player, character, humanoid)
+	end)
+
+	print(`[DeathManager] {player.Name} knockdown timer resumed ({KNOCKDOWN_DURATION}s) with movement restrictions restored`)
+end
+
 -- Check if a player is marked for execution (grip in progress)
 function DeathManager:isMarkedForExecution(player: Player): boolean
 	return self._executingPlayers[player] == true
@@ -539,6 +581,98 @@ function DeathManager:markForExecution(player: Player)
 		end
 		print(`[DeathManager] {player.Name} collision group set to Players (no player collision)`)
 	end
+end
+
+-- Cancel an execution in progress (grip was cancelled before completion)
+-- Restores the player to knockdown state with a fresh timer
+function DeathManager:cancelExecution(player: Player)
+	print(`[DeathManager] Cancelling execution for {player.Name}`)
+
+	-- Clear execution state
+	self._executingPlayers[player] = nil
+
+	-- Disconnect execution health clamp
+	if self._executionHealthConnections[player] then
+		self._executionHealthConnections[player]:Disconnect()
+		self._executionHealthConnections[player] = nil
+	end
+
+	local character = player.Character
+	if not character then return end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then return end
+
+	-- Clear the MarkedForExecution attribute
+	character:SetAttribute("MarkedForExecution", nil)
+
+	-- Always restore to knockdown state (don't check PlatformStand - ragdoll might have been disabled during grip)
+	-- Mark as knocked
+	self._knockedPlayers[player] = true
+
+	-- Restore HP to minimum
+	humanoid.Health = MIN_KNOCKDOWN_HP
+
+	-- Re-apply knockdown movement restrictions
+	humanoid.PlatformStand = true
+	humanoid.WalkSpeed = 0
+	humanoid.JumpPower = 0
+	humanoid.JumpHeight = 0
+
+	-- Re-enable ragdoll
+	EasyRagdoll.SetRagdoll(character, true, true, 100)
+
+	-- Re-apply knockdown health protection
+	if self._knockdownHealthConnections[player] then
+		self._knockdownHealthConnections[player]:Disconnect()
+	end
+	local previousHP = MIN_KNOCKDOWN_HP
+	self._knockdownHealthConnections[player] = humanoid.HealthChanged:Connect(function(newHealth)
+		if not self._knockedPlayers[player] then return end
+		if newHealth >= previousHP then
+			previousHP = newHealth
+			return
+		end
+		local damageTaken = previousHP - newHealth
+		local wasM1Damage = character:GetAttribute("LastDamageWasM1") == true
+		character:SetAttribute("LastDamageWasM1", nil)
+		if damageTaken >= previousHP and not wasM1Damage then
+			self:_autoExecuteKnocked(player, character, humanoid)
+			return
+		end
+		if newHealth < MIN_KNOCKDOWN_HP then
+			humanoid.Health = MIN_KNOCKDOWN_HP
+			previousHP = MIN_KNOCKDOWN_HP
+			if self._knockdownTimers[player] then
+				task.cancel(self._knockdownTimers[player])
+			end
+			self._knockdownTimers[player] = task.delay(KNOCKDOWN_DURATION, function()
+				self:_handleRecovery(player, character, humanoid)
+			end)
+		else
+			previousHP = newHealth
+		end
+	end)
+
+	-- Start fresh knockdown timer
+	if self._knockdownTimers[player] then
+		task.cancel(self._knockdownTimers[player])
+	end
+	self._knockdownTimers[player] = task.delay(KNOCKDOWN_DURATION, function()
+		self:_handleRecovery(player, character, humanoid)
+	end)
+
+	-- Re-apply knockdown status effect if needed
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if wcsCharacter and not self._knockdownStatusEffects[player] then
+		local knockdownEffect = Knockdown.new(wcsCharacter)
+		if knockdownEffect then
+			knockdownEffect:Start(-1)
+			self._knockdownStatusEffects[player] = knockdownEffect
+		end
+	end
+
+	print(`[DeathManager] {player.Name} returned to knockdown state with fresh {KNOCKDOWN_DURATION}s timer`)
 end
 
 -- Prepare a player for execution (clear all knockdown protection so they can die)
