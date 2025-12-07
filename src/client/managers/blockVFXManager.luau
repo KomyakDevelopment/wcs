@@ -1,7 +1,7 @@
 --!strict
 -- Block VFX Manager
 -- Handles visual and sound effects for blocking, parrying, and block hits
--- Uses animation detection for perfectly synced parry flash timing
+-- Uses client-side animation detection for frame-perfect parry flash timing
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -53,14 +53,20 @@ function BlockVFXManager.new()
 	self.lastParryFlashTime = {} -- [character] = lastTime
 	self.lastAnimTrack = {} -- [character] = lastAnimTrack (prevents same animation triggering twice)
 
+	-- Debounce tracking for parry/block VFX (prevents duplicates from prediction + server)
+	self.lastParryVFXTime = {} -- [character] = lastTime
+	self.lastBlockHitVFXTime = {} -- [character] = lastTime
+	self.lastParriedAnimTime = {} -- [character] = lastTime
+
 	-- Animation watcher connections for each player
 	self.animationWatchers = {} -- [player] = {connections}
 
-	-- Setup remote event listeners
+	-- Setup remote event listeners (for parry/block success VFX)
 	self:_setupRemotes()
 
-	-- NOTE: Animation watchers disabled - server remote provides more consistent timing
-	-- The server fires the remote immediately when attack starts, before animation replicates
+	-- NOTE: Animation watchers disabled - now using server remote with local animation playback
+	-- This provides frame-perfect sync by playing the animation directly on defender's client
+	-- self:_setupAnimationWatchers()
 
 	print("[BlockVFXManager] Initialized")
 	return self
@@ -68,10 +74,11 @@ end
 
 -- Setup remote event listeners
 function BlockVFXManager:_setupRemotes()
-	-- Parry flash via server remote - fires immediately when attack starts
+	-- Parry flash remote - plays attack animation locally for frame-perfect sync
 	local parryFlashRemote = ReplicatedStorage:WaitForChild("PlayParryFlashVFX") :: RemoteEvent
-	parryFlashRemote.OnClientEvent:Connect(function(targetCharacter, attackPhase)
-		self:playParryFlashVFX(targetCharacter, attackPhase)
+	parryFlashRemote.OnClientEvent:Connect(function(attackerCharacter, attackPhase, animationId)
+		-- Play the attack animation locally on the attacker's character for frame-perfect timing
+		self:_playLocalAttackAnimation(attackerCharacter, attackPhase, animationId)
 	end)
 
 	local parryVFXRemote = ReplicatedStorage:WaitForChild("PlayParryVFX") :: RemoteEvent
@@ -90,6 +97,62 @@ function BlockVFXManager:_setupRemotes()
 	end)
 
 	print("[BlockVFXManager] Remote events setup complete")
+end
+
+-- Play attack animation locally on attacker's character for frame-perfect sync
+-- This bypasses Roblox's animation replication delay by playing the animation directly
+function BlockVFXManager:_playLocalAttackAnimation(attackerCharacter: Model, attackPhase: number, animationId: string?)
+	if not attackerCharacter then
+		return
+	end
+
+	-- Don't play on local player (they already have their own animation)
+	local localPlayer = Players.LocalPlayer
+	if localPlayer and localPlayer.Character == attackerCharacter then
+		return
+	end
+
+	-- Validate animation ID
+	if not animationId or typeof(animationId) ~= "string" then
+		-- Fallback to just showing parry flash without local animation
+		self:playParryFlashVFX(attackerCharacter, attackPhase)
+		return
+	end
+
+	-- Get the humanoid and animator
+	local humanoid = attackerCharacter:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator") :: Animator?
+	if not animator then
+		return
+	end
+
+	-- Create and load the animation
+	local animation = Instance.new("Animation")
+	animation.AnimationId = animationId
+	local animTrack = animator:LoadAnimation(animation)
+
+	-- Configure the animation for attack
+	animTrack.Priority = Enum.AnimationPriority.Action4
+	animTrack.Looped = false
+
+	-- Play the animation immediately (frame-perfect on defender's screen)
+	animTrack:Play(0.05)
+	print(`[BlockVFXManager] Playing local attack animation on {attackerCharacter.Name}, phase {attackPhase}, anim {animationId}`)
+
+	-- Show parry flash VFX immediately (synced with local animation)
+	self:playParryFlashVFX(attackerCharacter, attackPhase)
+
+	-- Cleanup animation instance after it finishes
+	local animLength = animTrack.Length or 0.5
+	task.delay(animLength + 0.5, function()
+		if animation and animation.Parent then
+			animation:Destroy()
+		end
+	end)
 end
 
 -- Setup animation watchers to detect attack animations on other players
@@ -143,8 +206,9 @@ function BlockVFXManager:_setupAnimationWatchers()
 					end
 				end)
 
-				-- Trigger parry flash INSTANTLY when animation detected (no delay)
-				-- This gives maximum reaction time for the defender
+				-- Show parry flash immediately when attack animation detected
+				-- This gives frame-perfect timing for the visual cue
+				-- Server handles actual parry/block success VFX
 				print(`[BlockVFXManager] Detected attack animation on {player.Name}, phase {attackPhase}`)
 				self:playParryFlashVFX(character, attackPhase)
 			end
@@ -337,6 +401,16 @@ function BlockVFXManager:playParryVFX(character: Model)
 		return
 	end
 
+	-- Debounce to prevent duplicates from prediction + server confirmation
+	local currentTime = tick()
+	local lastTime = self.lastParryVFXTime[character]
+	local PARRY_VFX_DEBOUNCE = 0.3
+	if lastTime and (currentTime - lastTime) < PARRY_VFX_DEBOUNCE then
+		print(`[BlockVFXManager] Parry VFX debounced for {character.Name}`)
+		return
+	end
+	self.lastParryVFXTime[character] = currentTime
+
 	print(`[BlockVFXManager] Playing parry VFX for {character.Name}`)
 
 	-- Parry effect on torso (the main parry VFX when successfully parrying)
@@ -359,6 +433,16 @@ function BlockVFXManager:playParriedAnimation(character: Model)
 	if not character then
 		return
 	end
+
+	-- Debounce to prevent duplicates from prediction + server confirmation
+	local currentTime = tick()
+	local lastTime = self.lastParriedAnimTime[character]
+	local PARRIED_ANIM_DEBOUNCE = 0.3
+	if lastTime and (currentTime - lastTime) < PARRIED_ANIM_DEBOUNCE then
+		print(`[BlockVFXManager] Parried animation debounced for {character.Name}`)
+		return
+	end
+	self.lastParriedAnimTime[character] = currentTime
 
 	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
 	if not humanoid then
@@ -444,6 +528,16 @@ function BlockVFXManager:playBlockHitVFX(character: Model)
 	if not character then
 		return
 	end
+
+	-- Debounce to prevent duplicates from prediction + server confirmation
+	local currentTime = tick()
+	local lastTime = self.lastBlockHitVFXTime[character]
+	local BLOCK_HIT_VFX_DEBOUNCE = 0.2
+	if lastTime and (currentTime - lastTime) < BLOCK_HIT_VFX_DEBOUNCE then
+		print(`[BlockVFXManager] Block hit VFX debounced for {character.Name}`)
+		return
+	end
+	self.lastBlockHitVFXTime[character] = currentTime
 
 	print(`[BlockVFXManager] Playing block hit VFX for {character.Name}`)
 

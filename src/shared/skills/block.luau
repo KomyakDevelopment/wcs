@@ -1,7 +1,14 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+
+-- Client-side combat state for prediction (only require on client)
+local LocalCombatState = nil
+if RunService:IsClient() then
+	LocalCombatState = require(ReplicatedStorage.Shared.state.localCombatState)
+end
 
 -- Pre-cache status effects and skills at module load (avoid require() in hot paths)
 local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
@@ -224,6 +231,11 @@ function Block:OnStartClient()
 
 	self.blockActive = true
 
+	-- Update LocalCombatState for client-side prediction
+	if LocalCombatState then
+		LocalCombatState.startBlock(self.parryOnCooldown)
+	end
+
 	-- Store when the parry window starts (after startup delay) - only if not on cooldown
 	if not self.parryOnCooldown then
 		task.delay(BLOCK_STARTUP_TIME, function()
@@ -289,6 +301,11 @@ function Block:OnEndClient()
 	print("[Block] Client: Block released")
 
 	self.blockActive = false
+
+	-- Update LocalCombatState for client-side prediction
+	if LocalCombatState then
+		LocalCombatState.endBlock()
+	end
 
 	-- Set cooldown timer
 	self.lastBlockEndTime = tick()

@@ -185,11 +185,13 @@ function Punch:OnStartServer()
 	end
 
 	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
+	-- Also sends animation ID so clients can play it locally for frame-perfect sync
 	-- NOTE: This is sent AFTER Attacking status is applied so clients can validate
 	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
 	if parryFlashRemote then
-		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase)
-		print(`[Punch] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}`)
+		local animId = COMBO_ANIMATIONS[self.currentAttackPhase]
+		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase, animId)
+		print(`[Punch] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}, anim {animId}`)
 	end
 
 	-- Perform hitbox detection with delay based on animation timing
