@@ -1,10 +1,29 @@
 --!strict
 -- Block VFX Manager
 -- Handles visual and sound effects for blocking, parrying, and block hits
+-- Uses animation detection for perfectly synced parry flash timing
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
+
+-- Attack animation IDs to watch for (triggers parry flash when these play on other players)
+-- Maps animation ID -> attack phase (1-4) for correct hand/foot placement
+local ATTACK_ANIMATION_IDS = {
+	-- Slash animations (server-side IDs)
+	["rbxassetid://91619051516074"] = 1,  -- Slash phase 1 (left arm)
+	["rbxassetid://131141876861809"] = 2, -- Slash phase 2 (right arm)
+	["rbxassetid://122892720764576"] = 3, -- Slash phase 3 (left arm)
+	["rbxassetid://128565870055276"] = 4, -- Slash phase 4 / Flourish (right foot)
+	-- Slash animations (client-side IDs - may differ from server)
+	["rbxassetid://96737060211137"] = 1,  -- Slash phase 1 (left arm)
+	["rbxassetid://122493653126120"] = 2, -- Slash phase 2 (right arm)
+	["rbxassetid://125186682440764"] = 3, -- Slash phase 3 (left arm)
+	-- Punch animations
+	["rbxassetid://71814602910988"] = 1,  -- Punch phase 1 (left arm)
+	["rbxassetid://83691540313756"] = 2,  -- Punch phase 2 (right arm)
+	["rbxassetid://118980540226262"] = 3, -- Punch phase 3 (left arm)
+}
 
 local BlockVFXManager = {}
 BlockVFXManager.__index = BlockVFXManager
@@ -32,9 +51,16 @@ function BlockVFXManager.new()
 
 	-- Debounce tracking for parry flash (prevents duplicate emissions per attack)
 	self.lastParryFlashTime = {} -- [character] = lastTime
+	self.lastAnimTrack = {} -- [character] = lastAnimTrack (prevents same animation triggering twice)
+
+	-- Animation watcher connections for each player
+	self.animationWatchers = {} -- [player] = {connections}
 
 	-- Setup remote event listeners
 	self:_setupRemotes()
+
+	-- NOTE: Animation watchers disabled - server remote provides more consistent timing
+	-- The server fires the remote immediately when attack starts, before animation replicates
 
 	print("[BlockVFXManager] Initialized")
 	return self
@@ -42,7 +68,7 @@ end
 
 -- Setup remote event listeners
 function BlockVFXManager:_setupRemotes()
-	-- Wait for remotes created by server
+	-- Parry flash via server remote - fires immediately when attack starts
 	local parryFlashRemote = ReplicatedStorage:WaitForChild("PlayParryFlashVFX") :: RemoteEvent
 	parryFlashRemote.OnClientEvent:Connect(function(targetCharacter, attackPhase)
 		self:playParryFlashVFX(targetCharacter, attackPhase)
@@ -64,6 +90,129 @@ function BlockVFXManager:_setupRemotes()
 	end)
 
 	print("[BlockVFXManager] Remote events setup complete")
+end
+
+-- Setup animation watchers to detect attack animations on other players
+-- This provides perfectly synced parry flash timing by detecting animations locally
+function BlockVFXManager:_setupAnimationWatchers()
+	local localPlayer = Players.LocalPlayer
+
+	-- Watch a specific character for attack animations
+	local function watchCharacter(player: Player, character: Model)
+		if player == localPlayer then
+			return -- Don't watch local player
+		end
+
+		-- Clean up any existing connections for this player
+		self:_cleanupPlayerWatchers(player)
+
+		local connections = {}
+
+		-- Wait for humanoid and animator
+		local humanoid = character:WaitForChild("Humanoid", 5) :: Humanoid?
+		if not humanoid then
+			return
+		end
+
+		local animator = humanoid:WaitForChild("Animator", 5) :: Animator?
+		if not animator then
+			return
+		end
+
+		-- Listen for animations playing
+		local animPlayedConn = animator.AnimationPlayed:Connect(function(animTrack: AnimationTrack)
+			local animId = animTrack.Animation and animTrack.Animation.AnimationId
+			if not animId then
+				return
+			end
+
+			-- Check if this is an attack animation
+			local attackPhase = ATTACK_ANIMATION_IDS[animId]
+			if attackPhase then
+				-- Prevent same animation track from triggering multiple times
+				if self.lastAnimTrack[character] == animTrack then
+					print(`[BlockVFXManager] Same animation track, skipping duplicate for {player.Name}`)
+					return
+				end
+				self.lastAnimTrack[character] = animTrack
+
+				-- Clear the reference when animation stops
+				animTrack.Stopped:Once(function()
+					if self.lastAnimTrack[character] == animTrack then
+						self.lastAnimTrack[character] = nil
+					end
+				end)
+
+				-- Trigger parry flash INSTANTLY when animation detected (no delay)
+				-- This gives maximum reaction time for the defender
+				print(`[BlockVFXManager] Detected attack animation on {player.Name}, phase {attackPhase}`)
+				self:playParryFlashVFX(character, attackPhase)
+			end
+		end)
+		table.insert(connections, animPlayedConn)
+
+		-- Store connections
+		self.animationWatchers[player] = connections
+		print(`[BlockVFXManager] Watching animations for {player.Name}`)
+	end
+
+	-- Setup watcher for a player
+	local function setupPlayerWatcher(player: Player)
+		if player == localPlayer then
+			return
+		end
+
+		-- Watch current character
+		if player.Character then
+			watchCharacter(player, player.Character)
+		end
+
+		-- Watch for respawns
+		local charAddedConn = player.CharacterAdded:Connect(function(character)
+			watchCharacter(player, character)
+		end)
+
+		-- Store the CharacterAdded connection
+		if not self.animationWatchers[player] then
+			self.animationWatchers[player] = {}
+		end
+		table.insert(self.animationWatchers[player], charAddedConn)
+	end
+
+	-- Setup watchers for existing players
+	for _, player in ipairs(Players:GetPlayers()) do
+		setupPlayerWatcher(player)
+	end
+
+	-- Setup watchers for new players
+	Players.PlayerAdded:Connect(function(player)
+		setupPlayerWatcher(player)
+	end)
+
+	-- Cleanup when players leave
+	Players.PlayerRemoving:Connect(function(player)
+		self:_cleanupPlayerWatchers(player)
+	end)
+
+	print("[BlockVFXManager] Animation watchers setup complete")
+end
+
+-- Cleanup animation watcher connections for a player
+function BlockVFXManager:_cleanupPlayerWatchers(player: Player)
+	local connections = self.animationWatchers[player]
+	if connections then
+		for _, conn in ipairs(connections) do
+			if conn and conn.Connected then
+				conn:Disconnect()
+			end
+		end
+		self.animationWatchers[player] = nil
+	end
+
+	-- Also clean up animation track tracking for this player's character
+	if player.Character then
+		self.lastAnimTrack[player.Character] = nil
+	end
 end
 
 -- Play parry flash VFX (timing indicator shown at start of every M1 attack)

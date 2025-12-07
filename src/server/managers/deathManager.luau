@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- WCS for status effects
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local EasyRagdoll = require(ReplicatedStorage.Shared.managers.easyRagdoll)
 
 -- Configuration
 local KNOCKDOWN_DURATION = 6.0 -- Seconds before getting back up
@@ -272,8 +273,8 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 	humanoid.JumpPower = 0
 	humanoid.JumpHeight = 0
 
-	-- Enable ragdoll physics
-	self:_enableRagdoll(character)
+	-- Enable ragdoll physics using EasyRagdoll
+	EasyRagdoll.SetRagdoll(character, true, true, 100)
 
 	-- Fire knockdown event to all clients (for any client-side effects)
 	knockdownRemote:FireAllClients(character, true)
@@ -408,8 +409,8 @@ function DeathManager:_handleRecovery(player: Player, character: Model, humanoid
 		end
 	end
 
-	-- Disable ragdoll FIRST
-	self:_disableRagdoll(character)
+	-- Disable ragdoll FIRST using EasyRagdoll
+	EasyRagdoll.SetRagdoll(character, false)
 
 	-- Reset HumanoidRootPart to upright position (keep XZ position, reset rotation)
 	if rootPart then
@@ -748,7 +749,7 @@ function DeathManager:prepareForExecution(player: Player)
 	local character = player.Character
 	if character then
 		character:SetAttribute("KnockdownImmunity", nil)
-		self:_disableRagdoll(character)
+		EasyRagdoll.SetRagdoll(character, false)
 
 		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
 		if humanoid then

@@ -94,7 +94,7 @@ CombatConfig.Hitbox = {
 CombatConfig.StatusDurations = {
 	-- Parry/Block
 	Autoparry = 0.4, -- Protection window after successful parry
-	BlockStunned = 0.1, -- Brief stun when blocking a hit
+	BlockStunned = 0.2, -- Brief stun when blocking a hit
 	Shakyblock = 0, -- Failed parry punishment
 
 	-- Hitstun
@@ -102,8 +102,8 @@ CombatConfig.StatusDurations = {
 	HeavyParriedHitstun = 0.9, -- Slightly longer for heavy attacks
 
 	-- Other
-	RollcancelStun = 0.15, -- Stun when hitting iframes
-	Guardbroken = 1.5, -- Default guardbreak duration
+	RollcancelStun = 0, -- Stun when hitting iframes
+	Guardbroken = 1.2, -- Default guardbreak duration
 }
 
 --============================================================================--
