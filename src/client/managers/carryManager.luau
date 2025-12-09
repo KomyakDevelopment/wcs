@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
+local ContextActionService = game:GetService("ContextActionService")
 
 local CarryManager = {}
 CarryManager.__index = CarryManager
@@ -35,6 +36,8 @@ function CarryManager.new()
 	-- Stored state for when being carried
 	self._wasShiftLockEnabled = false
 	self._wasMouseLockEnabled = false
+	self._originalRotationType = nil :: Enum.RotationType?
+	self._shiftLockConnection = nil :: RBXScriptConnection?
 
 	self:_setup()
 
@@ -100,16 +103,39 @@ function CarryManager:_onBeingCarried()
 	-- Store current mouse lock state
 	self._wasMouseLockEnabled = UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
 
-	-- Disable shift lock / mouse lock
+	-- Store and disable shiftlock via UserGameSettings
+	pcall(function()
+		local UserGameSettings = UserSettings():GetService("UserGameSettings")
+		self._originalRotationType = UserGameSettings.RotationType
+		-- MovementRelative = no shiftlock (character faces movement direction)
+		-- CameraRelative = shiftlock ON (character faces camera)
+		UserGameSettings.RotationType = Enum.RotationType.MovementRelative
+	end)
+
+	-- Force mouse behavior to default (unlocked)
 	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 
-	-- Try to disable shift lock via StarterGui
+	-- Block shift key from re-enabling shiftlock
+	ContextActionService:BindAction("BlockShiftLock", function()
+		return Enum.ContextActionResult.Sink -- Consume the input, do nothing
+	end, false, Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift)
+
+	-- Also continuously enforce mouse behavior in case something tries to re-enable it
+	if self._shiftLockConnection then
+		self._shiftLockConnection:Disconnect()
+	end
+	self._shiftLockConnection = game:GetService("RunService").RenderStepped:Connect(function()
+		if self._isBeingCarried and UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		end
+	end)
+
+	-- Disable reset button
 	pcall(function()
 		StarterGui:SetCore("ResetButtonCallback", false)
 	end)
 
-	-- Disable mouse icon to prevent camera manipulation attempts
-	-- Note: The server already set network ownership, so our inputs won't affect position
+	print("[CarryManager] Shiftlock and controls fully disabled")
 end
 
 -- Called when this player is being dropped
@@ -117,13 +143,30 @@ function CarryManager:_onBeingDropped()
 	print("[CarryManager] I have been dropped - re-enabling controls")
 	self._isBeingCarried = false
 
-	-- Restore mouse behavior (let the player re-enable shift lock if they want)
-	-- Don't force any particular state
+	-- Stop enforcing mouse behavior
+	if self._shiftLockConnection then
+		self._shiftLockConnection:Disconnect()
+		self._shiftLockConnection = nil
+	end
+
+	-- Unbind the shift key block
+	ContextActionService:UnbindAction("BlockShiftLock")
+
+	-- Restore original rotation type (shiftlock setting)
+	pcall(function()
+		local UserGameSettings = UserSettings():GetService("UserGameSettings")
+		if self._originalRotationType then
+			UserGameSettings.RotationType = self._originalRotationType
+			self._originalRotationType = nil
+		end
+	end)
 
 	-- Re-enable reset button
 	pcall(function()
 		StarterGui:SetCore("ResetButtonCallback", true)
 	end)
+
+	print("[CarryManager] Controls fully restored")
 end
 
 function CarryManager:_handleRemoteCarry(carrier: Model, target: Model, isPickingUp: boolean)
@@ -339,6 +382,17 @@ function CarryManager:destroy()
 	if self._isBeingCarried then
 		self:_onBeingDropped()
 	end
+
+	-- Clean up shiftlock connection
+	if self._shiftLockConnection then
+		self._shiftLockConnection:Disconnect()
+		self._shiftLockConnection = nil
+	end
+
+	-- Unbind shift key block if still bound
+	pcall(function()
+		ContextActionService:UnbindAction("BlockShiftLock")
+	end)
 
 	for _, connection in ipairs(self._connections) do
 		connection:Disconnect()

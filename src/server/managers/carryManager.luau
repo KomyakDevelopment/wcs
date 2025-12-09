@@ -1,7 +1,7 @@
 --!strict
 -- Carry Manager (Server)
--- Handles server-side carry mechanics using position updates (NOT welds)
--- Welds cause physics issues - position updates are more reliable
+-- Handles server-side carry mechanics using WeldConstraint
+-- Victim's HRP is welded to carrier's HRP at the same position for animations
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -12,10 +12,10 @@ CarryManager.__index = CarryManager
 
 -- Configuration
 local CARRY_RANGE = 10 -- Slightly larger than client for lag tolerance
-local CARRY_SPEED_MULTIPLIER = 0.7
 
 -- Carry offset (relative to carrier's HumanoidRootPart)
-local CARRY_OFFSET = CFrame.new(0, 0.5, 1.2) * CFrame.Angles(math.rad(-15), math.rad(180), 0)
+-- HumanoidRootParts must be at the same position for the carry animation to work
+local CARRY_OFFSET = CFrame.new(0, 0, 0)
 
 function CarryManager.new()
 	local self = setmetatable({}, CarryManager)
@@ -23,14 +23,14 @@ function CarryManager.new()
 	self._carryRemote = nil :: RemoteEvent?
 	self._carryStateRemote = nil :: RemoteEvent? -- For notifying carried player's client
 	self._carriedPlayers = {} :: { [Model]: Model } -- target -> carrier
-	self._originalWalkSpeeds = {} :: { [Player]: number }
+	self._carryWelds = {} :: { [Model]: WeldConstraint } -- target -> weld
 	self._originalCollisionGroups = {} :: { [Model]: { [BasePart]: string } }
 	self._connections = {} :: { RBXScriptConnection }
 	self._heartbeatConnection = nil :: RBXScriptConnection?
 
 	self:_setup()
 
-	print("[CarryManager Server] Initialized (Position-based)")
+	print("[CarryManager Server] Initialized (Weld-based)")
 	return self
 end
 
@@ -71,23 +71,11 @@ function CarryManager:_setup()
 	end)
 end
 
--- Update all carried players' positions every frame
+-- Check validity of all carried players (weld handles positioning)
 function CarryManager:_updateCarriedPositions()
 	for target, carrier in pairs(self._carriedPlayers) do
-		local carrierRoot = carrier:FindFirstChild("HumanoidRootPart") :: BasePart?
-		local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
-
-		if carrierRoot and targetRoot and target.Parent and carrier.Parent then
-			-- Position target relative to carrier
-			targetRoot.CFrame = carrierRoot.CFrame * CARRY_OFFSET
-
-			-- Clear velocities to prevent physics interference
-			targetRoot.AssemblyLinearVelocity = Vector3.zero
-			targetRoot.AssemblyAngularVelocity = Vector3.zero
-
-			-- Combat tags are now paused via CombatTagManager, no need for periodic refresh
-		else
-			-- Carrier or target no longer valid, clean up
+		-- Check if carrier or target is no longer valid
+		if not target.Parent or not carrier.Parent then
 			self:_forceDropTarget(target)
 		end
 	end
@@ -173,12 +161,6 @@ function CarryManager:_handlePickUp(player: Player, target: Model)
 		end
 	end
 
-	-- Store original walk speed
-	self._originalWalkSpeeds[player] = carrierHumanoid.WalkSpeed
-
-	-- Slow down carrier
-	carrierHumanoid.WalkSpeed = self._originalWalkSpeeds[player] * CARRY_SPEED_MULTIPLIER
-
 	-- Mark target as being carried
 	target:SetAttribute("BeingCarried", true)
 	target:SetAttribute("CarriedBy", character.Name)
@@ -204,24 +186,45 @@ function CarryManager:_handlePickUp(player: Player, target: Model)
 	targetHumanoid.JumpHeight = 0
 	targetHumanoid.AutoRotate = false
 
-	-- Set network ownership of target to server for reliable positioning
+	-- Set network ownership of target to CARRIER for smooth movement from carrier's POV
 	for _, part in target:GetDescendants() do
 		if part:IsA("BasePart") then
-			part:SetNetworkOwner(nil) -- Server owns it
+			pcall(function()
+				part:SetNetworkOwner(player) -- Carrier owns it
+			end)
 		end
 	end
 
-	-- Position target initially
+	-- Position target at carrier first
 	targetRoot.CFrame = carrierRoot.CFrame * CARRY_OFFSET
 
-	-- Set collision groups to prevent collision between carrier and target
+	-- Create WeldConstraint to lock victim to carrier
+	-- Part0 = carrier (controls movement), Part1 = victim (follows)
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = carrierRoot
+	weld.Part1 = targetRoot
+	weld.Parent = targetRoot
+	self._carryWelds[target] = weld
+
+	-- Disable collision and make massless to prevent physics interference with carrier
 	self._originalCollisionGroups[target] = {}
 	for _, part in target:GetDescendants() do
 		if part:IsA("BasePart") then
-			self._originalCollisionGroups[target][part] = part.CollisionGroup
+			-- Store original values
+			self._originalCollisionGroups[target][part] = {
+				CollisionGroup = part.CollisionGroup,
+				CanCollide = part.CanCollide,
+				Massless = part.Massless,
+			}
+			-- Disable collision and mass completely
+			part.CanCollide = false
+			part.Massless = true
 			part.CollisionGroup = "Players"
 		end
 	end
+	-- Also on HumanoidRootPart specifically
+	targetRoot.CanCollide = false
+	targetRoot.Massless = true
 
 	-- Pause knockdown timer via DeathManager
 	local targetPlayer = Players:GetPlayerFromCharacter(target)
@@ -265,21 +268,17 @@ function CarryManager:_dropTarget(target: Model, carrier: Model)
 	local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
 	local targetHumanoid = target:FindFirstChild("Humanoid") :: Humanoid?
 
-	local carrierPlayer = Players:GetPlayerFromCharacter(carrier)
 	local targetPlayer = Players:GetPlayerFromCharacter(target)
-
-	-- Restore carrier walk speed
-	if carrierPlayer then
-		local carrierHumanoid = carrier:FindFirstChild("Humanoid") :: Humanoid?
-		if carrierHumanoid and self._originalWalkSpeeds[carrierPlayer] then
-			carrierHumanoid.WalkSpeed = self._originalWalkSpeeds[carrierPlayer]
-		end
-		self._originalWalkSpeeds[carrierPlayer] = nil
-	end
 
 	-- Clear carried attributes
 	target:SetAttribute("BeingCarried", nil)
 	target:SetAttribute("CarriedBy", nil)
+
+	-- Destroy the weld constraint
+	if self._carryWelds[target] then
+		self._carryWelds[target]:Destroy()
+		self._carryWelds[target] = nil
+	end
 
 	-- Position target in front of carrier
 	if carrierRoot and targetRoot then
@@ -315,11 +314,13 @@ function CarryManager:_dropTarget(target: Model, carrier: Model)
 		ragdollTrigger.Value = true
 	end
 
-	-- Restore collision groups
+	-- Restore collision and physics settings
 	if self._originalCollisionGroups[target] then
-		for part, group in pairs(self._originalCollisionGroups[target]) do
+		for part, data in pairs(self._originalCollisionGroups[target]) do
 			if part and part.Parent then
-				part.CollisionGroup = group
+				part.CollisionGroup = data.CollisionGroup
+				part.CanCollide = data.CanCollide
+				part.Massless = data.Massless
 			end
 		end
 		self._originalCollisionGroups[target] = nil
@@ -358,11 +359,19 @@ function CarryManager:_forceDropTarget(target: Model)
 	target:SetAttribute("BeingCarried", nil)
 	target:SetAttribute("CarriedBy", nil)
 
-	-- Restore collision groups
+	-- Destroy the weld constraint
+	if self._carryWelds[target] then
+		self._carryWelds[target]:Destroy()
+		self._carryWelds[target] = nil
+	end
+
+	-- Restore collision and physics settings
 	if self._originalCollisionGroups[target] then
-		for part, group in pairs(self._originalCollisionGroups[target]) do
+		for part, data in pairs(self._originalCollisionGroups[target]) do
 			if part and part.Parent then
-				part.CollisionGroup = group
+				part.CollisionGroup = data.CollisionGroup
+				part.CanCollide = data.CanCollide
+				part.Massless = data.Massless
 			end
 		end
 		self._originalCollisionGroups[target] = nil
@@ -406,22 +415,12 @@ function CarryManager:_handlePlayerLeave(player: Player)
 
 	-- If this player was being carried, clean up
 	if character:GetAttribute("BeingCarried") then
-		for target, carrier in pairs(self._carriedPlayers) do
+		for target, _ in pairs(self._carriedPlayers) do
 			if target == character then
-				local carrierPlayer = Players:GetPlayerFromCharacter(carrier)
-				if carrierPlayer then
-					local carrierHumanoid = carrier:FindFirstChild("Humanoid") :: Humanoid?
-					if carrierHumanoid and self._originalWalkSpeeds[carrierPlayer] then
-						carrierHumanoid.WalkSpeed = self._originalWalkSpeeds[carrierPlayer]
-					end
-					self._originalWalkSpeeds[carrierPlayer] = nil
-				end
 				self._carriedPlayers[target] = nil
 			end
 		end
 	end
-
-	self._originalWalkSpeeds[player] = nil
 end
 
 function CarryManager:destroy()
@@ -431,7 +430,6 @@ function CarryManager:destroy()
 	end
 
 	self._carriedPlayers = {}
-	self._originalWalkSpeeds = {}
 	self._originalCollisionGroups = {}
 
 	if self._heartbeatConnection then

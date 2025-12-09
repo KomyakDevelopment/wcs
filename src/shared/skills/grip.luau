@@ -44,13 +44,33 @@ function Grip:OnConstructServer()
 	self.isGripping = false
 	self.damageConnection = nil :: RBXScriptConnection?
 	self.gripThread = nil :: thread?
+	self.gripStartTime = 0 -- Track when grip started to prevent accidental cancel
+	self.lastGripAttempt = 0 -- Debounce for rapid grip attempts
 end
 
+-- Minimum time before grip can be cancelled (prevents double-input issues)
+local MIN_GRIP_TIME_BEFORE_CANCEL = 0.5
+local GRIP_DEBOUNCE = 0.3 -- Minimum time between grip attempts
+
 function Grip:OnStartServer()
+	local now = os.clock()
+
+	-- CRITICAL: Debounce to prevent double-processing from input buffering or WCS issues
+	if now - self.lastGripAttempt < GRIP_DEBOUNCE then
+		print(`[Grip] Server: Debounced - too soon since last attempt ({now - self.lastGripAttempt}s)`)
+		return
+	end
+	self.lastGripAttempt = now
+
 	print("[Grip] Server: OnStartServer called")
 
-	-- If already gripping, this is a cancel request
+	-- If already gripping, this is a cancel request - but only if grip has been active for a bit
 	if self.isGripping then
+		local timeSinceStart = now - self.gripStartTime
+		if timeSinceStart < MIN_GRIP_TIME_BEFORE_CANCEL then
+			print(`[Grip] Server: Cancel ignored - grip just started ({timeSinceStart}s ago)`)
+			return
+		end
 		print("[Grip] Server: Cancel requested (already gripping)")
 		self:_serverCancelGrip()
 		return
@@ -79,6 +99,7 @@ end
 function Grip:_serverStartGrip(target: Model)
 	self.targetCharacter = target
 	self.isGripping = true
+	self.gripStartTime = os.clock() -- Track start time to prevent accidental quick-cancel
 
 	print(`[Grip] Server: Starting grip on {target.Name}`)
 
@@ -112,12 +133,25 @@ function Grip:_serverStartGrip(target: Model)
 		if targetPlayer then _G.CombatTagManager:tagPlayer(targetPlayer, attackerPlayer) end
 	end
 
-	-- Setup damage listener
+	-- Setup damage listener with delay to avoid false positives during initialization
 	if attackerHumanoid then
 		if self.damageConnection then self.damageConnection:Disconnect() end
+
+		-- Use a flag to delay damage checking - prevents false triggers from health changes during setup
+		local damageCheckActive = false
+		task.delay(0.15, function()
+			if self.isGripping then
+				-- Capture health baseline AFTER the delay for accuracy
+				self.originalHealth = attackerHumanoid.Health
+				damageCheckActive = true
+				print(`[Grip] Server: Damage detection now active, baseline HP: {self.originalHealth}`)
+			end
+		end)
+
 		self.damageConnection = attackerHumanoid.HealthChanged:Connect(function(newHealth)
+			if not damageCheckActive then return end -- Skip until delay passes
 			if self.isGripping and newHealth < (self.originalHealth or 100) then
-				print("[Grip] Server: Attacker took damage, cancelling")
+				print(`[Grip] Server: Attacker took damage ({self.originalHealth} -> {newHealth}), cancelling`)
 				self:_serverCancelGrip()
 			end
 			self.originalHealth = newHealth
@@ -133,8 +167,8 @@ function Grip:_serverStartGrip(target: Model)
 	end
 	gripStartRemote:FireAllClients(self.Character.Instance, target)
 
-	-- Apply cooldown
-	self:ApplyCooldown(GRIP_COOLDOWN)
+	-- Note: Cooldown is applied when grip ends (cancel or execute), not here
+	-- This ensures no cooldown if grip fails during setup
 
 	-- Schedule execution
 	self.gripThread = task.delay(GRIP_DURATION, function()
@@ -145,10 +179,17 @@ function Grip:_serverStartGrip(target: Model)
 end
 
 function Grip:_serverCancelGrip()
-	if not self.isGripping then return end
+	if not self.isGripping then
+		print("[Grip] Server: _serverCancelGrip called but isGripping is false, ignoring")
+		return
+	end
 
-	print("[Grip] Server: Cancelling grip")
+	local timeSinceStart = os.clock() - self.gripStartTime
+	print(`[Grip] Server: Cancelling grip (was active for {timeSinceStart}s)`)
 	self.isGripping = false
+
+	-- Apply cooldown now that grip actually started and is ending
+	self:ApplyCooldown(GRIP_COOLDOWN)
 
 	-- Cancel scheduled execution
 	if self.gripThread then
@@ -211,6 +252,9 @@ function Grip:_serverExecuteTarget(target: Model)
 	self.isGripping = false
 	self.gripThread = nil
 
+	-- Apply cooldown now that grip completed
+	self:ApplyCooldown(GRIP_COOLDOWN)
+
 	-- Disconnect damage listener
 	if self.damageConnection then
 		self.damageConnection:Disconnect()
@@ -230,30 +274,47 @@ function Grip:_serverExecuteTarget(target: Model)
 		executeRemote:FireAllClients(target, self.Character.Instance)
 	end
 
-	-- Actually kill the target via DeathManager
-	local targetPlayer = Players:GetPlayerFromCharacter(target)
-	if targetPlayer and _G.DeathManager then
-		-- Prepare removes all knockdown protection so HP can go to 0
-		_G.DeathManager:prepareForExecution(targetPlayer)
-	end
+	-- DON'T call prepareForExecution here - it sets PlatformStand=false and disables ragdoll
+	-- which causes the character to briefly stand up. We want to keep them incapacitated.
+	-- prepareForExecution will be called when the player clicks continue (via ConfirmExecution remote)
 
-	-- Kill the target
+	-- Keep the target incapacitated
 	local targetHumanoid = target:FindFirstChild("Humanoid") :: Humanoid?
 	if targetHumanoid then
-		targetHumanoid.BreakJointsOnDeath = true
-		targetHumanoid.Health = 0
-		print(`[Grip] Server: Killed {target.Name}`)
-	end
+		-- Keep them fully incapacitated - they stay down until they click continue
+		targetHumanoid.WalkSpeed = 0
+		targetHumanoid.JumpPower = 0
+		targetHumanoid.PlatformStand = true
 
-	-- Respawn after delay
-	if targetPlayer then
-		task.delay(2.0, function()
-			if targetPlayer and targetPlayer.Parent then
-				targetPlayer:LoadCharacter()
-				print(`[Grip] Server: Respawned {targetPlayer.Name}`)
+		-- Enable ragdoll to keep them down
+		local ragdollTrigger = target:FindFirstChild("RagdollTrigger") :: BoolValue?
+		if ragdollTrigger then
+			ragdollTrigger.Value = true
+		end
+
+		-- DON'T set health to 0 - this triggers death state which causes standing up
+		-- Instead just keep them incapacitated. The client will fire ConfirmExecution
+		-- when they click continue, which will handle the actual respawn.
+		print(`[Grip] Server: Incapacitated {target.Name} - waiting for continue button`)
+
+		-- Mark them as executed so they can't be interacted with
+		target:SetAttribute("Executed", true)
+
+		-- Keep them frozen indefinitely until respawn (client controls when via ConfirmExecution remote)
+		task.spawn(function()
+			while target and target.Parent and target:GetAttribute("Executed") do
+				if targetHumanoid and targetHumanoid.Parent then
+					targetHumanoid.WalkSpeed = 0
+					targetHumanoid.JumpPower = 0
+					targetHumanoid.PlatformStand = true
+				end
+				task.wait(0.1)
 			end
 		end)
 	end
+
+	-- DON'T auto-respawn - the client's ExecutionEffectsManager will fire ConfirmExecution
+	-- when the player clicks continue, and the server handler will respawn them
 
 	self.targetCharacter = nil
 
@@ -300,8 +361,18 @@ function Grip:_findNearestKnockedTarget(): Model?
 end
 
 function Grip:OnEndServer()
+	print(`[Grip] Server: OnEndServer called, isGripping={self.isGripping}`)
+
 	-- Clean up if skill ends unexpectedly
+	-- BUT only if we've been gripping for a bit (prevents WCS immediate end issues)
 	if self.isGripping then
+		local timeSinceStart = os.clock() - self.gripStartTime
+		if timeSinceStart < 0.1 then
+			-- Grip JUST started, WCS is ending it prematurely - this is a bug we need to handle
+			print(`[Grip] Server: OnEndServer called too soon ({timeSinceStart}s), ignoring WCS end`)
+			-- Don't cancel, let the grip continue - the skill ending doesn't mean we should cancel
+			return
+		end
 		self:_serverCancelGrip()
 	end
 end
@@ -313,6 +384,14 @@ end
 function Grip:OnConstructClient()
 	self.isGripActive = false
 	self.targetCharacter = nil
+
+	-- IMPORTANT: Clean up any existing connections before creating new ones
+	-- This prevents duplicate listeners if the skill is reconstructed
+	if self._connections then
+		for _, conn in ipairs(self._connections) do
+			conn:Disconnect()
+		end
+	end
 	self._connections = {} :: { RBXScriptConnection }
 
 	-- Listen for grip events
