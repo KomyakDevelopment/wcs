@@ -88,9 +88,10 @@ function HealthUIManager:_updateUI(humanoid: Humanoid)
 	-- Calculate percentage (0 to 1)
 	local percentage = currentHealth / maxHealth
 
-	-- Update the bar size (only X size, keep Y at {1, 0})
+	-- Update the bar size (only X scale, preserve Y)
 	if self.healthBar then
-		self.healthBar.Size = UDim2.fromScale(percentage, 1)
+		local currentSize = self.healthBar.Size
+		self.healthBar.Size = UDim2.new(percentage, 0, currentSize.Y.Scale, currentSize.Y.Offset)
 	end
 end
 

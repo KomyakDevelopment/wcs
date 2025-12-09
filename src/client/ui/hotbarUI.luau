@@ -11,7 +11,7 @@ local TweenService = game:GetService("TweenService")
 local SELECTION_TWEEN_INFO = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local COLOR_TWEEN_INFO = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local SELECTION_SCALE_INCREASE = 1.15 -- 15% larger when selected (Y axis)
-local SELECTED_STROKE_COLOR = Color3.fromRGB(108, 101, 0)
+local SELECTED_STROKE_COLOR = Color3.fromRGB(61, 61, 61)
 local DEFAULT_STROKE_COLOR = Color3.fromRGB(0, 0, 0)
 
 local HotbarUI = {}

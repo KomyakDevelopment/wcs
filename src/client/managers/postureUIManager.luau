@@ -101,9 +101,10 @@ function PostureUIManager:_updateUI(character: Model)
 	-- Calculate percentage (0 to 1)
 	local percentage = posture / maxPosture
 
-	-- Update the bar size (only X size, keep Y at {1, 0})
+	-- Update the bar size (only X scale, preserve Y)
 	if self.postureBar then
-		self.postureBar.Size = UDim2.fromScale(percentage, 1)
+		local currentSize = self.postureBar.Size
+		self.postureBar.Size = UDim2.new(percentage, 0, currentSize.Y.Scale, currentSize.Y.Offset)
 	end
 end
 
