@@ -13,7 +13,6 @@ CarryManager.__index = CarryManager
 -- Configuration
 local CARRY_RANGE = 10 -- Slightly larger than client for lag tolerance
 local CARRY_SPEED_MULTIPLIER = 0.7
-local COMBAT_TAG_REFRESH_INTERVAL = 5 -- Refresh combat tag every 5 seconds during carry
 
 -- Carry offset (relative to carrier's HumanoidRootPart)
 local CARRY_OFFSET = CFrame.new(0, 0.5, 1.2) * CFrame.Angles(math.rad(-15), math.rad(180), 0)
@@ -28,7 +27,6 @@ function CarryManager.new()
 	self._originalCollisionGroups = {} :: { [Model]: { [BasePart]: string } }
 	self._connections = {} :: { RBXScriptConnection }
 	self._heartbeatConnection = nil :: RBXScriptConnection?
-	self._combatTagTimers = {} :: { [Model]: number } -- target -> last tag time
 
 	self:_setup()
 
@@ -75,8 +73,6 @@ end
 
 -- Update all carried players' positions every frame
 function CarryManager:_updateCarriedPositions()
-	local now = tick()
-
 	for target, carrier in pairs(self._carriedPlayers) do
 		local carrierRoot = carrier:FindFirstChild("HumanoidRootPart") :: BasePart?
 		local targetRoot = target:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -89,12 +85,7 @@ function CarryManager:_updateCarriedPositions()
 			targetRoot.AssemblyLinearVelocity = Vector3.zero
 			targetRoot.AssemblyAngularVelocity = Vector3.zero
 
-			-- Refresh combat tag periodically
-			local lastTagTime = self._combatTagTimers[target] or 0
-			if now - lastTagTime >= COMBAT_TAG_REFRESH_INTERVAL then
-				self._combatTagTimers[target] = now
-				self:_refreshCombatTags(carrier, target)
-			end
+			-- Combat tags are now paused via CombatTagManager, no need for periodic refresh
 		else
 			-- Carrier or target no longer valid, clean up
 			self:_forceDropTarget(target)
@@ -102,18 +93,36 @@ function CarryManager:_updateCarriedPositions()
 	end
 end
 
--- Refresh combat tags for both carrier and target
-function CarryManager:_refreshCombatTags(carrier: Model, target: Model)
+-- Pause combat tags for both carrier and target (tags stay at max while carrying)
+function CarryManager:_pauseCombatTags(carrier: Model, target: Model)
+	if not _G.CombatTagManager then return end
+
+	local carrierPlayer = Players:GetPlayerFromCharacter(carrier)
+	local targetPlayer = Players:GetPlayerFromCharacter(target)
+
+	-- Tag both players first, then pause
+	if carrierPlayer then
+		_G.CombatTagManager:tagPlayer(carrierPlayer, nil)
+		_G.CombatTagManager:pauseTag(carrierPlayer)
+	end
+	if targetPlayer then
+		_G.CombatTagManager:tagPlayer(targetPlayer, carrierPlayer)
+		_G.CombatTagManager:pauseTag(targetPlayer)
+	end
+end
+
+-- Resume combat tags countdown when dropping
+function CarryManager:_resumeCombatTags(carrier: Model, target: Model)
 	if not _G.CombatTagManager then return end
 
 	local carrierPlayer = Players:GetPlayerFromCharacter(carrier)
 	local targetPlayer = Players:GetPlayerFromCharacter(target)
 
 	if carrierPlayer then
-		_G.CombatTagManager:tagPlayer(carrierPlayer, nil)
+		_G.CombatTagManager:resumeTag(carrierPlayer)
 	end
 	if targetPlayer then
-		_G.CombatTagManager:tagPlayer(targetPlayer, carrierPlayer)
+		_G.CombatTagManager:resumeTag(targetPlayer)
 	end
 end
 
@@ -220,9 +229,8 @@ function CarryManager:_handlePickUp(player: Player, target: Model)
 		_G.DeathManager:pauseKnockdown(targetPlayer)
 	end
 
-	-- Apply initial combat tag
-	self._combatTagTimers[target] = tick()
-	self:_refreshCombatTags(character, target)
+	-- Pause combat tags (they stay at max while carrying)
+	self:_pauseCombatTags(character, target)
 
 	-- Store reference
 	self._carriedPlayers[target] = character
@@ -322,8 +330,8 @@ function CarryManager:_dropTarget(target: Model, carrier: Model)
 		_G.DeathManager:resumeKnockdown(targetPlayer)
 	end
 
-	-- Clear combat tag timer
-	self._combatTagTimers[target] = nil
+	-- Resume combat tags (start counting down again)
+	self:_resumeCombatTags(carrier, target)
 
 	-- Clear reference
 	self._carriedPlayers[target] = nil
@@ -371,13 +379,15 @@ function CarryManager:_forceDropTarget(target: Model)
 		_G.DeathManager:resumeKnockdown(targetPlayer)
 	end
 
+	-- Resume combat tags
+	self:_resumeCombatTags(carrier, target)
+
 	-- Notify carried player's client
 	if targetPlayer and self._carryStateRemote then
 		self._carryStateRemote:FireClient(targetPlayer, false, nil)
 	end
 
-	-- Clear references
-	self._combatTagTimers[target] = nil
+	-- Clear reference
 	self._carriedPlayers[target] = nil
 
 	print(`[CarryManager Server] Force dropped {target.Name}`)
@@ -407,7 +417,6 @@ function CarryManager:_handlePlayerLeave(player: Player)
 					self._originalWalkSpeeds[carrierPlayer] = nil
 				end
 				self._carriedPlayers[target] = nil
-				self._combatTagTimers[target] = nil
 			end
 		end
 	end
@@ -424,7 +433,6 @@ function CarryManager:destroy()
 	self._carriedPlayers = {}
 	self._originalWalkSpeeds = {}
 	self._originalCollisionGroups = {}
-	self._combatTagTimers = {}
 
 	if self._heartbeatConnection then
 		self._heartbeatConnection:Disconnect()

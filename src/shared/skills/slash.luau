@@ -432,6 +432,13 @@ function Slash:_detectHit()
 			local targetRootPart = potentialTarget:FindFirstChild("HumanoidRootPart")
 
 			if targetHumanoid and targetHumanoid.Health > 0 and targetRootPart then
+				-- Skip if target is being carried by the attacker
+				-- (don't hit the person you're holding)
+				local carriedBy = potentialTarget:GetAttribute("CarriedBy")
+				if carriedBy == character.Name then
+					continue
+				end
+
 				-- Check if target is in range
 				local distance = (targetRootPart.Position - origin).Magnitude
 				local weaponConfig = getWeaponConfig(self.currentWeaponType or DEFAULT_WEAPON)

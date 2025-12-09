@@ -24,6 +24,7 @@ local instance: CombatTagManager? = nil
 
 export type CombatTagManager = typeof(setmetatable({} :: {
 	_taggedPlayers: { [Player]: TagState },
+	_pausedPlayers: { [Player]: boolean }, -- Players with paused combat tags
 	_connections: { RBXScriptConnection },
 	_updateRemote: RemoteEvent?,
 }, CombatTagManager))
@@ -35,6 +36,7 @@ function CombatTagManager.new(): CombatTagManager
 
 	local self = setmetatable({
 		_taggedPlayers = {} :: { [Player]: TagState },
+		_pausedPlayers = {} :: { [Player]: boolean },
 		_connections = {} :: { RBXScriptConnection },
 		_updateRemote = nil :: RemoteEvent?,
 	}, CombatTagManager)
@@ -136,6 +138,7 @@ function CombatTagManager:clearTagsFromAttacker(attacker: Player)
 	for player, state in pairs(self._taggedPlayers) do
 		if state.lastAttacker == attacker then
 			self._taggedPlayers[player] = nil
+			self._pausedPlayers[player] = nil
 			print(`[CombatTagManager] {player.Name}'s combat tag cleared (attacker {attacker.Name} died)`)
 
 			-- Notify client
@@ -144,6 +147,44 @@ function CombatTagManager:clearTagsFromAttacker(attacker: Player)
 			end
 		end
 	end
+end
+
+-- Pause combat tag countdown (used during carry - tag stays at max)
+function CombatTagManager:pauseTag(player: Player)
+	if not self._taggedPlayers[player] then
+		-- Tag them first if not tagged
+		self:tagPlayer(player, nil)
+	end
+
+	self._pausedPlayers[player] = true
+
+	-- Update client to show full duration (paused at max)
+	if self._updateRemote and player.Parent then
+		self._updateRemote:FireClient(player, true, COMBAT_TAG_DURATION)
+	end
+
+	print(`[CombatTagManager] {player.Name}'s combat tag PAUSED (will stay at max)`)
+end
+
+-- Resume combat tag countdown
+function CombatTagManager:resumeTag(player: Player)
+	if not self._pausedPlayers[player] then
+		return
+	end
+
+	self._pausedPlayers[player] = nil
+
+	-- Reset the tag to full duration when resuming
+	if self._taggedPlayers[player] then
+		self._taggedPlayers[player].taggedUntil = os.clock() + COMBAT_TAG_DURATION
+	end
+
+	print(`[CombatTagManager] {player.Name}'s combat tag RESUMED (counting down again)`)
+end
+
+-- Check if tag is paused
+function CombatTagManager:isTagPaused(player: Player): boolean
+	return self._pausedPlayers[player] == true
 end
 
 -- Called when a player leaves
@@ -199,9 +240,17 @@ function CombatTagManager:_updateLoop()
 		if not player.Parent then
 			-- Player left, clean up
 			self._taggedPlayers[player] = nil
+			self._pausedPlayers[player] = nil
+		elseif self._pausedPlayers[player] then
+			-- Tag is paused - keep it at max and refresh the expiry
+			state.taggedUntil = now + COMBAT_TAG_DURATION
+			if self._updateRemote then
+				self._updateRemote:FireClient(player, true, COMBAT_TAG_DURATION)
+			end
 		elseif now >= state.taggedUntil then
 			-- Tag expired
 			self._taggedPlayers[player] = nil
+			self._pausedPlayers[player] = nil
 			print(`[CombatTagManager] {player.Name} is no longer in combat`)
 
 			-- Notify client

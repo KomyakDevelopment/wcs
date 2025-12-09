@@ -33,6 +33,7 @@ local GRIP_VICTIM_ANIMATION = "rbxassetid://78865882601929"
 -- WCS Configuration
 Grip.CheckClientState = false
 Grip.CheckOthersActive = false
+Grip.Duration = 10 -- Long duration, we end it manually when grip completes/cancels
 
 -- ============================================================================
 -- SERVER
@@ -198,6 +199,9 @@ function Grip:_serverCancelGrip()
 	end
 
 	self.targetCharacter = nil
+
+	-- End the skill
+	self:End()
 end
 
 function Grip:_serverExecuteTarget(target: Model)
@@ -252,6 +256,9 @@ function Grip:_serverExecuteTarget(target: Model)
 	end
 
 	self.targetCharacter = nil
+
+	-- End the skill
+	self:End()
 end
 
 function Grip:_findNearestKnockedTarget(): Model?

@@ -319,14 +319,19 @@ function DeathManager:_handleKnockdown(player: Player, character: Model, humanoi
 				print(`[DeathManager] {player.Name} hit while knocked - HP protected`)
 			end
 
-			-- Reset the knockdown timer (they got hit, restart the countdown)
-			if self._knockdownTimers[player] then
-				task.cancel(self._knockdownTimers[player])
+			-- Reset the knockdown timer ONLY if not being carried
+			-- (carried players have paused knockdown, don't restart it)
+			if not character:GetAttribute("BeingCarried") then
+				if self._knockdownTimers[player] then
+					task.cancel(self._knockdownTimers[player])
+				end
+				self._knockdownTimers[player] = task.delay(KNOCKDOWN_DURATION, function()
+					self:_handleRecovery(player, character, humanoid)
+				end)
+				print(`[DeathManager] {player.Name} knockdown timer reset to {KNOCKDOWN_DURATION}s`)
+			else
+				print(`[DeathManager] {player.Name} is being carried - knockdown timer NOT reset`)
 			end
-			self._knockdownTimers[player] = task.delay(KNOCKDOWN_DURATION, function()
-				self:_handleRecovery(player, character, humanoid)
-			end)
-			print(`[DeathManager] {player.Name} knockdown timer reset to {KNOCKDOWN_DURATION}s`)
 		else
 			previousHP = newHealth
 		end
