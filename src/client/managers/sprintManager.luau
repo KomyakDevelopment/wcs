@@ -158,8 +158,16 @@ function SprintManager:_setupCharacter(character: Model)
 
 	-- PROTECT against external WalkSpeed changes while sprinting
 	-- Something else (status effects, animations, equipment) might reset WalkSpeed
+	-- BUT respect intentional speed locks (grip, stun, etc. set WalkSpeed to 0)
 	humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
 		if self.sprintActive then
+			-- If WalkSpeed is 0 or very low, it's intentional (grip, stun, etc.) - stop sprint
+			if humanoid.WalkSpeed <= 1 then
+				print(`[SprintManager] WalkSpeed set to {humanoid.WalkSpeed} (grip/stun) - stopping sprint`)
+				self:_stopSprint()
+				return
+			end
+
 			-- Calculate expected sprint speed (with backward penalty if applicable)
 			local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
 			local expectedSpeed = holdingS

@@ -9,6 +9,8 @@ local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
+local ShiftlockDisabler = require(script.Parent.shiftlockDisabler)
+
 local ExecutionEffectsManager = {}
 ExecutionEffectsManager.__index = ExecutionEffectsManager
 
@@ -148,6 +150,9 @@ end
 -- Handle local player death (hide UI, show death GUI, respawn)
 function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model, killerCharacter: Model?)
 	print("[ExecutionEffectsManager] _handleLocalPlayerDeath called")
+
+	-- IMMEDIATELY disable shiftlock - this must happen first
+	self:_disableShiftlock()
 
 	-- Immediately hide UI elements (no tween)
 	print("[ExecutionEffectsManager] Calling _hideOtherUI...")
@@ -1011,6 +1016,16 @@ function ExecutionEffectsManager:_playDeathAnimation(targetCharacter: Model)
 	end)
 end
 
+-- Disable shiftlock during death using centralized utility
+function ExecutionEffectsManager:_disableShiftlock()
+	ShiftlockDisabler.disable("death")
+end
+
+-- Restore shiftlock after death using centralized utility
+function ExecutionEffectsManager:_restoreShiftlock()
+	ShiftlockDisabler.enable("death")
+end
+
 -- ULTIMATE FAILSAFE: Force cleanup all death UI state
 -- This is called on CharacterAdded and when errors occur
 -- It ensures the player's UI is ALWAYS restored, no matter what
@@ -1019,6 +1034,9 @@ function ExecutionEffectsManager:_forceCleanupDeathUI()
 
 	-- Reset state flag
 	self._isShowingDeathUI = false
+
+	-- FORCE: Restore shiftlock
+	self:_restoreShiftlock()
 
 	-- Disconnect continue button if still connected
 	if self._continueButtonConnection then
@@ -1125,6 +1143,9 @@ end
 function ExecutionEffectsManager:destroy()
 	-- Force cleanup before destroying
 	self:_forceCleanupDeathUI()
+
+	-- Ensure shiftlock is restored
+	self:_restoreShiftlock()
 
 	-- Disconnect continue button if connected
 	if self._continueButtonConnection then
