@@ -15,8 +15,8 @@ local AudioConfig = require(ReplicatedStorage.Shared.config.audioConfig)
 
 local player = Players.LocalPlayer
 
--- Cinematic camera position
-local CAMERA_POSITION = Vector3.new(-570.256, 553.223, 8264.481)
+-- Cinematic camera position (spawn domain area)
+local CAMERA_POSITION = Vector3.new(787.825, -108.372, 1874.025)
 
 -- Smooth camera pan settings
 local PAN_SMOOTHNESS = 0.1 -- Lower = smoother/slower follow (0.05-0.15 is good)
