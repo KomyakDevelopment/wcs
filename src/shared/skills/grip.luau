@@ -103,14 +103,16 @@ function Grip:_serverStartGrip(target: Model)
 
 	print(`[Grip] Server: Starting grip on {target.Name}`)
 
-	-- Immobilize attacker
+	-- Immobilize attacker completely (no movement, no rotation)
 	local attackerHumanoid = self.Character.Instance:FindFirstChild("Humanoid") :: Humanoid?
 	if attackerHumanoid then
 		self.originalWalkSpeed = attackerHumanoid.WalkSpeed
 		self.originalJumpPower = attackerHumanoid.JumpPower
+		self.originalAutoRotate = attackerHumanoid.AutoRotate
 		self.originalHealth = attackerHumanoid.Health
 		attackerHumanoid.WalkSpeed = 0
 		attackerHumanoid.JumpPower = 0
+		attackerHumanoid.AutoRotate = false
 	end
 
 	-- Disable victim ragdoll for animation
@@ -208,6 +210,7 @@ function Grip:_serverCancelGrip()
 	if attackerHumanoid then
 		attackerHumanoid.WalkSpeed = self.originalWalkSpeed or 16
 		attackerHumanoid.JumpPower = self.originalJumpPower or 50
+		attackerHumanoid.AutoRotate = if self.originalAutoRotate ~= nil then self.originalAutoRotate else true
 	end
 
 	-- Restore target
@@ -266,6 +269,7 @@ function Grip:_serverExecuteTarget(target: Model)
 	if attackerHumanoid then
 		attackerHumanoid.WalkSpeed = self.originalWalkSpeed or 16
 		attackerHumanoid.JumpPower = self.originalJumpPower or 50
+		attackerHumanoid.AutoRotate = if self.originalAutoRotate ~= nil then self.originalAutoRotate else true
 	end
 
 	-- Fire execution event FIRST (for animations/effects)

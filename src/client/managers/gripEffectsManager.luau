@@ -5,6 +5,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local GripEffectsManager = {}
 GripEffectsManager.__index = GripEffectsManager
@@ -19,6 +20,13 @@ function GripEffectsManager.new()
 	self._player = Players.LocalPlayer
 	self._connections = {} :: { RBXScriptConnection }
 	self._activeAnimations = {} :: { [Model]: AnimationTrack } -- character -> animation track
+
+	-- Movement freeze state for local player when gripping
+	self._isLocalPlayerGripping = false
+	self._originalWalkSpeed = nil :: number?
+	self._originalJumpPower = nil :: number?
+	self._originalAutoRotate = nil :: boolean?
+	self._freezeEnforcementConnection = nil :: RBXScriptConnection?
 
 	self:_setup()
 
@@ -57,6 +65,11 @@ function GripEffectsManager:_onGripStart(attacker: Model, victim: Model)
 	self:_playAnimation(attacker, GRIP_ATTACKER_ANIMATION, "attacker")
 	self:_playAnimation(victim, GRIP_VICTIM_ANIMATION, "victim")
 
+	-- If local player is the attacker, freeze their movement completely
+	if attacker == self._player.Character then
+		self:_freezeLocalPlayer()
+	end
+
 	print(`[GripEffectsManager] Grip started: {attacker.Name} -> {victim.Name}`)
 end
 
@@ -64,6 +77,11 @@ function GripEffectsManager:_onGripCancel(attacker: Model, victim: Model)
 	-- Stop animations
 	self:_stopAnimation(attacker)
 	self:_stopAnimation(victim)
+
+	-- If local player was the attacker, unfreeze their movement
+	if attacker == self._player.Character then
+		self:_unfreezeLocalPlayer()
+	end
 
 	print(`[GripEffectsManager] Grip cancelled: {attacker.Name} -> {victim.Name}`)
 end
@@ -75,6 +93,11 @@ function GripEffectsManager:_onExecuted(executedCharacter: Model, killerCharacte
 	-- Stop animation on the killer too
 	if killerCharacter then
 		self:_stopAnimation(killerCharacter)
+
+		-- If local player was the killer, unfreeze their movement
+		if killerCharacter == self._player.Character then
+			self:_unfreezeLocalPlayer()
+		end
 	end
 
 	print(`[GripEffectsManager] Execution complete: {executedCharacter.Name}`)
@@ -121,7 +144,110 @@ function GripEffectsManager:_stopAnimation(character: Model)
 	end
 end
 
+-- Freeze local player's movement and rotation during grip
+function GripEffectsManager:_freezeLocalPlayer()
+	if self._isLocalPlayerGripping then
+		return -- Already frozen
+	end
+
+	local character = self._player.Character
+	if not character then
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	-- Store original values
+	self._originalWalkSpeed = humanoid.WalkSpeed
+	self._originalJumpPower = humanoid.JumpPower
+	self._originalAutoRotate = humanoid.AutoRotate
+
+	-- Freeze everything initially
+	humanoid.WalkSpeed = 0
+	humanoid.JumpPower = 0
+	humanoid.AutoRotate = false
+
+	self._isLocalPlayerGripping = true
+
+	-- Start continuous enforcement to prevent other systems from overriding
+	if self._freezeEnforcementConnection then
+		self._freezeEnforcementConnection:Disconnect()
+	end
+
+	self._freezeEnforcementConnection = RunService.Heartbeat:Connect(function()
+		local char = self._player.Character
+		if not char then return end
+
+		local hum = char:FindFirstChild("Humanoid") :: Humanoid?
+		if not hum then return end
+
+		-- Force freeze every frame
+		if hum.WalkSpeed ~= 0 then
+			hum.WalkSpeed = 0
+		end
+		if hum.JumpPower ~= 0 then
+			hum.JumpPower = 0
+		end
+		if hum.AutoRotate ~= false then
+			hum.AutoRotate = false
+		end
+	end)
+
+	print(`[GripEffectsManager] Froze local player with continuous enforcement`)
+end
+
+-- Unfreeze local player's movement and rotation after grip
+function GripEffectsManager:_unfreezeLocalPlayer()
+	if not self._isLocalPlayerGripping then
+		return -- Not frozen
+	end
+
+	-- Stop enforcement loop FIRST
+	if self._freezeEnforcementConnection then
+		self._freezeEnforcementConnection:Disconnect()
+		self._freezeEnforcementConnection = nil
+	end
+
+	local character = self._player.Character
+	if not character then
+		self._isLocalPlayerGripping = false
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		self._isLocalPlayerGripping = false
+		return
+	end
+
+	-- Restore original values
+	humanoid.WalkSpeed = self._originalWalkSpeed or 16
+	humanoid.JumpPower = self._originalJumpPower or 50
+	humanoid.AutoRotate = if self._originalAutoRotate ~= nil then self._originalAutoRotate else true
+
+	self._isLocalPlayerGripping = false
+	self._originalWalkSpeed = nil
+	self._originalJumpPower = nil
+	self._originalAutoRotate = nil
+
+	print(`[GripEffectsManager] Unfroze local player - movement restored`)
+end
+
 function GripEffectsManager:destroy()
+	-- Stop enforcement connection first
+	if self._freezeEnforcementConnection then
+		self._freezeEnforcementConnection:Disconnect()
+		self._freezeEnforcementConnection = nil
+	end
+
+	-- Unfreeze local player if still gripping
+	if self._isLocalPlayerGripping then
+		self:_unfreezeLocalPlayer()
+	end
+
 	-- Stop all active animations
 	for character, _ in pairs(self._activeAnimations) do
 		self:_stopAnimation(character)
