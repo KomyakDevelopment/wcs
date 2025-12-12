@@ -14,6 +14,7 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local Punch = require(ReplicatedStorage.Shared.skills.punch)
 local Slash = require(ReplicatedStorage.Shared.skills.slash)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
+local Slide = require(ReplicatedStorage.Shared.skills.slide)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 local HeavyPunch = require(ReplicatedStorage.Shared.skills.heavyPunch)
 local HeavySlash = require(ReplicatedStorage.Shared.skills.heavySlash)
@@ -48,8 +49,9 @@ function CombatController.new()
 	self.equipmentController = nil
 	self.sprintManager = nil
 
-	-- Client-side debounce to prevent dodge spam
+	-- Client-side debounce to prevent dodge/slide spam
 	self.dodgeDebounce = false
+	self.slideDebounce = false
 
 	-- Cached character reference (cleared on respawn)
 	self._cachedCharacter = nil
@@ -183,6 +185,17 @@ function CombatController:getDodgeSkill()
 	return character:GetSkillFromConstructor(Dodge)
 end
 
+-- Get slide skill (fresh lookup - moveset changes can add/remove skills)
+function CombatController:getSlideSkill()
+	local character = self:getCharacter()
+	if not character then
+		return nil
+	end
+
+	-- Always get fresh reference since moveset changes destroy/recreate skills
+	return character:GetSkillFromConstructor(Slide)
+end
+
 -- Get heavy attack skill based on equipped weapon's CriticalSkill config
 function CombatController:getHeavyAttackSkill()
 	local character = self:getCharacter()
@@ -296,6 +309,14 @@ function CombatController:performDodge()
 	else
 		-- Buffer the input for later execution
 		self:_bufferInput("dodge")
+	end
+end
+
+-- Perform slide action (Control key)
+function CombatController:performSlide()
+	-- Check if we can perform slide right now
+	if self:_canPerformSlide() then
+		self:_executeSlide()
 	end
 end
 
@@ -644,6 +665,78 @@ function CombatController:_canPerformBlock(): boolean
 	end
 
 	return true
+end
+
+-- Check if slide can be performed
+function CombatController:_canPerformSlide(): boolean
+	if self.slideDebounce then
+		return false
+	end
+
+	local slideSkill = self:getSlideSkill()
+	if not slideSkill then
+		return false
+	end
+
+	local character = self:getCharacter()
+	if not character then
+		return false
+	end
+
+	-- Check guardbroken OR attacking (can't slide during attack windup/endlag)
+	if character:HasStatusEffects({ Guardbroken, Attacking, HeavyAttacking }) then
+		return false
+	end
+
+	-- Also check if M1 skill is currently active
+	local punchSkill = self:getPunchSkill()
+	if punchSkill then
+		local punchState = punchSkill:GetState()
+		if punchState.IsActive then
+			return false
+		end
+	end
+
+	local slashSkill = self:getSlashSkill()
+	if slashSkill then
+		local slashState = slashSkill:GetState()
+		if slashState.IsActive then
+			return false
+		end
+	end
+
+	-- Also check heavy skills
+	local heavySkill = self:getHeavyAttackSkill()
+	if heavySkill then
+		local heavyState = heavySkill:GetState()
+		if heavyState.IsActive then
+			return false
+		end
+	end
+
+	local state = slideSkill:GetState()
+	if state.Debounce then
+		return false
+	end
+
+	return true
+end
+
+-- Execute slide
+function CombatController:_executeSlide()
+	self.slideDebounce = true
+	task.delay(0.5, function()
+		self.slideDebounce = false
+	end)
+
+	if self.sprintManager then
+		self.sprintManager:stopSprint()
+	end
+
+	local slideSkill = self:getSlideSkill()
+	if slideSkill then
+		slideSkill:Start()
+	end
 end
 
 -- Execute dodge (handles airdash camera, etc.)

@@ -40,6 +40,11 @@ InputConfig.Movement = {
 		KeyCode = Enum.KeyCode.LeftShift,
 		Description = "Sprint",
 	},
+	Slide = {
+		InputType = Enum.UserInputType.Keyboard,
+		KeyCode = Enum.KeyCode.LeftControl,
+		Description = "Slide",
+	},
 }
 
 -- Ability Hotkeys (removed - hotbar handles 1-9, 0 internally)

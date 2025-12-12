@@ -116,6 +116,13 @@ inputManager:bindAction("Combat.CriticalAttack", function(actionName, state, inp
 	end
 end)
 
+-- Bind movement actions
+inputManager:bindAction("Movement.Slide", function(actionName, state, input)
+	if state == Enum.UserInputState.Begin then
+		combatController:performSlide()
+	end
+end)
+
 -- Hotbar keybinds (1-9, 0) are handled internally by HotbarUI
 -- No need to bind them here anymore
 
