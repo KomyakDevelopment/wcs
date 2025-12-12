@@ -115,11 +115,32 @@ function Grip:_serverStartGrip(target: Model)
 		attackerHumanoid.AutoRotate = false
 	end
 
-	-- Disable victim ragdoll for animation
-	local ragdollTrigger = target:FindFirstChild("RagdollTrigger") :: BoolValue?
-	if ragdollTrigger then
-		ragdollTrigger.Value = false
+	-- Move attacker to victim's position for the grip animation (do this FIRST, before any state changes)
+	local attackerRootPart = self.Character.Instance:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local targetRootPart = target:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if attackerRootPart and targetRootPart then
+		-- Position attacker at victim's location, only copying Y rotation (yaw), not full orientation
+		-- (victim might be ragdolled/lying down, we don't want to copy that tilt)
+		local targetPos = targetRootPart.Position
+		local _, yRot, _ = targetRootPart.CFrame:ToEulerAnglesYXZ()
+		attackerRootPart.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, yRot, 0)
 	end
+
+	-- Disable victim ragdoll for animation (after a delay to let fade complete)
+	task.delay(0.5, function()
+		if not self.isGripping then return end -- Check grip wasn't cancelled
+
+		local ragdollTrigger = target:FindFirstChild("RagdollTrigger") :: BoolValue?
+		if ragdollTrigger then
+			ragdollTrigger.Value = false
+		end
+
+		-- Stand up the victim for the grip animation
+		local targetHumanoid = target:FindFirstChild("Humanoid") :: Humanoid?
+		if targetHumanoid then
+			targetHumanoid.PlatformStand = false
+		end
+	end)
 
 	-- Mark target for execution
 	target:SetAttribute("MarkedForExecution", true)
