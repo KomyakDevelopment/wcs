@@ -7,6 +7,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
+local WCS = require(ReplicatedStorage.Packages.wcs)
+local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+
 local DoubleJumpManager = {}
 DoubleJumpManager.__index = DoubleJumpManager
 
@@ -107,6 +110,12 @@ function DoubleJumpManager:_handleJumpRequest(character: Model)
 
 	-- Check if we can air jump
 	if self.currentJumpCount >= self.maxJumps then
+		return
+	end
+
+	-- Don't allow double jump while dashing/airdashing
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
+	if wcsCharacter and wcsCharacter:HasStatusEffects({ Dashing }) then
 		return
 	end
 
