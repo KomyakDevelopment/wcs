@@ -4,7 +4,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
--- Pre-cache status effects at module load (avoid require() in hot paths)
+-- Pre-cache status effects
 local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
 local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
@@ -17,35 +17,220 @@ local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttac
 
 local Slide = WCS.RegisterSkill("Slide")
 
--- WCS Client Prediction Configuration
+-- WCS Configuration
 Slide.CheckClientState = false
 Slide.CheckOthersActive = false
 
--- Configuration
-local SLIDE_DISTANCE = 20 -- Studs to travel (slightly longer than dodge)
-local SLIDE_DURATION = 0.5 -- Seconds for slide to complete
-local SLIDE_COOLDOWN = 1.2 -- Cooldown after slide completes
-local SLOPE_MOMENTUM_MULTIPLIER = 1.5 -- Extra speed on downward slopes
+-- =============================================================================
+-- CONFIGURATION
+-- =============================================================================
+local SLIDE_DISTANCE = 20
+local SLIDE_DURATION = 0.5
+local SLIDE_COOLDOWN = 1.2
+local MAX_SLIDE_DURATION = 5.0
 
--- Animation ID
+-- Physics
+local BASE_SLIDE_SPEED = SLIDE_DISTANCE / SLIDE_DURATION
+local SLOPE_ACCELERATION = 120 -- Studs/sec^2 acceleration when going downhill
+local MAX_TURN_ANGLE = 70 -- Degrees - cancel slide if turning beyond this
+local FLAT_DECELERATION = 50 -- Studs/sec^2 deceleration on flat ground
+local MIN_SPEED = 8
+local MAX_SPEED = 40
+
+-- Y-velocity thresholds for slope detection (stricter to avoid false positives)
+local DOWNHILL_Y_THRESHOLD = -4 -- Y velocity below this = actually going downhill
+local UPHILL_Y_THRESHOLD = 1 -- Y velocity above this = going uphill
+
+-- Animation
 local SLIDE_ANIMATION = "rbxassetid://101660172801114"
 
+-- =============================================================================
+-- SERVER
+-- =============================================================================
 function Slide:OnConstructServer()
 	self.slideActive = false
 	self.slidingEffect = nil
 	self.bodyVelocity = nil
-	self.completedNaturally = false
 end
 
+function Slide:OnStartServer()
+	-- Block if in blocking status
+	if
+		self.Character.IsGuardbroken
+		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking, Dashing, Sliding })
+	then
+		return
+	end
+
+	local character = self.Character.Instance
+	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
+
+	if not hrp or not humanoid then
+		return
+	end
+
+	-- Must be grounded
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+		return
+	end
+
+	-- Must be moving forward
+	local moveDir = humanoid.MoveDirection
+	if moveDir.Magnitude > 0.1 then
+		local lookVector = hrp.CFrame.LookVector
+		local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
+		if forwardDot < 0.5 then
+			return
+		end
+	end
+
+	self:_performSlide(humanoid, hrp)
+end
+
+function Slide:_performSlide(humanoid: Humanoid, hrp: BasePart)
+	-- Apply status effect
+	self.slidingEffect = Sliding.new(self.Character)
+	if self.slidingEffect then
+		self.slidingEffect:Start(MAX_SLIDE_DURATION)
+	end
+
+	-- Get initial velocity and direction
+	local currentVelocity = hrp.AssemblyLinearVelocity
+	local currentHorizontalSpeed = Vector3.new(currentVelocity.X, 0, currentVelocity.Z).Magnitude
+	local speed = math.max(currentHorizontalSpeed, BASE_SLIDE_SPEED) * 1.1
+	local direction = self:_getSlideDirection(humanoid, hrp)
+
+	-- Create BodyVelocity (same approach as Dodge)
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(30000, 0, 30000)
+	bodyVelocity.P = 1250
+	bodyVelocity.Velocity = direction * speed
+	bodyVelocity.Parent = hrp
+
+	self.bodyVelocity = bodyVelocity
+	self.slideActive = true
+
+	-- Attributes for client
+	self.Character.Instance:SetAttribute("_SlideActive", true)
+	self.Character.Instance:SetAttribute("_SlideGainingVelocity", false)
+
+	local elapsed = 0
+	local rate = 1 / 60
+	local framesNotDownhill = 0
+	local initialDirection = direction -- Store initial direction for turn check
+	local turnThreshold = math.cos(math.rad(MAX_TURN_ANGLE)) -- Pre-calculate cosine
+
+	while elapsed < MAX_SLIDE_DURATION and self.slideActive do
+		-- Update direction for steering
+		direction = self:_getSlideDirection(humanoid, hrp)
+
+		-- Check turn angle - cancel if turned too far from initial direction
+		local turnDot = direction:Dot(initialDirection)
+		if turnDot < turnThreshold then
+			break -- Turned more than MAX_TURN_ANGLE degrees
+		end
+
+		-- Y-velocity based slope detection (simple and reliable)
+		local yVelocity = hrp.AssemblyLinearVelocity.Y
+		local isDownhill = yVelocity < DOWNHILL_Y_THRESHOLD
+		local isUphill = yVelocity > UPHILL_Y_THRESHOLD
+
+		-- Cancel slide if going uphill
+		if isUphill then
+			break
+		end
+
+		-- Track consecutive frames not going downhill
+		if isDownhill then
+			framesNotDownhill = 0
+		else
+			framesNotDownhill = framesNotDownhill + 1
+		end
+
+		-- Apply physics based on Y velocity
+		if isDownhill then
+			-- DOWNHILL: Accelerate (steeper = faster)
+			local steepnessFactor = math.clamp(math.abs(yVelocity) / 10, 1, 2)
+			speed = speed + (SLOPE_ACCELERATION * steepnessFactor * rate)
+		else
+			-- FLAT: Gradual deceleration
+			speed = speed - (FLAT_DECELERATION * rate)
+		end
+
+		-- Clamp speed
+		speed = math.clamp(speed, MIN_SPEED, MAX_SPEED)
+
+		-- Update velocity
+		bodyVelocity.Velocity = direction * speed
+
+		-- Update attribute for client
+		self.Character.Instance:SetAttribute("_SlideGainingVelocity", isDownhill)
+
+		-- END CONDITIONS
+		-- 1. Base duration passed AND not going downhill
+		if elapsed >= SLIDE_DURATION then
+			if framesNotDownhill > 5 then -- ~0.08 seconds not downhill
+				break
+			end
+		end
+
+		-- 2. Speed too low
+		if speed <= MIN_SPEED then
+			break
+		end
+
+		task.wait(rate)
+		elapsed = elapsed + rate
+	end
+
+	-- Cleanup
+	self:_cleanup()
+	self:End()
+end
+
+function Slide:_getSlideDirection(_humanoid: Humanoid, hrp: BasePart): Vector3
+	-- Use look vector for steering
+	local lookVector = hrp.CFrame.LookVector
+	return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+end
+
+function Slide:_cleanup()
+	if self.bodyVelocity then
+		self.bodyVelocity:Destroy()
+		self.bodyVelocity = nil
+	end
+
+	self.Character.Instance:SetAttribute("_SlideActive", nil)
+	self.Character.Instance:SetAttribute("_SlideGainingVelocity", nil)
+
+	self.slideActive = false
+end
+
+function Slide:OnEndServer()
+	self:_cleanup()
+
+	if self.slidingEffect then
+		self.slidingEffect:End()
+		self.slidingEffect = nil
+	end
+
+	self:ApplyCooldown(SLIDE_COOLDOWN)
+end
+
+-- =============================================================================
+-- CLIENT
+-- =============================================================================
 function Slide:OnConstructClient()
 	self.slideAnimation = nil
 	self.currentAnimTrack = nil
 	self.cancelConnection = nil
 	self.slideVFXAttachment = nil
 	self.slideSFX = nil
-	self.slideStartTime = 0 -- Track when slide started for cancel delay
+	self.slideStartTime = 0
 
-	-- Preload slide animation
+	-- Preload animation
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
 	if humanoid then
 		local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -57,222 +242,50 @@ function Slide:OnConstructClient()
 	end
 end
 
-function Slide:OnStartServer()
-	-- Check if player is in hitstun, guardbroken, knocked down, or attacking
-	if
-		self.Character.IsGuardbroken
-		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking, Dashing, Sliding })
-	then
-		print("[Slide] Server: Cannot slide - Player is in blocking status")
-		return
-	end
-
-	-- Get character components
-	local character = self.Character.Instance
-	local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") :: BasePart
-	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
-
-	if not humanoidRootPart or not humanoid then
-		warn("[Slide] Server: Missing HumanoidRootPart or Humanoid")
-		return
-	end
-
-	-- Check if grounded - sliding only works on ground
-	local humanoidState = humanoid:GetState()
-	local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
-		or humanoidState == Enum.HumanoidStateType.Jumping
-
-	if isInAirState then
-		print("[Slide] Server: Cannot slide - Player is in air")
-		return
-	end
-
-	-- Check if moving forward (or not moving at all)
-	local moveDir = humanoid.MoveDirection
-	if moveDir.Magnitude > 0.1 then
-		local lookVector = humanoidRootPart.CFrame.LookVector
-		local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
-		-- Only allow slide if moving forward (dot product > 0.5 means within ~60 degrees of forward)
-		if forwardDot < 0.5 then
-			print("[Slide] Server: Cannot slide - not moving forward")
-			return
-		end
-	end
-
-	-- Perform slide
-	self:_performSlide(humanoid, humanoidRootPart)
-end
-
-function Slide:_performSlide(humanoid: Humanoid, humanoidRootPart: BasePart)
-	-- Apply Sliding status effect
-	self.slidingEffect = Sliding.new(self.Character)
-	if self.slidingEffect then
-		self.slidingEffect:Start(SLIDE_DURATION)
-		print("[Slide] Server: Applied Sliding status effect")
-	end
-
-	-- Calculate slide direction
-	local slideStrength = SLIDE_DISTANCE / SLIDE_DURATION
-	local rate = 0.0167
-
-	print(`[Slide] Server: Starting slide - Strength: {slideStrength}`)
-
-	-- Create BodyVelocity for movement
-	local bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(100000, 0, 100000)
-	bodyVelocity.P = 5000
-	bodyVelocity.Parent = humanoidRootPart
-
-	self.bodyVelocity = bodyVelocity
-	self.slideActive = true
-
-	-- Set slide cancel window
-	self.Character.Instance:SetAttribute("_SlideCancelWindowEnd", tick() + SLIDE_DURATION)
-
-	local elapsed = 0
-
-	while elapsed < SLIDE_DURATION do
-		if not self.slideActive then
-			-- Cancelled early
-			break
-		end
-
-		-- Calculate direction each frame for control
-		local direction = self:_calculateSlideDirection(humanoid, humanoidRootPart)
-
-		-- Check for downward slope and apply momentum boost
-		local slopeMultiplier = self:_getSlopeMultiplier(humanoidRootPart, direction)
-
-		-- Apply easing at the end
-		local progress = elapsed / SLIDE_DURATION
-		local speedMultiplier = 1
-
-		if progress > 0.7 then
-			local easeProgress = (progress - 0.7) / 0.3
-			speedMultiplier = 1 - (easeProgress * 0.3)
-		end
-
-		bodyVelocity.Velocity = direction * slideStrength * speedMultiplier * slopeMultiplier
-
-		-- Wall collision check
-		local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
-		local expectedSpeed = slideStrength * speedMultiplier * slopeMultiplier
-
-		if currentVelocity.Magnitude < expectedSpeed * 0.3 and elapsed > 0.1 then
-			print("[Slide] Wall collision detected - Stopping slide")
-			self.slideActive = false
-			break
-		end
-
-		task.wait(rate)
-		elapsed = elapsed + rate
-	end
-
-	print("[Slide] Slide loop completed - Cleaning up")
-
-	-- Clean up
-	if self.bodyVelocity then
-		self.bodyVelocity:Destroy()
-		self.bodyVelocity = nil
-	end
-
-	self.slideActive = false
-	self.completedNaturally = true
-
-	self:End()
-end
-
--- Calculate slide direction - always forward (look vector)
-function Slide:_calculateSlideDirection(humanoid: Humanoid, hrp: BasePart): Vector3
-	-- Slide always goes in character's forward direction
-	local lookVector = hrp.CFrame.LookVector
-	return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
-end
-
--- Get slope multiplier for momentum boost on downhill
-function Slide:_getSlopeMultiplier(hrp: BasePart, direction: Vector3): number
-	-- Raycast downward to check slope
-	local rayOrigin = hrp.Position
-	local rayDirection = Vector3.new(0, -5, 0)
-	local raycastParams = RaycastParams.new()
-	raycastParams.FilterDescendantsInstances = { hrp.Parent }
-	raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-	local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
-
-	if result then
-		local normal = result.Normal
-		-- Check if surface is sloped downward in our direction
-		-- Normal pointing up = flat, normal tilted = slope
-		local slopeDot = -direction:Dot(Vector3.new(normal.X, 0, normal.Z))
-
-		if slopeDot > 0.1 then
-			-- Going downhill - apply momentum boost
-			local slopeAmount = math.min(slopeDot * SLOPE_MOMENTUM_MULTIPLIER, SLOPE_MOMENTUM_MULTIPLIER)
-			return 1 + slopeAmount
-		end
-	end
-
-	return 1 -- No slope bonus
-end
-
 function Slide:OnStartClient()
-	-- Check status effects
+	-- Block checks
 	if
 		self.Character:HasStatusEffects({
-			SoftHitstun,
-			TrueHitstun,
-			Stun,
-			Dashing,
-			Sliding,
-			Guardbroken,
-			Knockdown,
-			Attacking,
-			HeavyAttacking,
+			SoftHitstun, TrueHitstun, Stun, Dashing, Sliding,
+			Guardbroken, Knockdown, Attacking, HeavyAttacking,
 		})
 	then
-		print("[Slide] Client: Blocked by status effect")
 		return
 	end
 
-	-- Check if grounded
 	local character = self.Character.Instance
 	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
+
 	if humanoid then
 		local state = humanoid:GetState()
 		if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
-			print("[Slide] Client: Cannot slide in air")
 			return
 		end
 
-		-- Check if moving forward (or not moving at all)
 		local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
 		if hrp then
 			local moveDir = humanoid.MoveDirection
 			if moveDir.Magnitude > 0.1 then
 				local lookVector = hrp.CFrame.LookVector
 				local forwardDot = moveDir:Dot(Vector3.new(lookVector.X, 0, lookVector.Z).Unit)
-				-- Only allow slide if moving forward (dot product > 0.5 means within ~60 degrees of forward)
 				if forwardDot < 0.5 then
-					print("[Slide] Client: Cannot slide - not moving forward")
 					return
 				end
 			end
 		end
 	end
 
-	-- Track slide start time for cancel delay
 	self.slideStartTime = tick()
 
-	-- Play slide animation
+	-- Play animation (looped for extended slides)
 	if self.slideAnimation then
 		self.currentAnimTrack = self.slideAnimation
+		self.slideAnimation.Looped = true
 		self.slideAnimation:Play(0.05)
 		self.slideAnimation.Priority = Enum.AnimationPriority.Action2
-		print("[Slide] Client: Playing slide animation")
 	end
 
-	-- Setup VFX (reuse roll VFX if exists)
+	-- VFX
 	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
 	local rollVFXSource = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("VFX")
@@ -281,94 +294,48 @@ function Slide:OnStartClient()
 		and ReplicatedStorage.Assets.VFX.Movement.roll:FindFirstChild("Attachment")
 
 	if rollVFXSource and hrp then
-		local slideVFXClone = rollVFXSource:Clone()
-		slideVFXClone.Parent = hrp
-		self.slideVFXAttachment = slideVFXClone
+		local vfxClone = rollVFXSource:Clone()
+		vfxClone.Parent = hrp
+		self.slideVFXAttachment = vfxClone
 
-		for _, child in ipairs(slideVFXClone:GetChildren()) do
+		for _, child in ipairs(vfxClone:GetChildren()) do
 			if child:IsA("ParticleEmitter") then
 				child.Enabled = true
 			end
 		end
-
-		-- Schedule cleanup
-		task.delay(SLIDE_DURATION, function()
-			if slideVFXClone and slideVFXClone.Parent then
-				for _, child in ipairs(slideVFXClone:GetChildren()) do
-					if child:IsA("ParticleEmitter") then
-						child.Enabled = false
-					end
-				end
-
-				local maxLifetime = 0
-				for _, child in ipairs(slideVFXClone:GetChildren()) do
-					if child:IsA("ParticleEmitter") then
-						local lifetime = child.Lifetime.Max
-						if lifetime > maxLifetime then
-							maxLifetime = lifetime
-						end
-					end
-				end
-
-				task.delay(maxLifetime + 0.5, function()
-					if slideVFXClone and slideVFXClone.Parent then
-						slideVFXClone:Destroy()
-						self.slideVFXAttachment = nil
-					end
-				end)
-			end
-		end)
 	end
 
-	-- Play SFX (reuse dodge SFX if exists)
+	-- SFX
 	self:_playSlideSFX()
 
-	-- Setup Control key listener for slide cancel
+	-- Cancel listener
 	self.cancelConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then
-			return
-		end
-
+		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.LeftControl then
 			self:_attemptCancel()
-		end
-	end)
-
-	-- Auto-disconnect after slide duration
-	task.delay(SLIDE_DURATION * 1.2, function()
-		if self.cancelConnection then
-			self.cancelConnection:Disconnect()
-			self.cancelConnection = nil
 		end
 	end)
 end
 
 function Slide:_playSlideSFX()
-	local dodgeSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+	local sfxFolder = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("SFX")
 		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
 		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Dodges")
 
-	if not dodgeSFXFolder then
-		return
-	end
+	if not sfxFolder then return end
 
-	local character = self.Character.Instance
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then
-		return
-	end
+	local hrp = self.Character.Instance:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
 
 	local sounds = {}
-	for _, child in ipairs(dodgeSFXFolder:GetChildren()) do
+	for _, child in ipairs(sfxFolder:GetChildren()) do
 		if child:IsA("Sound") then
 			table.insert(sounds, child)
 		end
 	end
 
-	if #sounds == 0 then
-		return
-	end
+	if #sounds == 0 then return end
 
 	local randomSound = sounds[math.random(1, #sounds)]
 	local soundClone = randomSound:Clone()
@@ -384,25 +351,27 @@ function Slide:_playSlideSFX()
 	end)
 end
 
-local SLIDE_CANCEL_DELAY = 0.3 -- Minimum time before slide can be cancelled
-
 function Slide:_attemptCancel()
-	-- Check if enough time has passed (0.3s minimum)
 	local elapsed = tick() - self.slideStartTime
-	if elapsed < SLIDE_CANCEL_DELAY then
-		print(`[Slide] Client: Cannot cancel yet - only {elapsed}s elapsed, need {SLIDE_CANCEL_DELAY}s`)
-		return
-	end
+	if elapsed < 0.3 then return end
 
-	print("[Slide] Client: Cancelling slide")
+	local isGainingVelocity = self.Character.Instance:GetAttribute("_SlideGainingVelocity")
+	if isGainingVelocity then return end
 
-	-- Stop animation
+	self:End()
+end
+
+function Slide:OnEndClient()
 	if self.currentAnimTrack then
 		self.currentAnimTrack:Stop(0.1)
 		self.currentAnimTrack = nil
 	end
 
-	-- Cleanup VFX
+	if self.cancelConnection then
+		self.cancelConnection:Disconnect()
+		self.cancelConnection = nil
+	end
+
 	if self.slideVFXAttachment then
 		local vfx = self.slideVFXAttachment
 		self.slideVFXAttachment = nil
@@ -430,61 +399,12 @@ function Slide:_attemptCancel()
 		end)
 	end
 
-	-- Disconnect cancel listener
-	if self.cancelConnection then
-		self.cancelConnection:Disconnect()
-		self.cancelConnection = nil
-	end
-
-	-- End skill
-	self:End()
-end
-
-function Slide:OnEndServer()
-	self.slideActive = false
-
-	-- Remove BodyVelocity
-	if self.bodyVelocity then
-		self.bodyVelocity:Destroy()
-		self.bodyVelocity = nil
-	end
-
-	-- End Sliding status effect
-	if self.slidingEffect then
-		self.slidingEffect:End()
-		self.slidingEffect = nil
-		print("[Slide] Server: Ended Sliding status effect")
-	end
-
-	-- Apply cooldown
-	self:ApplyCooldown(SLIDE_COOLDOWN)
-	print("[Slide] Server: Slide ended - Cooldown applied")
-
-	self.completedNaturally = false
-end
-
-function Slide:OnEndClient()
-	-- Stop animation
-	if self.currentAnimTrack then
-		self.currentAnimTrack:Stop(0.1)
-		self.currentAnimTrack = nil
-	end
-
-	-- Disconnect cancel listener
-	if self.cancelConnection then
-		self.cancelConnection:Disconnect()
-		self.cancelConnection = nil
-	end
-
-	-- Resume sprinting if W is held
 	task.defer(function()
 		local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
 		if resumeSprintEvent then
 			resumeSprintEvent:Fire()
 		end
 	end)
-
-	print("[Slide] Client: Skill ended")
 end
 
 return Slide

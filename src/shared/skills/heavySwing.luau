@@ -64,7 +64,7 @@ local SWING_TIMING = 0.95 -- When the swing connects
 local ENDLAG_DURATION = 0.3
 
 -- Animation ID for heavy swing (medium weapons critical)
-local HEAVY_ANIMATION_ID = "rbxassetid://128798989058056"
+local HEAVY_ANIMATION_ID = "rbxassetid://102484721477974"
 
 -- Animation IDs that should be stopped
 local MOVEMENT_ANIMATION_IDS = {

@@ -67,9 +67,9 @@ local COMBO_ANIMATIONS = {
 		[4] = "rbxassetid://128565870055276", -- Flourish
 	},
 	ninjato = {
-		[1] = "rbxassetid://96737060211137",
-		[2] = "rbxassetid://122493653126120",
-		[3] = "rbxassetid://125186682440764",
+		[1] = "rbxassetid://87386532163101",
+		[2] = "rbxassetid://91663977468313",
+		[3] = "rbxassetid://96383704992301",
 		[4] = "rbxassetid://128565870055276", -- Flourish (same for now)
 	},
 }
