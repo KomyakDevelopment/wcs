@@ -10,6 +10,7 @@ local CollisionManager = require(script.managers.collisionManager)
 local CombatTagManager = require(script.managers.combatTagManager)
 local HealthRegenManager = require(script.managers.healthRegenManager)
 local CarryManager = require(script.managers.carryManager)
+local DebugPermissions = require(script.managers.debugPermissions)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
@@ -125,6 +126,9 @@ sprintStateRemote.OnServerEvent:Connect(function(player, isSprinting)
 		character:SetAttribute("IsSprinting", isSprinting)
 	end
 end)
+
+-- Initialize debug permissions FIRST (creates remote for client to check)
+DebugPermissions.init()
 
 -- Initialize managers (after remotes are created)
 local _stunIndicatorManager = StunIndicatorManager.new()
