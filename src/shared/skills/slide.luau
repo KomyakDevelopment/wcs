@@ -1,5 +1,6 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
@@ -42,8 +43,8 @@ local DOWNHILL_Y_THRESHOLD = -4 -- Y velocity below this = actually going downhi
 local UPHILL_Y_THRESHOLD = 1 -- Y velocity above this = going uphill
 
 -- Slide-jump boost (adds to existing momentum)
-local SLIDE_JUMP_EXTRA_SPEED = 12 -- Extra studs/sec added to current velocity
-local SLIDE_JUMP_MOMENTUM_TIME = 0.25 -- How long to maintain momentum after jump
+local SLIDE_JUMP_EXTRA_SPEED = 18 -- Extra studs/sec added to current velocity
+local SLIDE_JUMP_MOMENTUM_TIME = 0.3 -- How long to maintain momentum after jump
 
 -- Animation
 local SLIDE_ANIMATION = "rbxassetid://101660172801114"
@@ -210,16 +211,31 @@ function Slide:_getSlideDirection(_humanoid: Humanoid, hrp: BasePart): Vector3
 	return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
 end
 
-function Slide:_applySlideJumpBoost(_hrp: BasePart, direction: Vector3, currentSpeed: number, bodyVelocity: BodyVelocity)
-	-- Boost the BodyVelocity speed and keep it alive briefly
+function Slide:_applySlideJumpBoost(hrp: BasePart, _direction: Vector3, currentSpeed: number, bodyVelocity: BodyVelocity)
+	-- Boost speed and allow steering during the jump
 	local boostedSpeed = currentSpeed + SLIDE_JUMP_EXTRA_SPEED
-	bodyVelocity.Velocity = direction * boostedSpeed
+	local startTime = tick()
+	local connection: RBXScriptConnection?
 
-	-- Keep momentum going during the jump arc, then clean up
-	task.delay(SLIDE_JUMP_MOMENTUM_TIME, function()
-		if bodyVelocity and bodyVelocity.Parent then
-			bodyVelocity:Destroy()
+	-- Update direction each frame to allow air control
+	connection = RunService.Heartbeat:Connect(function()
+		local elapsed = tick() - startTime
+
+		if elapsed >= SLIDE_JUMP_MOMENTUM_TIME or not hrp or not hrp.Parent or not bodyVelocity or not bodyVelocity.Parent then
+			if connection then
+				connection:Disconnect()
+				connection = nil
+			end
+			if bodyVelocity and bodyVelocity.Parent then
+				bodyVelocity:Destroy()
+			end
+			return
 		end
+
+		-- Update direction based on current look vector (allows steering)
+		local lookVector = hrp.CFrame.LookVector
+		local currentDirection = Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+		bodyVelocity.Velocity = currentDirection * boostedSpeed
 	end)
 end
 
