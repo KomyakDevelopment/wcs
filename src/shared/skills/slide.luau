@@ -41,6 +41,10 @@ local MAX_SPEED = 40
 local DOWNHILL_Y_THRESHOLD = -4 -- Y velocity below this = actually going downhill
 local UPHILL_Y_THRESHOLD = 1 -- Y velocity above this = going uphill
 
+-- Slide-jump boost (adds to existing momentum)
+local SLIDE_JUMP_EXTRA_SPEED = 12 -- Extra studs/sec added to current velocity
+local SLIDE_JUMP_MOMENTUM_TIME = 0.25 -- How long to maintain momentum after jump
+
 -- Animation
 local SLIDE_ANIMATION = "rbxassetid://101660172801114"
 
@@ -132,6 +136,16 @@ function Slide:_performSlide(humanoid: Humanoid, hrp: BasePart)
 			break -- Turned more than MAX_TURN_ANGLE degrees
 		end
 
+		-- Check for slide-jump: if player jumps, give them extra momentum
+		local state = humanoid:GetState()
+		if state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall then
+			-- Add extra speed and maintain momentum briefly
+			self:_applySlideJumpBoost(hrp, direction, speed, bodyVelocity)
+			-- Don't cleanup yet - the boost function handles it
+			self.bodyVelocity = nil -- Prevent cleanup from destroying it
+			break
+		end
+
 		-- Y-velocity based slope detection (simple and reliable)
 		local yVelocity = hrp.AssemblyLinearVelocity.Y
 		local isDownhill = yVelocity < DOWNHILL_Y_THRESHOLD
@@ -194,6 +208,19 @@ function Slide:_getSlideDirection(_humanoid: Humanoid, hrp: BasePart): Vector3
 	-- Use look vector for steering
 	local lookVector = hrp.CFrame.LookVector
 	return Vector3.new(lookVector.X, 0, lookVector.Z).Unit
+end
+
+function Slide:_applySlideJumpBoost(_hrp: BasePart, direction: Vector3, currentSpeed: number, bodyVelocity: BodyVelocity)
+	-- Boost the BodyVelocity speed and keep it alive briefly
+	local boostedSpeed = currentSpeed + SLIDE_JUMP_EXTRA_SPEED
+	bodyVelocity.Velocity = direction * boostedSpeed
+
+	-- Keep momentum going during the jump arc, then clean up
+	task.delay(SLIDE_JUMP_MOMENTUM_TIME, function()
+		if bodyVelocity and bodyVelocity.Parent then
+			bodyVelocity:Destroy()
+		end
+	end)
 end
 
 function Slide:_cleanup()
