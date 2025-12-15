@@ -35,6 +35,7 @@ local BASE_SLIDE_SPEED = SLIDE_DISTANCE / SLIDE_DURATION
 local SLOPE_ACCELERATION = 120 -- Studs/sec^2 acceleration when going downhill
 local MAX_TURN_ANGLE = 70 -- Degrees - cancel slide if turning beyond this
 local FLAT_DECELERATION = 50 -- Studs/sec^2 deceleration on flat ground
+local UPHILL_DECELERATION = 150 -- Studs/sec^2 deceleration when going uphill (quick stop)
 local MIN_SPEED = 8
 local MAX_SPEED = 40
 
@@ -152,11 +153,6 @@ function Slide:_performSlide(humanoid: Humanoid, hrp: BasePart)
 		local isDownhill = yVelocity < DOWNHILL_Y_THRESHOLD
 		local isUphill = yVelocity > UPHILL_Y_THRESHOLD
 
-		-- Cancel slide if going uphill
-		if isUphill then
-			break
-		end
-
 		-- Track consecutive frames not going downhill
 		if isDownhill then
 			framesNotDownhill = 0
@@ -169,6 +165,9 @@ function Slide:_performSlide(humanoid: Humanoid, hrp: BasePart)
 			-- DOWNHILL: Accelerate (steeper = faster)
 			local steepnessFactor = math.clamp(math.abs(yVelocity) / 10, 1, 2)
 			speed = speed + (SLOPE_ACCELERATION * steepnessFactor * rate)
+		elseif isUphill then
+			-- UPHILL: Rapid deceleration (feels responsive, not instant cancel)
+			speed = speed - (UPHILL_DECELERATION * rate)
 		else
 			-- FLAT: Gradual deceleration
 			speed = speed - (FLAT_DECELERATION * rate)
