@@ -17,8 +17,8 @@ CarryManager.__index = CarryManager
 local CARRY_RANGE = 8
 
 -- Animation IDs
-local CARRYING_ANIMATION = "rbxassetid://76405414110055"
-local CARRIED_ANIMATION = "rbxassetid://132103454609128"
+local CARRYING_ANIMATION = "rbxassetid://93751870909949"
+local CARRIED_ANIMATION = "rbxassetid://136185803650281"
 
 function CarryManager.new()
 	local self = setmetatable({}, CarryManager)

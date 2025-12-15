@@ -47,7 +47,7 @@ local EQUIPMENT = {
 	},
 	ninjato = {
 		Name = "Ninjato",
-		IdleAnimationIds = { 115261994832101, 116358842043289 }, -- torso, hands
+		IdleAnimationIds = { 125816010665644, 115103067110630 }, -- torso, hands
 		Moveset = "Armed",
 		CriticalSkill = "HeavySwing", -- Heavy attack for medium weapons
 		IsPhysical = true,
