@@ -128,21 +128,30 @@ function ServerInfoManager._assignPlayerUUID(player: Player)
 	end
 
 	-- Generate persistent UUID for this player's character
-	local chars = "0123456789abcdef"
-	local sections = { 8, 4, 4 }
+	-- Format: {UserId}-{4 numbers}-{4 alphanumeric}
+	-- Example: 7426263709-3826-a8ch
 
-	local uuid = ""
+	local numbersOnly = "0123456789"
+	local alphanumeric = "0123456789abcdefghijklmnopqrstuvwxyz"
+
 	-- Use player's UserId as seed for consistency across sessions
 	local rng = Random.new(player.UserId)
 
-	for i, length in ipairs(sections) do
-		for _ = 1, length do
-			local randomIndex = rng:NextInteger(1, #chars)
-			uuid = uuid .. chars:sub(randomIndex, randomIndex)
-		end
-		if i < #sections then
-			uuid = uuid .. "-"
-		end
+	-- First part: Player's UserId
+	local uuid = tostring(player.UserId)
+
+	-- Second part: 4 random numbers
+	uuid = uuid .. "-"
+	for _ = 1, 4 do
+		local randomIndex = rng:NextInteger(1, #numbersOnly)
+		uuid = uuid .. numbersOnly:sub(randomIndex, randomIndex)
+	end
+
+	-- Third part: 4 random alphanumeric
+	uuid = uuid .. "-"
+	for _ = 1, 4 do
+		local randomIndex = rng:NextInteger(1, #alphanumeric)
+		uuid = uuid .. alphanumeric:sub(randomIndex, randomIndex)
 	end
 
 	player:SetAttribute("CharacterUUID", uuid)

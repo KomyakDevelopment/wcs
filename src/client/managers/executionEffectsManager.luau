@@ -180,25 +180,6 @@ function ExecutionEffectsManager:_handleLocalPlayerDeath(_character: Model, kill
 	end)
 end
 
--- Generate a random UUID (format: xxxxxxxx-xxxx-xxxx)
-function ExecutionEffectsManager:_generateUUID(): string
-	local chars = "0123456789abcdef"
-	local sections = { 8, 4, 4 } -- UUID format sections
-
-	local uuid = ""
-	for i, length in ipairs(sections) do
-		for _ = 1, length do
-			local randomIndex = math.random(1, #chars)
-			uuid = uuid .. chars:sub(randomIndex, randomIndex)
-		end
-		if i < #sections then
-			uuid = uuid .. "-"
-		end
-	end
-
-	return uuid
-end
-
 -- Get current UTC date/time formatted
 function ExecutionEffectsManager:_getUTCDateTime(): string
 	local utcTime = os.date("!*t") -- ! prefix gives UTC time
@@ -347,10 +328,13 @@ function ExecutionEffectsManager:_populateDeathGUILabels(deathFrame: GuiObject, 
 		print("[ExecutionEffectsManager] User label not found or not a TextLabel")
 	end
 
-	-- Update UUID label
+	-- Update UUID label (use killer's persistent CharacterUUID)
 	local uuidLabel = deathFrame:FindFirstChild("UUID")
 	if uuidLabel and uuidLabel:IsA("TextLabel") then
-		local uuid = self:_generateUUID()
+		local uuid = "0000000000-0000-0000" -- Default for NPCs/unknown killers
+		if killerPlayer then
+			uuid = killerPlayer:GetAttribute("CharacterUUID") or uuid
+		end
 		uuidLabel.Text = uuid
 		print(`[ExecutionEffectsManager] Set UUID label: {uuid}`)
 	else
