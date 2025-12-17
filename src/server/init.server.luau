@@ -11,6 +11,7 @@ local CombatTagManager = require(script.managers.combatTagManager)
 local HealthRegenManager = require(script.managers.healthRegenManager)
 local CarryManager = require(script.managers.carryManager)
 local DebugPermissions = require(script.managers.debugPermissions)
+local ServerInfoManager = require(script.managers.serverInfoManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 
 local Server = WCS.CreateServer()
@@ -129,6 +130,9 @@ end)
 
 -- Initialize debug permissions FIRST (creates remote for client to check)
 DebugPermissions.init()
+
+-- Initialize server info (generates server name, tracks uptime)
+ServerInfoManager.init()
 
 -- Initialize managers (after remotes are created)
 local _stunIndicatorManager = StunIndicatorManager.new()

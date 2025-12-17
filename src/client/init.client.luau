@@ -37,6 +37,7 @@ local GripEffectsManager = require(ReplicatedStorage.Client.managers.gripEffects
 local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
 local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
 local DebugManager = require(ReplicatedStorage.Client.managers.debugManager)
+local ServerInfoUIManager = require(ReplicatedStorage.Client.managers.serverInfoUIManager)
 local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
@@ -69,6 +70,7 @@ local gripEffectsManager = GripEffectsManager.new() -- Event-driven, listens for
 local critVFXManager = CritVFXManager.new() -- Event-driven, listens for PlayCritVFX
 local combatTagUIManager = CombatTagUIManager.new() -- Event-driven, listens for CombatTagUpdate
 local debugManager = DebugManager.new() -- Debug panels (only visible for whitelisted users)
+local serverInfoUIManager = ServerInfoUIManager.new() -- Updates TopInfo UI labels
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 
