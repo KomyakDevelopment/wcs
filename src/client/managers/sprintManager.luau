@@ -30,7 +30,6 @@ local BACKWARD_SPEED_PENALTY = 0.85 -- 15% slower when holding S (backward movem
 
 -- Animation
 local SPRINT_ANIMATION_ID = "rbxassetid://94461174611915"
-local SPRINT_RIGHTARM_ANIMATION_ID = "rbxassetid://122819437317127" -- Plays when weapon equipped
 local SPRINT_ANIM_SPEED_NORMAL = 1.0 -- Normal sprint animation speed
 local SPRINT_ANIM_SPEED_AIRBORNE = 0.3 -- Slowed animation speed while mid-air
 local ANIM_SPEED_TRANSITION_TIME = 0.15 -- How quickly to transition between speeds
@@ -51,9 +50,7 @@ function SprintManager.new()
 	self.doubleTapTimers = {} -- Tracks timeout tasks for each key
 	self.sprintActive = false
 	self.loadedAnimation = nil
-	self.loadedRightArmAnimation = nil -- Right arm animation for when weapon is equipped
 	self.currentAnimTrack = nil
-	self.currentRightArmTrack = nil -- Right arm animation track
 	self.sprintDirection = nil
 	self.baseWalkSpeed = 16 -- Default walkspeed
 	self.sprintStartTime = 0 -- Track when sprint started for grace period
@@ -83,9 +80,7 @@ function SprintManager:_initialize()
 		-- Stop any active sprint from old character
 		self.sprintActive = false
 		self.loadedAnimation = nil
-		self.loadedRightArmAnimation = nil
 		self.currentAnimTrack = nil
-		self.currentRightArmTrack = nil
 		self.isAirborne = false
 		self.currentAnimSpeed = SPRINT_ANIM_SPEED_NORMAL
 		self.isHoldingBackward = false
@@ -142,12 +137,7 @@ function SprintManager:_setupCharacter(character: Model)
 			animation.AnimationId = SPRINT_ANIMATION_ID
 			self.loadedAnimation = animator:LoadAnimation(animation)
 
-			-- Also load right arm animation for when weapon is equipped
-			local rightArmAnimation = Instance.new("Animation")
-			rightArmAnimation.AnimationId = SPRINT_RIGHTARM_ANIMATION_ID
-			self.loadedRightArmAnimation = animator:LoadAnimation(rightArmAnimation)
-
-			print("[SprintManager] Sprint animations loaded for character")
+			print("[SprintManager] Sprint animation loaded for character")
 		else
 			warn("[SprintManager] Animator not found after 5 second wait - sprint animation unavailable")
 		end
@@ -329,26 +319,6 @@ function SprintManager:_isBlocking(): boolean
 	return wcsCharacter:HasStatusEffects({ Blocking })
 end
 
--- Check if player has a weapon in hand (selected and drawn, not just equipped)
-function SprintManager:_isWeaponInHand(): boolean
-	local player = Players.LocalPlayer
-	local character = player.Character
-	if not character then
-		return false
-	end
-
-	-- Check both conditions: weapon must be equipped (not fists) AND in hand
-	local equippedWeapon = character:GetAttribute("EquippedWeapon")
-	local weaponInHand = character:GetAttribute("WeaponInHand")
-
-	-- Must have a real weapon (not fists) and it must be in hand
-	if equippedWeapon and equippedWeapon ~= "fists" and weaponInHand == true then
-		return true
-	end
-
-	return false
-end
-
 -- Start sprint
 function SprintManager:_startSprint()
 	local player = Players.LocalPlayer
@@ -412,13 +382,6 @@ function SprintManager:_startSprint()
 			self.isAirborne = false
 			self:_adjustAnimationSpeed(SPRINT_ANIM_SPEED_NORMAL)
 		end
-	end
-
-	-- Play right arm animation if weapon is in hand (selected)
-	if self.loadedRightArmAnimation and self:_isWeaponInHand() then
-		self.currentRightArmTrack = self.loadedRightArmAnimation
-		self.currentRightArmTrack:Play(0.1)
-		print("[SprintManager] Playing sprint right arm animation (weapon in hand)")
 	end
 
 	-- Apply sprint speed (backward penalty handled in _monitorBackwardMovement)
@@ -499,12 +462,6 @@ function SprintManager:_stopSprint()
 	if self.currentAnimTrack then
 		self.currentAnimTrack:Stop(0.1)
 		self.currentAnimTrack = nil
-	end
-
-	-- Stop right arm animation
-	if self.currentRightArmTrack then
-		self.currentRightArmTrack:Stop(0.1)
-		self.currentRightArmTrack = nil
 	end
 
 	-- Reset walk speed (backward penalty handled in _monitorBackwardMovement)
@@ -636,22 +593,6 @@ function SprintManager:_monitorSprint()
 		if self:_shouldCancelSprint() then
 			self:_stopSprint()
 			return
-		end
-
-		-- Monitor weapon equip state for right arm animation
-		local hasWeapon = self:_isWeaponInHand()
-		local hasRightArmAnim = self.currentRightArmTrack ~= nil
-
-		if hasWeapon and not hasRightArmAnim and self.loadedRightArmAnimation then
-			-- Weapon was just drawn while sprinting - start right arm animation
-			self.currentRightArmTrack = self.loadedRightArmAnimation
-			self.currentRightArmTrack:Play(0.1)
-			print("[SprintManager] Started right arm animation (weapon drawn during sprint)")
-		elseif not hasWeapon and hasRightArmAnim then
-			-- Weapon was just sheathed while sprinting - stop right arm animation
-			self.currentRightArmTrack:Stop(0.1)
-			self.currentRightArmTrack = nil
-			print("[SprintManager] Stopped right arm animation (weapon sheathed during sprint)")
 		end
 	end)
 end
