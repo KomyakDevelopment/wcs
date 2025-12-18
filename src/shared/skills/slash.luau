@@ -72,6 +72,12 @@ local COMBO_ANIMATIONS = {
 		[3] = "rbxassetid://96383704992301",
 		[4] = "rbxassetid://114181766170631", -- Flourish
 	},
+	kusanagi = {
+		[1] = "rbxassetid://87386532163101",
+		[2] = "rbxassetid://91663977468313",
+		[3] = "rbxassetid://96383704992301",
+		[4] = "rbxassetid://114181766170631", -- Flourish
+	},
 }
 
 -- Helper to get weapon config dynamically
@@ -917,7 +923,7 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 
 		-- Determine weapon category based on weapon type
 		local weaponCategory = "Light_Weapons"
-		if weaponType == "uchigatana" then
+		if weaponType == "uchigatana" or weaponType == "kusanagi" then
 			weaponCategory = "Medium_Weapons"
 		end
 

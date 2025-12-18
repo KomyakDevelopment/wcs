@@ -60,6 +60,21 @@ local EQUIPMENT = {
 		ScabbardPart = "Scabbard", -- Name of scabbard model/part in weapon model
 		ScabbardAttachment = "Torso", -- Where scabbard attaches (always stays here)
 	},
+	kusanagi = {
+		Name = "Kusanagi",
+		IdleAnimationIds = { 125816010665644, 115103067110630 }, -- torso, hands
+		Moveset = "Armed",
+		CriticalSkill = "HeavySwing", -- Heavy attack for medium weapons
+		IsPhysical = true,
+		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Medium_Weapons.Kusanagi", -- Path to weapon folder
+		BackAttachment = "Torso", -- Where to attach when on back
+		HandAttachment = "Right Arm", -- Where to attach when in hand
+		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
+		-- Scabbard configuration for medium weapons
+		HasScabbard = true, -- This weapon has a separate scabbard
+		ScabbardPart = "Scabbard", -- Name of scabbard model/part in weapon model
+		ScabbardAttachment = "Torso", -- Where scabbard attaches (always stays here)
+	},
 }
 
 function EquipmentManager.new(wcsCharacter): EquipmentManager

@@ -21,6 +21,7 @@ local isInCombatTag = false
 local PHYSICAL_WEAPONS = {
 	kunai = true,
 	uchigatana = true,
+	kusanagi = true,
 }
 
 function EquipmentController.new()

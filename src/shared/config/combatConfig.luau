@@ -45,6 +45,18 @@ CombatConfig.Weapons = {
 		FlourishKnockbackDuration = 0.22,
 		FlourishSelfHitstun = 0.55,
 	},
+	kusanagi = {
+		Damage = 11,
+		Range = 12,
+		Cooldown = 0.75, -- Slightly faster than uchigatana
+		HitstunDuration = 0.7,
+		-- Combo damage delays (synced to animation timing)
+		DamageDelays = { 0.38, 0.38, 0.38, 0.48 }, -- Faster combo
+		-- Flourish (combo finisher)
+		FlourishKnockbackPower = 65,
+		FlourishKnockbackDuration = 0.22,
+		FlourishSelfHitstun = 0.55,
+	},
 }
 
 --============================================================================--
