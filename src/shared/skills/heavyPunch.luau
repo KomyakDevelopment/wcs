@@ -309,13 +309,23 @@ function HeavyPunch:_detectHit()
 			local targetRootPart = potentialTarget:FindFirstChild("HumanoidRootPart")
 
 			if targetHumanoid and targetHumanoid.Health > 0 and targetRootPart then
-				local distance = (targetRootPart.Position - origin).Magnitude
+				-- Calculate direction and angle to target
+				local directionToTarget = (targetRootPart.Position - origin).Unit
+				local dotProduct = lookDirection:Dot(directionToTarget)
 
-				if distance <= HEAVY_RANGE then
-					local directionToTarget = (targetRootPart.Position - origin).Unit
-					local dotProduct = lookDirection:Dot(directionToTarget)
+				-- Check if target is within attack cone angle
+				if dotProduct > HIT_ANGLE_THRESHOLD then
+					-- Calculate range falloff based on angle
+					-- At center (dot = 1.0): 100% range
+					-- At edge (dot = HIT_ANGLE_THRESHOLD): ~83% range
+					local normalizedDot = (dotProduct - HIT_ANGLE_THRESHOLD) / (1.0 - HIT_ANGLE_THRESHOLD)
+					-- Use squared falloff for more dramatic reduction at edges
+					local rangeMultiplier = 0.831 + (0.169 * (normalizedDot * normalizedDot))
+					local effectiveRange = HEAVY_RANGE * rangeMultiplier
 
-					if dotProduct > HIT_ANGLE_THRESHOLD then
+					-- Check if target is within effective range
+					local distance = (targetRootPart.Position - origin).Magnitude
+					if distance <= effectiveRange then
 						table.insert(hitTargets, { model = potentialTarget, humanoid = targetHumanoid })
 					end
 				end
