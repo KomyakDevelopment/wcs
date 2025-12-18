@@ -70,7 +70,7 @@ function HotbarUI.new()
 	-- Initialize with all weapons for testing
 	self.slotData[1] = { weaponId = "fists", displayName = "Fists" }
 	self.slotData[2] = { weaponId = "kunai", displayName = "Kunai" }
-	self.slotData[3] = { weaponId = "katana", displayName = "Katana" }
+	self.slotData[3] = { weaponId = "uchigatana", displayName = "Uchigatana" }
 
 	self:_setup()
 

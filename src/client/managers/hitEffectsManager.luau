@@ -19,9 +19,9 @@ local WEAPON_EFFECTS = {
 		soundPath = { "Assets", "SFX", "Weapon_Classes", "Light_Weapons", "Kunai", "hit" },
 		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Light_Weapons", "Kunai", "hit" },
 	},
-	katana = {
-		soundPath = { "Assets", "SFX", "Weapon_Classes", "Medium_Weapons", "Katana", "hit" },
-		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Medium_Weapons", "Katana", "hit" },
+	uchigatana = {
+		soundPath = { "Assets", "SFX", "Weapon_Classes", "Medium_Weapons", "Uchigatana", "hit" },
+		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Medium_Weapons", "Uchigatana", "hit" },
 	},
 }
 
