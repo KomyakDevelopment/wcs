@@ -33,7 +33,7 @@ CombatConfig.Weapons = {
 		FlourishKnockbackDuration = 0.2,
 		FlourishSelfHitstun = 0.5,
 	},
-	ninjato = {
+	katana = {
 		Damage = 11,
 		Range = 12,
 		Cooldown = 0.8,

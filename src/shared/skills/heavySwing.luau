@@ -1,6 +1,6 @@
 --!strict
 -- Heavy Swing Skill
--- A slower, more powerful weapon attack for medium weapons (ninjato, katana, etc.)
+-- A slower, more powerful weapon attack for medium weapons (katana, etc.)
 -- Triggered by pressing R when using a medium weapon
 
 local ContentProvider = game:GetService("ContentProvider")
@@ -74,7 +74,7 @@ local MOVEMENT_ANIMATION_IDS = {
 local WALK_ANIM_SPEED_DURING_HEAVY = 0.3 -- Slows walk animation to match slowed movement
 
 -- Default weapon for fallback
-local DEFAULT_WEAPON = "ninjato"
+local DEFAULT_WEAPON = "katana"
 
 -- Helper to get weapon config dynamically
 local function getWeaponConfig(weaponType: string)
@@ -306,7 +306,7 @@ function HeavySwing:_getClientWeaponType(): string
 			return string.lower(weaponName)
 		end
 	end
-	return "ninjato"
+	return "katana"
 end
 
 function HeavySwing:_getCurrentWeaponType(): string
@@ -316,7 +316,7 @@ function HeavySwing:_getCurrentWeaponType(): string
 			return equipped
 		end
 	end
-	return "ninjato"
+	return "katana"
 end
 
 function HeavySwing:_detectHit()

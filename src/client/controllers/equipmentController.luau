@@ -20,7 +20,7 @@ local isInCombatTag = false
 -- Track which weapons are physical (have a model that needs to be in hand)
 local PHYSICAL_WEAPONS = {
 	kunai = true,
-	ninjato = true,
+	katana = true,
 }
 
 function EquipmentController.new()

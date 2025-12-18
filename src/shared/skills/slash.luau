@@ -66,7 +66,7 @@ local COMBO_ANIMATIONS = {
 		[3] = "rbxassetid://122892720764576",
 		[4] = "rbxassetid://128565870055276", -- Flourish
 	},
-	ninjato = {
+	katana = {
 		[1] = "rbxassetid://87386532163101",
 		[2] = "rbxassetid://91663977468313",
 		[3] = "rbxassetid://96383704992301",
@@ -96,7 +96,7 @@ function Slash:OnConstructClient()
 	-- Setup client-side skill data
 	self.comboPhase = 1
 	self.comboResetTimer = nil
-	self.loadedAnimations = {} -- Now keyed by weapon type: { kunai = { [1] = track, ... }, ninjato = { ... } }
+	self.loadedAnimations = {} -- Now keyed by weapon type: { kunai = { [1] = track, ... }, katana = { ... } }
 	self.animationsReady = false
 	self.attackInvalidated = false -- Flag for trade prevention animation cleanup
 	self.hitstunMonitor = nil :: RBXScriptConnection? -- Monitor for hitstun during attack
@@ -910,7 +910,7 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 
 		-- Determine weapon category based on weapon type
 		local weaponCategory = "Light_Weapons"
-		if weaponType == "ninjato" then
+		if weaponType == "katana" then
 			weaponCategory = "Medium_Weapons"
 		end
 

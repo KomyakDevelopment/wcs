@@ -45,13 +45,13 @@ local EQUIPMENT = {
 		HandAttachment = "Right Arm", -- Where to attach when in hand
 		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
 	},
-	ninjato = {
-		Name = "Ninjato",
+	katana = {
+		Name = "Katana",
 		IdleAnimationIds = { 125816010665644, 115103067110630 }, -- torso, hands
 		Moveset = "Armed",
 		CriticalSkill = "HeavySwing", -- Heavy attack for medium weapons
 		IsPhysical = true,
-		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Medium_Weapons.Ninjato", -- Path to weapon folder
+		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Medium_Weapons.Katana", -- Path to weapon folder
 		BackAttachment = "Torso", -- Where to attach when on back
 		HandAttachment = "Right Arm", -- Where to attach when in hand
 		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
@@ -243,7 +243,7 @@ function EquipmentManager:_spawnWeaponModel(weapon)
 
 	print(`[EquipmentManager] Cloned model, parenting to: {self.character.Instance:GetFullName()}`)
 
-	-- Handle scabbard weapons (medium weapons like ninjato)
+	-- Handle scabbard weapons (medium weapons like katana)
 	if weapon.HasScabbard then
 		-- Find scabbard_handle (attachment point) and Scabbard (visual mesh)
 		local scabbardHandle = weaponClone:FindFirstChild("scabbard_handle")
