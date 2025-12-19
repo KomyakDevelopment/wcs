@@ -20,25 +20,39 @@ local CONFIG = {
 	WALL_DETECT_DISTANCE = 3.5,
 	MIN_SPEED = 5,
 
+	-- Wall distance (for smooth positioning)
+	TARGET_WALL_DISTANCE = 2, -- Studs from wall
+	DISTANCE_LERP_SPEED = 10, -- How fast to lerp to target distance
+
+	-- Camera offset (to prevent clipping)
+	CAMERA_OFFSET_DISTANCE = 2.5,
+	CAMERA_OFFSET_UP = 0.5,
+
 	-- Movement
 	HORIZONTAL_SPEED = 32, -- Speed along wall (studs/sec) - much faster
 	DESCENT_HORIZONTAL_SPEED = 28, -- Slightly slower during descent but still fast
 	UPWARD_SPEED = 2, -- Slight upward drift to stay on wall
-	DOWNWARD_SPEED = -12, -- Fast descent after time limit
+	DOWNWARD_SPEED_MIN = -4, -- Initial descent speed (slow start)
+	DOWNWARD_SPEED_MAX = -18, -- Maximum descent speed (accelerates to this)
+	DESCENT_CURVE_TIME = 1.5, -- Time to reach max descent speed
 	MAX_UPWARD_DURATION = 1.5, -- Seconds before descent
 	GROUND_CHECK_DISTANCE = 4, -- Distance to check for ground (ends slightly before hitting)
 
-	-- Jump off
-	JUMP_AWAY_POWER = 30,
-	JUMP_UP_POWER = 50,
-	SPEED_BOOST_MULTIPLIER = 1.4,
-	SPEED_BOOST_DURATION = 1.5,
+	-- Jump off (30 degrees outward from wall direction)
+	JUMP_ANGLE = 30, -- Degrees outward from wall direction
+	JUMP_HORIZONTAL_POWER = 85, -- Total horizontal power (split by angle)
+	JUMP_UP_POWER = 88, -- Vertical power
+	SPEED_BOOST_MULTIPLIER = 1.5,
+	SPEED_BOOST_DURATION = 1.8,
 
 	-- Cooldown
 	COOLDOWN = 0.5,
 
-	-- Animation
-	ANIMATION_ID = "rbxassetid://94461174611915",
+	-- Animations
+	WALLRUN_RIGHT_ANIM = "rbxassetid://101992096573753",
+	WALLRUN_LEFT_ANIM = "rbxassetid://105706301707645",
+	WALLJUMP_RIGHT_ANIM = "rbxassetid://79197256973276",
+	WALLJUMP_LEFT_ANIM = "rbxassetid://85469561514059",
 }
 
 export type WallRunManager = typeof(setmetatable(
@@ -62,9 +76,13 @@ export type WallRunManager = typeof(setmetatable(
 		_speedBoostEndTime: number,
 		_baseWalkSpeed: number,
 
-		_updateConnection: RBXScriptConnection?,
-		_animation: AnimationTrack?,
+		_wallRunRightAnim: AnimationTrack?,
+		_wallRunLeftAnim: AnimationTrack?,
+		_wallJumpRightAnim: AnimationTrack?,
+		_wallJumpLeftAnim: AnimationTrack?,
+		_currentAnim: AnimationTrack?,
 		_wallRunningEffect: any?,
+		_originalCameraOffset: Vector3?,
 	},
 	WallRunManager
 ))
@@ -91,9 +109,13 @@ function WallRunManager.new(): WallRunManager
 	self._speedBoostEndTime = 0
 	self._baseWalkSpeed = 16
 
-	self._updateConnection = nil
-	self._animation = nil
+	self._wallRunRightAnim = nil
+	self._wallRunLeftAnim = nil
+	self._wallJumpRightAnim = nil
+	self._wallJumpLeftAnim = nil
+	self._currentAnim = nil
 	self._wallRunningEffect = nil
+	self._originalCameraOffset = nil
 
 	self:_initialize()
 
@@ -161,13 +183,30 @@ function WallRunManager:_onCharacterAdded(character: Model)
 	self._rootPart = rootPart
 	self._baseWalkSpeed = humanoid.WalkSpeed
 
-	-- Load animation
+	-- Load animations
 	local animator = humanoid:FindFirstChildOfClass("Animator")
 	if animator then
-		local anim = Instance.new("Animation")
-		anim.AnimationId = CONFIG.ANIMATION_ID
-		self._animation = animator:LoadAnimation(anim)
-		self._animation.Priority = Enum.AnimationPriority.Action
+		-- Wallrun animations
+		local wallRunRightAnim = Instance.new("Animation")
+		wallRunRightAnim.AnimationId = CONFIG.WALLRUN_RIGHT_ANIM
+		self._wallRunRightAnim = animator:LoadAnimation(wallRunRightAnim)
+		self._wallRunRightAnim.Priority = Enum.AnimationPriority.Action
+
+		local wallRunLeftAnim = Instance.new("Animation")
+		wallRunLeftAnim.AnimationId = CONFIG.WALLRUN_LEFT_ANIM
+		self._wallRunLeftAnim = animator:LoadAnimation(wallRunLeftAnim)
+		self._wallRunLeftAnim.Priority = Enum.AnimationPriority.Action
+
+		-- Walljump animations
+		local wallJumpRightAnim = Instance.new("Animation")
+		wallJumpRightAnim.AnimationId = CONFIG.WALLJUMP_RIGHT_ANIM
+		self._wallJumpRightAnim = animator:LoadAnimation(wallJumpRightAnim)
+		self._wallJumpRightAnim.Priority = Enum.AnimationPriority.Action
+
+		local wallJumpLeftAnim = Instance.new("Animation")
+		wallJumpLeftAnim.AnimationId = CONFIG.WALLJUMP_LEFT_ANIM
+		self._wallJumpLeftAnim = animator:LoadAnimation(wallJumpLeftAnim)
+		self._wallJumpLeftAnim.Priority = Enum.AnimationPriority.Action
 	end
 
 	-- Reset cooldowns on landing
@@ -289,13 +328,28 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	self._humanoid.PlatformStand = true
 	self._humanoid.AutoRotate = false
 
-	-- Play animation
-	if self._animation then
-		self._animation:Play(0.1)
+	-- Adjust camera to prevent wall clipping (offset away from wall + slightly up)
+	local humanoid = self._character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		self._originalCameraOffset = humanoid.CameraOffset
+		-- Offset camera away from wall and slightly up to prevent clipping
+		local awayOffset = self._wallNormal * CONFIG.CAMERA_OFFSET_DISTANCE
+		local upOffset = Vector3.new(0, CONFIG.CAMERA_OFFSET_UP, 0)
+		humanoid.CameraOffset = awayOffset + upOffset
 	end
 
-	-- Start update loop (RenderStepped for smoothness)
-	self._updateConnection = RunService.RenderStepped:Connect(function(deltaTime)
+	-- Play wallrun animation based on side
+	if wallData.side == "Right" and self._wallRunRightAnim then
+		self._currentAnim = self._wallRunRightAnim
+		self._wallRunRightAnim:Play(0.1)
+	elseif wallData.side == "Left" and self._wallRunLeftAnim then
+		self._currentAnim = self._wallRunLeftAnim
+		self._wallRunLeftAnim:Play(0.1)
+	end
+
+	-- Start update loop with priority AFTER camera (300) to override shiftlock rotation
+	-- Camera priority is 200, so we use 300 to run after it
+	RunService:BindToRenderStep("WallRunUpdate", 300, function(deltaTime)
 		self:_updateWallRun(deltaTime)
 	end)
 end
@@ -323,6 +377,44 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		return
 	end
 
+	-- Check if wall is still there (raycast towards wall)
+	local wallCheckParams = RaycastParams.new()
+	wallCheckParams.FilterType = Enum.RaycastFilterType.Exclude
+	wallCheckParams.FilterDescendantsInstances = { self._character }
+
+	local wallCheck = workspace:Raycast(
+		self._rootPart.Position,
+		-self._wallNormal * CONFIG.WALL_DETECT_DISTANCE,
+		wallCheckParams
+	)
+
+	if not wallCheck then
+		print("[WallRunManager] Ending - wall ended, launching off edge")
+		-- Store side before ending (for walljump animation)
+		local side = self._requestedSide
+
+		-- Launch diagonally forward off the wall edge (70% power of normal jump)
+		local angleRad = math.rad(CONFIG.JUMP_ANGLE)
+		local edgePower = CONFIG.JUMP_HORIZONTAL_POWER * 0.7
+		local forwardPower = math.cos(angleRad) * edgePower
+		local awayPower = math.sin(angleRad) * edgePower
+
+		local forwardVel = self._wallDir * forwardPower
+		local awayVel = self._wallNormal * awayPower
+		local upVel = Vector3.new(0, CONFIG.JUMP_UP_POWER * 0.5, 0)
+		self._rootPart.AssemblyLinearVelocity = forwardVel + awayVel + upVel
+		self:_applySpeedBoost()
+		self:_endWallRun()
+
+		-- Play walljump animation after ending wallrun
+		if side == "Right" and self._wallJumpRightAnim then
+			self._wallJumpRightAnim:Play(0.1)
+		elseif side == "Left" and self._wallJumpLeftAnim then
+			self._wallJumpLeftAnim:Play(0.1)
+		end
+		return
+	end
+
 	-- Check if appropriate key is still held
 	local shouldContinue = (self._requestedSide == "Left" and self._isHoldingA)
 		or (self._requestedSide == "Right" and self._isHoldingD)
@@ -339,8 +431,13 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 	local horizontalSpeed = CONFIG.HORIZONTAL_SPEED
 
 	if timeOnWall > CONFIG.MAX_UPWARD_DURATION then
-		-- Descent phase: faster down, still fast horizontally
-		verticalSpeed = CONFIG.DOWNWARD_SPEED
+		-- Descent phase with eased curve (starts slow, accelerates)
+		local descentTime = timeOnWall - CONFIG.MAX_UPWARD_DURATION
+		local descentProgress = math.min(descentTime / CONFIG.DESCENT_CURVE_TIME, 1)
+		-- Quadratic ease-in for natural acceleration
+		local easedProgress = descentProgress * descentProgress
+		-- Interpolate between min and max descent speed
+		verticalSpeed = CONFIG.DOWNWARD_SPEED_MIN + (CONFIG.DOWNWARD_SPEED_MAX - CONFIG.DOWNWARD_SPEED_MIN) * easedProgress
 		horizontalSpeed = CONFIG.DESCENT_HORIZONTAL_SPEED
 	end
 
@@ -353,27 +450,53 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 	self._rootPart.AssemblyLinearVelocity = totalVelocity
 	self._rootPart.AssemblyAngularVelocity = Vector3.zero
 
+	-- Smoothly adjust distance to wall (target 2 studs)
+	local currentDistance = wallCheck.Distance
+	local distanceError = currentDistance - CONFIG.TARGET_WALL_DISTANCE
+	if math.abs(distanceError) > 0.1 then
+		-- Lerp towards target distance
+		local correction = distanceError * math.min(_deltaTime * CONFIG.DISTANCE_LERP_SPEED, 1)
+		local correctionVector = -self._wallNormal * correction
+		self._rootPart.CFrame = self._rootPart.CFrame + correctionVector
+	end
+
 	-- Face forward along wall
 	local lookCFrame = CFrame.lookAt(self._rootPart.Position, self._rootPart.Position + self._wallDir)
 	self._rootPart.CFrame = CFrame.new(self._rootPart.Position) * lookCFrame.Rotation
 end
 
 function WallRunManager:_jumpOffWall()
-	if not self._rootPart or not self._wallNormal then
+	if not self._rootPart or not self._wallNormal or not self._wallDir then
 		self:_endWallRun()
 		return
 	end
 
 	print("[WallRunManager] Jumping off wall")
 
-	-- Apply jump velocity
-	local jumpVel = self._wallNormal * CONFIG.JUMP_AWAY_POWER + Vector3.new(0, CONFIG.JUMP_UP_POWER, 0)
-	self._rootPart.AssemblyLinearVelocity = jumpVel
+	-- Store side before ending (for walljump animation)
+	local side = self._requestedSide
+
+	-- Calculate 30 degree diagonal jump (forward along wall + outward from wall)
+	local angleRad = math.rad(CONFIG.JUMP_ANGLE)
+	local forwardPower = math.cos(angleRad) * CONFIG.JUMP_HORIZONTAL_POWER
+	local awayPower = math.sin(angleRad) * CONFIG.JUMP_HORIZONTAL_POWER
+
+	local forwardVel = self._wallDir * forwardPower
+	local awayVel = self._wallNormal * awayPower
+	local upVel = Vector3.new(0, CONFIG.JUMP_UP_POWER, 0)
+	self._rootPart.AssemblyLinearVelocity = forwardVel + awayVel + upVel
 
 	-- Speed boost
 	self:_applySpeedBoost()
 
 	self:_endWallRun()
+
+	-- Play walljump animation after ending wallrun
+	if side == "Right" and self._wallJumpRightAnim then
+		self._wallJumpRightAnim:Play(0.1)
+	elseif side == "Left" and self._wallJumpLeftAnim then
+		self._wallJumpLeftAnim:Play(0.1)
+	end
 end
 
 function WallRunManager:_applySpeedBoost()
@@ -414,11 +537,8 @@ function WallRunManager:_endWallRun()
 	self._wallDir = nil
 	self._wallPosition = nil
 
-	-- Disconnect update loop
-	if self._updateConnection then
-		self._updateConnection:Disconnect()
-		self._updateConnection = nil
-	end
+	-- Unbind update loop
+	RunService:UnbindFromRenderStep("WallRunUpdate")
 
 	if self._character then
 		self._character:SetAttribute("IsWallRunning", false)
@@ -428,6 +548,14 @@ function WallRunManager:_endWallRun()
 	if self._humanoid then
 		self._humanoid.PlatformStand = false
 		self._humanoid.AutoRotate = true
+
+		-- Restore camera offset
+		if self._originalCameraOffset then
+			self._humanoid.CameraOffset = self._originalCameraOffset
+			self._originalCameraOffset = nil
+		else
+			self._humanoid.CameraOffset = Vector3.zero
+		end
 	end
 
 	if self._wallRunningEffect then
@@ -435,8 +563,10 @@ function WallRunManager:_endWallRun()
 		self._wallRunningEffect = nil
 	end
 
-	if self._animation then
-		self._animation:Stop(0.1)
+	-- Stop current wallrun animation
+	if self._currentAnim then
+		self._currentAnim:Stop(0.1)
+		self._currentAnim = nil
 	end
 
 	print("[WallRunManager] Ended wall run")

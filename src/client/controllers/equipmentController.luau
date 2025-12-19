@@ -22,6 +22,7 @@ local PHYSICAL_WEAPONS = {
 	kunai = true,
 	uchigatana = true,
 	kusanagi = true,
+	kubikiribocho = true,
 }
 
 function EquipmentController.new()

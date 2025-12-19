@@ -33,10 +33,30 @@ local BLOCK_STARTUP_TIME = 0.03 -- Windup before block becomes active
 local PARRY_WINDOW_DURATION = 0.2975 -- Perfect parry window at start of block (0.2 * 1.35)
 local BLOCK_COOLDOWN = 0.5 -- Cooldown after releasing block to prevent spam parrying
 
--- Animation IDs
-local PARRY_TRANSITION_ANIM = "rbxassetid://137500197245035"
-local BLOCK_ANIM = "rbxassetid://115856435443170"
+-- Animation IDs (defaults for fists/unarmed)
+local DEFAULT_PARRY_ANIM = "rbxassetid://137500197245035"
+local DEFAULT_BLOCK_ANIM = "rbxassetid://115856435443170"
 local BLOCK_HIT_ANIM = "rbxassetid://127830278063869"
+
+-- Weapon-specific block/parry animations
+local WEAPON_BLOCK_ANIMS = {
+	kunai = {
+		block = "rbxassetid://116055719354049",
+		parry = "rbxassetid://101039289396724",
+	},
+	uchigatana = {
+		block = "rbxassetid://122601128387564",
+		parry = "rbxassetid://111224605676234",
+	},
+	kusanagi = {
+		block = "rbxassetid://122601128387564",
+		parry = "rbxassetid://111224605676234",
+	},
+	kubikiribocho = {
+		block = "rbxassetid://122601128387564",
+		parry = "rbxassetid://111224605676234",
+	},
+}
 
 function Block:OnConstructServer()
 	self.blockActive = false
@@ -55,30 +75,10 @@ function Block:OnConstructClient()
 	self.parryStartTime = nil
 	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
 	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
+	self.currentWeaponType = nil -- Track current weapon for animation switching
 
-	-- Preload animations
-	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
-	if humanoid then
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if animator then
-			-- Parry transition animation
-			local parryTransAnim = Instance.new("Animation")
-			parryTransAnim.AnimationId = PARRY_TRANSITION_ANIM
-			self.loadedAnimations.ParryTransition = animator:LoadAnimation(parryTransAnim)
-
-			-- Block hold animation
-			local blockAnim = Instance.new("Animation")
-			blockAnim.AnimationId = BLOCK_ANIM
-			self.loadedAnimations.Block = animator:LoadAnimation(blockAnim)
-
-			-- Block hit animation
-			local blockHitAnim = Instance.new("Animation")
-			blockHitAnim.AnimationId = BLOCK_HIT_ANIM
-			self.loadedAnimations.BlockHit = animator:LoadAnimation(blockHitAnim)
-
-			print("[Block] Client: Preloaded animations")
-		end
-	end
+	-- Preload default animations (will be swapped when weapon changes)
+	self:_loadAnimationsForWeapon(nil)
 
 	-- Setup block hit remote listener
 	local blockHitRemote = ReplicatedStorage:WaitForChild("PlayBlockHitAnimation") :: RemoteEvent
@@ -87,6 +87,54 @@ function Block:OnConstructClient()
 			self:_playBlockHitAnimation()
 		end
 	end)
+end
+
+-- Get currently equipped weapon type
+function Block:_getEquippedWeaponType(): string?
+	local characterInstance = self.Character.Instance
+	for _, child in ipairs(characterInstance:GetChildren()) do
+		if child:IsA("Model") and string.find(child.Name, "_Equipped") then
+			local weaponName = string.gsub(child.Name, "_Equipped", "")
+			return string.lower(weaponName)
+		end
+	end
+	return nil
+end
+
+-- Load animations for a specific weapon type
+function Block:_loadAnimationsForWeapon(weaponType: string?)
+	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Get weapon-specific animations or use defaults
+	local weaponAnims = weaponType and WEAPON_BLOCK_ANIMS[weaponType]
+	local parryAnimId = weaponAnims and weaponAnims.parry or DEFAULT_PARRY_ANIM
+	local blockAnimId = weaponAnims and weaponAnims.block or DEFAULT_BLOCK_ANIM
+
+	-- Parry transition animation
+	local parryTransAnim = Instance.new("Animation")
+	parryTransAnim.AnimationId = parryAnimId
+	self.loadedAnimations.ParryTransition = animator:LoadAnimation(parryTransAnim)
+
+	-- Block hold animation
+	local blockAnim = Instance.new("Animation")
+	blockAnim.AnimationId = blockAnimId
+	self.loadedAnimations.Block = animator:LoadAnimation(blockAnim)
+
+	-- Block hit animation (universal)
+	local blockHitAnim = Instance.new("Animation")
+	blockHitAnim.AnimationId = BLOCK_HIT_ANIM
+	self.loadedAnimations.BlockHit = animator:LoadAnimation(blockHitAnim)
+
+	self.currentWeaponType = weaponType
+	print(`[Block] Client: Loaded animations for weapon: {weaponType or "default"}`)
 end
 
 -- Play block hit animation when getting hit while blocking
@@ -202,6 +250,12 @@ function Block:OnStartServer()
 end
 
 function Block:OnStartClient()
+	-- Check if weapon has changed and reload animations if needed
+	local currentWeapon = self:_getEquippedWeaponType()
+	if currentWeapon ~= self.currentWeaponType then
+		self:_loadAnimationsForWeapon(currentWeapon)
+	end
+
 	-- Check if parry is on cooldown (block is still allowed, just no parry window)
 	local currentTime = tick()
 	if currentTime - self.lastBlockEndTime < BLOCK_COOLDOWN then

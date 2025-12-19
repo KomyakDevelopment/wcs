@@ -75,6 +75,17 @@ local EQUIPMENT = {
 		ScabbardPart = "Scabbard", -- Name of scabbard model/part in weapon model
 		ScabbardAttachment = "Torso", -- Where scabbard attaches (always stays here)
 	},
+	kubikiribocho = {
+		Name = "Kubikiribocho",
+		IdleAnimationIds = { 125816010665644, 94462265760108 }, -- torso, hands
+		Moveset = "Armed",
+		CriticalSkill = "HeavySwing", -- Heavy attack for heavy weapons
+		IsPhysical = true,
+		ModelPath = "ReplicatedStorage.Assets.Models.Weapons.Heavy_Weapons.Kubikiribocho", -- Path to weapon folder
+		BackAttachment = "Torso", -- Where to attach when on back
+		HandAttachment = "Right Arm", -- Where to attach when in hand
+		WeaponHandlePart = "handle", -- Part in weapon model that connects to character
+	},
 }
 
 function EquipmentManager.new(wcsCharacter): EquipmentManager

@@ -72,6 +72,7 @@ function HotbarUI.new()
 	self.slotData[2] = { weaponId = "kunai", displayName = "Kunai" }
 	self.slotData[3] = { weaponId = "uchigatana", displayName = "Uchigatana" }
 	self.slotData[4] = { weaponId = "kusanagi", displayName = "Kusanagi" }
+	self.slotData[5] = { weaponId = "kubikiribocho", displayName = "Kubikiribocho" }
 
 	self:_setup()
 

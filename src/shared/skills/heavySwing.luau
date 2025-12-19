@@ -604,8 +604,11 @@ function HeavySwing:_playHeavySFX()
 	task.delay(sfxDelay, function()
 		local weaponType = self:_getClientWeaponType()
 
-		-- Determine weapon category
+		-- Determine weapon category based on weapon type
 		local weaponCategory = "Medium_Weapons"
+		if weaponType == "kubikiribocho" then
+			weaponCategory = "Heavy_Weapons"
+		end
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
 		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
@@ -666,14 +669,23 @@ function HeavySwing:_applyHeavyVFX()
 		return
 	end
 
-	-- Get VFX folder for heavySwing (medium weapons)
+	-- Determine weapon category and VFX folder name for criticals
+	local weaponType = self:_getClientWeaponType()
+	local vfxCategory = "Medium_Weapons"
+	local vfxFolderName = "heavySwing"
+	if weaponType == "kubikiribocho" then
+		vfxCategory = "Heavy_Weapons"
+		vfxFolderName = "heavySlash"
+	end
+
+	-- Get VFX folder for critical attack
 	local vfxFolder = ReplicatedStorage:FindFirstChild("Assets")
 		and ReplicatedStorage.Assets:FindFirstChild("VFX")
 		and ReplicatedStorage.Assets.VFX:FindFirstChild("Weapon_Classes")
 		and ReplicatedStorage.Assets.VFX.Weapon_Classes:FindFirstChild("Criticals")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild("Medium_Weapons")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Medium_Weapons:FindFirstChild("heavySwing")
-		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals.Medium_Weapons.heavySwing:FindFirstChild("vfx")
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals:FindFirstChild(vfxCategory)
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals[vfxCategory]:FindFirstChild(vfxFolderName)
+		and ReplicatedStorage.Assets.VFX.Weapon_Classes.Criticals[vfxCategory][vfxFolderName]:FindFirstChild("vfx")
 
 	if not vfxFolder then
 		return

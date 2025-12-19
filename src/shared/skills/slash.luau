@@ -78,6 +78,12 @@ local COMBO_ANIMATIONS = {
 		[3] = "rbxassetid://96383704992301",
 		[4] = "rbxassetid://114181766170631", -- Flourish
 	},
+	kubikiribocho = {
+		[1] = "rbxassetid://87386532163101",
+		[2] = "rbxassetid://91663977468313",
+		[3] = "rbxassetid://96383704992301",
+		[4] = "rbxassetid://114181766170631", -- Flourish (using kusanagi anims for now)
+	},
 }
 
 -- Helper to get weapon config dynamically
@@ -925,6 +931,8 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 		local weaponCategory = "Light_Weapons"
 		if weaponType == "uchigatana" or weaponType == "kusanagi" then
 			weaponCategory = "Medium_Weapons"
+		elseif weaponType == "kubikiribocho" then
+			weaponCategory = "Heavy_Weapons"
 		end
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
