@@ -11,7 +11,9 @@
 	│	:Enable() - Enables the whole module.
 	│	:Disable() - Disables the whole module.
 	│	:IsEnabled(): boolean - Returns ShiftLock's enabled state.
-	└	:ToggleShiftLock(Enable: boolean?) - Toggles the ShiftLock, if Enable parameter is provided then ShiftLock will be toggled to it.
+	│	:ToggleShiftLock(Enable: boolean?) - Toggles the ShiftLock, if Enable parameter is provided then ShiftLock will be toggled to it.
+	│	:SetCameraOffsetOverride(offset: Vector3?) - Temporarily overrides the camera offset (pass nil to clear).
+	└	:SetCharacterRotationEnabled(enabled: boolean) - Enable/disable character rotation (for wall running, etc.).
 
 --]]
 
@@ -63,6 +65,8 @@ function SmoothShiftLock.new()
 
 	--// Variables
 	self.Enabled = false
+	self._overrideOffset = nil :: Vector3?
+	self._characterRotationEnabled = true
 
 	--// Setup
 	self:Enable()
@@ -141,7 +145,9 @@ end
 function SmoothShiftLock:_transitionLockOffset()
 	if self.Enabled then
 		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_IN_SPEED
-		self._cameraOffsetSpring.Target = Config.LOCKED_CAMERA_OFFSET
+		-- Use override offset if set, otherwise use default
+		local targetOffset = self._overrideOffset or Config.LOCKED_CAMERA_OFFSET
+		self._cameraOffsetSpring.Target = targetOffset
 	else
 		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_OUT_SPEED
 		self._cameraOffsetSpring.Target = Vector3.new(0, 0, 0)
@@ -151,6 +157,20 @@ end
 --// [ External Functions: ]
 function SmoothShiftLock:IsEnabled(): boolean
 	return self.Enabled
+end
+
+--// Temporarily override camera offset (for wall running, etc.)
+function SmoothShiftLock:SetCameraOffsetOverride(offset: Vector3?)
+	self._overrideOffset = offset
+	-- Immediately transition to the new offset if shiftlock is enabled
+	if self.Enabled then
+		self:_transitionLockOffset()
+	end
+end
+
+--// Enable/disable character rotation (for wall running, etc.)
+function SmoothShiftLock:SetCharacterRotationEnabled(enabled: boolean)
+	self._characterRotationEnabled = enabled
 end
 
 --// ShiftLock toggle function
@@ -170,18 +190,23 @@ function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
 				self.Humanoid.AutoRotate = not self.Enabled
 			end
 
+			--// Skip character rotation if disabled (e.g., during wall running)
+			if not self._characterRotationEnabled then
+				return
+			end
+
 			--// Rotate the character
 			if self.Humanoid.Sit then
 				return
 			end
 			if Config.SMOOTH_CHARACTER_ROTATION then
-				local x, y, z = Camera.CFrame:ToOrientation()
+				local _, y, _ = Camera.CFrame:ToOrientation()
 				self.RootPart.CFrame = self.RootPart.CFrame:Lerp(
 					CFrame.new(self.RootPart.Position) * CFrame.Angles(0, y, 0),
 					Delta * 5 * Config.CHARACTER_ROTATION_SPEED
 				)
 			else
-				local x, y, z = Camera.CFrame:ToOrientation()
+				local _, y, _ = Camera.CFrame:ToOrientation()
 				self.RootPart.CFrame = CFrame.new(self.RootPart.Position) * CFrame.Angles(0, y, 0)
 			end
 		end))

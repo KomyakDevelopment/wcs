@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
+local SmoothShiftLock = require(script.Parent.smoothShiftLock)
 
 local WallRunManager = {}
 WallRunManager.__index = WallRunManager
@@ -51,8 +52,14 @@ local CONFIG = {
 	-- Animations
 	WALLRUN_RIGHT_ANIM = "rbxassetid://101992096573753",
 	WALLRUN_LEFT_ANIM = "rbxassetid://105706301707645",
-	WALLJUMP_RIGHT_ANIM = "rbxassetid://79197256973276",
-	WALLJUMP_LEFT_ANIM = "rbxassetid://85469561514059",
+	WALLJUMP_RIGHT_ANIM = "rbxassetid://127043982553357",
+	WALLJUMP_LEFT_ANIM = "rbxassetid://127043982553357",
+	WALLRUN_ANIM_SPEED = 1.82, -- Speed multiplier for wallrun animations
+	WALLJUMP_ANIM_SPEED = 1.69, -- Speed multiplier for walljump animations
+
+	-- Shiftlock camera override (flip to opposite side to prevent clipping)
+	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-1.75, 0.25, 0), -- Camera on left side
+	SHIFTLOCK_RIGHT_OFFSET = Vector3.new(1.75, 0.25, 0), -- Camera on right side (default)
 }
 
 export type WallRunManager = typeof(setmetatable(
@@ -280,11 +287,14 @@ function WallRunManager:_detectWallOnSide(requestedSide: string): WallData?
 			local wallDir = normal:Cross(Vector3.yAxis)
 			wallDir = Vector3.new(wallDir.X, 0, wallDir.Z).Unit
 
-			-- Match current movement
-			local currentVel = self._rootPart.AssemblyLinearVelocity
-			local currentHorizontal = Vector3.new(currentVel.X, 0, currentVel.Z)
-			if currentHorizontal.Magnitude > 1 and currentHorizontal:Dot(wallDir) < 0 then
-				wallDir = -wallDir
+			-- Match camera look direction (where player is looking determines wall run direction)
+			local camera = workspace.CurrentCamera
+			if camera then
+				local cameraLook = camera.CFrame.LookVector
+				local cameraHorizontal = Vector3.new(cameraLook.X, 0, cameraLook.Z)
+				if cameraHorizontal.Magnitude > 0.1 and cameraHorizontal:Dot(wallDir) < 0 then
+					wallDir = -wallDir
+				end
 			end
 
 			return {
@@ -338,13 +348,26 @@ function WallRunManager:_startWallRun(wallData: WallData)
 		humanoid.CameraOffset = awayOffset + upOffset
 	end
 
-	-- Play wallrun animation based on side
+	-- Override shiftlock camera to opposite side (prevents camera clipping through wall)
+	-- Also disable shiftlock character rotation so it doesn't fight with our rotation
+	SmoothShiftLock:SetCharacterRotationEnabled(false)
+	if wallData.side == "Right" then
+		-- Wall on right, put camera on left
+		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
+	else
+		-- Wall on left, put camera on right
+		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_RIGHT_OFFSET)
+	end
+
+	-- Play wallrun animation based on side (with speed multiplier)
 	if wallData.side == "Right" and self._wallRunRightAnim then
 		self._currentAnim = self._wallRunRightAnim
 		self._wallRunRightAnim:Play(0.1)
+		self._wallRunRightAnim:AdjustSpeed(CONFIG.WALLRUN_ANIM_SPEED)
 	elseif wallData.side == "Left" and self._wallRunLeftAnim then
 		self._currentAnim = self._wallRunLeftAnim
 		self._wallRunLeftAnim:Play(0.1)
+		self._wallRunLeftAnim:AdjustSpeed(CONFIG.WALLRUN_ANIM_SPEED)
 	end
 
 	-- Start update loop with priority AFTER camera (300) to override shiftlock rotation
@@ -406,11 +429,13 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		self:_applySpeedBoost()
 		self:_endWallRun()
 
-		-- Play walljump animation after ending wallrun
+		-- Play walljump animation after ending wallrun (with speed multiplier)
 		if side == "Right" and self._wallJumpRightAnim then
 			self._wallJumpRightAnim:Play(0.1)
+			self._wallJumpRightAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
 		elseif side == "Left" and self._wallJumpLeftAnim then
 			self._wallJumpLeftAnim:Play(0.1)
+			self._wallJumpLeftAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
 		end
 		return
 	end
@@ -491,11 +516,13 @@ function WallRunManager:_jumpOffWall()
 
 	self:_endWallRun()
 
-	-- Play walljump animation after ending wallrun
+	-- Play walljump animation after ending wallrun (with speed multiplier)
 	if side == "Right" and self._wallJumpRightAnim then
 		self._wallJumpRightAnim:Play(0.1)
+		self._wallJumpRightAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
 	elseif side == "Left" and self._wallJumpLeftAnim then
 		self._wallJumpLeftAnim:Play(0.1)
+		self._wallJumpLeftAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
 	end
 end
 
@@ -557,6 +584,10 @@ function WallRunManager:_endWallRun()
 			self._humanoid.CameraOffset = Vector3.zero
 		end
 	end
+
+	-- Clear shiftlock overrides and re-enable character rotation
+	SmoothShiftLock:SetCameraOffsetOverride(nil)
+	SmoothShiftLock:SetCharacterRotationEnabled(true)
 
 	if self._wallRunningEffect then
 		self._wallRunningEffect:End()
