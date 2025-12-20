@@ -80,6 +80,16 @@ function EquipmentController:selectSlot(slotNumber: number)
 		return
 	end
 
+	-- Block weapon switching during wall running or wall jumping
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if character then
+		if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+			print("[EquipmentController] Cannot switch weapons during wall running/jumping")
+			return
+		end
+	end
+
 	-- Block weapon switching during combat tag (can still toggle current weapon in/out of hand)
 	-- Allow equipping if no weapon is currently equipped
 	if isInCombatTag and self.equipped ~= nil and slotWeapon ~= self.equipped then
@@ -147,6 +157,16 @@ function EquipmentController:confirmAction(): boolean
 
 	if not self.selectedSlot then
 		return false -- No slot selected, nothing to confirm
+	end
+
+	-- Block weapon equipping during wall running or wall jumping
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if character then
+		if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+			print("[EquipmentController] Cannot equip weapon during wall running/jumping")
+			return false
+		end
 	end
 
 	local weaponId = self.hotbarUI:getSlotWeapon(self.selectedSlot)

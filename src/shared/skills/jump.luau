@@ -120,6 +120,12 @@ function Jump:_handleJumpRequest()
 		return
 	end
 
+	-- Block air jump during wall running or wall jumping
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+		return
+	end
+
 	-- Check if we can air jump (count 1 = did ground jump, can do 1 more air jump)
 	-- With maxJumps=2: ground jump is count 1, air jump will be count 2
 	if self.currentJumpCount >= self.maxJumps then

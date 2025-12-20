@@ -243,6 +243,13 @@ function HeavySlash:OnStartClient()
 		return
 	end
 
+	-- Check if player is wall running (direct attribute check - status effect is client-side only)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[HeavySlash] Client: Blocked - Player is wall running")
+		return
+	end
+
 	-- Check blocking status effects (server is authoritative, don't check Attacking here
 	-- since this skill creates Attacking and it may replicate before OnStartClient runs)
 	if

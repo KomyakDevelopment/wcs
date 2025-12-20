@@ -15,6 +15,7 @@ local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
+local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
 
 local Slide = WCS.RegisterSkill("Slide")
 
@@ -63,7 +64,7 @@ function Slide:OnStartServer()
 	-- Block if in blocking status
 	if
 		self.Character.IsGuardbroken
-		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking, Dashing, Sliding })
+		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking, Dashing, Sliding, WallRunning })
 	then
 		return
 	end
@@ -285,6 +286,13 @@ function Slide:OnConstructClient()
 end
 
 function Slide:OnStartClient()
+	-- Check if player is wall running (direct attribute check - more reliable than status effect)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[Slide] Client: Blocked - Player is wall running")
+		return
+	end
+
 	-- Block checks
 	if
 		self.Character:HasStatusEffects({
@@ -294,8 +302,6 @@ function Slide:OnStartClient()
 	then
 		return
 	end
-
-	local character = self.Character.Instance
 	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
 
 	if humanoid then

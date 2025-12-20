@@ -26,6 +26,7 @@ local Parried = require(ReplicatedStorage.Shared.statusEffects.parried)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
+local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
 
 -- Pre-cache skill references
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -138,6 +139,7 @@ function HeavySwing:OnStartServer()
 			Parrying,
 			Attacking,
 			Knockdown,
+			WallRunning,
 		})
 	then
 		return
@@ -239,6 +241,13 @@ end
 
 function HeavySwing:OnStartClient()
 	if self.loadedAnimation and self.loadedAnimation.IsPlaying then
+		return
+	end
+
+	-- Check if player is wall running (direct attribute check - status effect is client-side only)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[HeavySwing] Client: Blocked - Player is wall running")
 		return
 	end
 

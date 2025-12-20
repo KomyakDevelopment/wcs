@@ -151,6 +151,20 @@ function Dodge:OnStartServer()
 		return
 	end
 
+	-- Check if player is wall jumping - cannot dodge during wall jump
+	if character:GetAttribute("IsWallJumping") then
+		print("[Dodge] Server: Cannot dodge - Player is wall jumping")
+		return
+	end
+
+	-- Check if player is wall running - dodge cancels wall run
+	if character:GetAttribute("IsWallRunning") then
+		print("[Dodge] Server: Player is wall running - cancelling wall run for dodge")
+		character:SetAttribute("CancelWallRun", true)
+		-- Small delay to let wall run end before dodge starts
+		task.wait(0.05)
+	end
+
 	-- Check if character is grounded using humanoid state (more reliable than raycast alone)
 	local humanoidState = humanoid:GetState()
 	local isInAirState = humanoidState == Enum.HumanoidStateType.Freefall
@@ -449,8 +463,21 @@ function Dodge:OnStartClient()
 		return
 	end
 
-	-- Stop any M1 animations that might be playing
 	local character = self.Character.Instance
+
+	-- Check if player is wall jumping - cannot dodge during wall jump
+	if character:GetAttribute("IsWallJumping") then
+		print("[Dodge] Client: Cannot dodge - Player is wall jumping")
+		return
+	end
+
+	-- Check if player is wall running - dodge cancels wall run
+	if character:GetAttribute("IsWallRunning") then
+		print("[Dodge] Client: Player is wall running - cancelling wall run for dodge")
+		character:SetAttribute("CancelWallRun", true)
+	end
+
+	-- Stop any M1 animations that might be playing
 	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
 	if humanoid then
 		local animator = humanoid:FindFirstChildOfClass("Animator")

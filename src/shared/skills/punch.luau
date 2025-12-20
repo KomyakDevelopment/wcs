@@ -23,6 +23,7 @@ local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Shakyblock = require(ReplicatedStorage.Shared.statusEffects.shakyblock)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
+local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
 
 -- Pre-cache skill references at module load (avoid require() in OnStartClient/OnStartServer)
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -157,6 +158,7 @@ function Punch:OnStartServer()
 			Attacking, -- Prevents stacking M1 with M1
 			HeavyAttacking, -- Prevents stacking M1 with heavy attack
 			Knockdown, -- Can't attack while knocked down
+			WallRunning, -- Can't attack while wall running
 		})
 	then
 		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking")
@@ -289,6 +291,13 @@ function Punch:_restoreMovementAnimations()
 end
 
 function Punch:OnStartClient()
+	-- Check if player is wall running (direct attribute check - status effect is client-side only)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[Punch] Client: Blocked - Player is wall running")
+		return
+	end
+
 	-- Check if player has any hitstun status effects active, is guardbroken, dashing, blocking/parrying, knocked down, or attacking
 	-- Attacking/HeavyAttacking check prevents move stacking with other attacks
 	if

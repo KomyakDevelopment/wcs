@@ -56,6 +56,7 @@ local CONFIG = {
 	WALLJUMP_LEFT_ANIM = "rbxassetid://127043982553357",
 	WALLRUN_ANIM_SPEED = 1.82, -- Speed multiplier for wallrun animations
 	WALLJUMP_ANIM_SPEED = 1.69, -- Speed multiplier for walljump animations
+	WALLJUMP_DURATION = 0.5, -- Duration where dodge is blocked after wall jump
 
 	-- Shiftlock camera override (flip to opposite side to prevent clipping)
 	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-1.75, 0.25, 0), -- Camera on left side
@@ -400,6 +401,14 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		return
 	end
 
+	-- Check if dodge cancelled wall run
+	if self._character:GetAttribute("CancelWallRun") then
+		print("[WallRunManager] Ending - cancelled by dodge")
+		self._character:SetAttribute("CancelWallRun", nil)
+		self:_endWallRun()
+		return
+	end
+
 	-- Check if wall is still there (raycast towards wall)
 	local wallCheckParams = RaycastParams.new()
 	wallCheckParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -436,6 +445,16 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		elseif side == "Left" and self._wallJumpLeftAnim then
 			self._wallJumpLeftAnim:Play(0.1)
 			self._wallJumpLeftAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
+		end
+
+		-- Block dodge during wall jump
+		if self._character then
+			self._character:SetAttribute("IsWallJumping", true)
+			task.delay(CONFIG.WALLJUMP_DURATION, function()
+				if self._character then
+					self._character:SetAttribute("IsWallJumping", nil)
+				end
+			end)
 		end
 		return
 	end
@@ -523,6 +542,16 @@ function WallRunManager:_jumpOffWall()
 	elseif side == "Left" and self._wallJumpLeftAnim then
 		self._wallJumpLeftAnim:Play(0.1)
 		self._wallJumpLeftAnim:AdjustSpeed(CONFIG.WALLJUMP_ANIM_SPEED)
+	end
+
+	-- Block dodge during wall jump
+	if self._character then
+		self._character:SetAttribute("IsWallJumping", true)
+		task.delay(CONFIG.WALLJUMP_DURATION, function()
+			if self._character then
+				self._character:SetAttribute("IsWallJumping", nil)
+			end
+		end)
 	end
 end
 

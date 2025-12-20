@@ -226,6 +226,16 @@ end
 
 -- Handle double-tap sprint activation
 function SprintManager:_handleDoubleTap(direction: string)
+	-- Block sprint during wall running or wall jumping
+	local player = Players.LocalPlayer
+	local character = player.Character
+	if character then
+		if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+			print("[SprintManager] Double-tap ignored - Player is wall running/jumping")
+			return
+		end
+	end
+
 	-- Check if player is blocking - don't start sprint while blocking
 	if self:_isBlocking() then
 		print("[SprintManager] Double-tap ignored - Player is blocking")
@@ -324,6 +334,12 @@ function SprintManager:_startSprint()
 	local player = Players.LocalPlayer
 	local character = player.Character
 	if not character then
+		return
+	end
+
+	-- Block sprint during wall running or wall jumping
+	if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+		print("[SprintManager] Blocked - Player is wall running/jumping")
 		return
 	end
 

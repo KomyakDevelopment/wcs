@@ -113,6 +113,11 @@ function DoubleJumpManager:_handleJumpRequest(character: Model)
 		return
 	end
 
+	-- Block double jump during wall running or wall jumping
+	if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
+		return
+	end
+
 	-- Don't allow double jump while dashing/airdashing
 	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
 	if wcsCharacter and wcsCharacter:HasStatusEffects({ Dashing }) then

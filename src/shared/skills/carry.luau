@@ -127,6 +127,13 @@ function Carry:OnStartServer()
 		return
 	end
 
+	-- Check if player is wall running (direct attribute check)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[Carry] Server: Blocked - Player is wall running")
+		return
+	end
+
 	-- Find target
 	local target = self:_findNearestKnockedTarget()
 	if not target then

@@ -19,6 +19,7 @@ local Blocking = require(ReplicatedStorage.Shared.statusEffects.blocking)
 local Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying)
 local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
+local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
 local Sprint = require(ReplicatedStorage.Shared.skills.sprint)
 
 local Block = WCS.RegisterSkill("Block")
@@ -193,8 +194,8 @@ function Block:OnStartServer()
 
 	-- Check if player is in hitstun or dashing or guardbroken
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
-	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned, Guardbroken, Knockdown }) then
-		print("[Block] Server: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken")
+	if self.Character:HasStatusEffects({ Dashing, TrueHitstun, Stun, BlockStunned, Guardbroken, Knockdown, WallRunning }) then
+		print("[Block] Server: Blocked - Player is in a blocking state")
 		return
 	end
 
@@ -250,6 +251,13 @@ function Block:OnStartServer()
 end
 
 function Block:OnStartClient()
+	-- Check if player is wall running (direct attribute check - status effect is client-side only)
+	local character = self.Character.Instance
+	if character:GetAttribute("IsWallRunning") then
+		print("[Block] Client: Blocked - Player is wall running")
+		return
+	end
+
 	-- Check if weapon has changed and reload animations if needed
 	local currentWeapon = self:_getEquippedWeaponType()
 	if currentWeapon ~= self.currentWeaponType then
@@ -269,7 +277,7 @@ function Block:OnStartClient()
 	-- Check if player has any status effects that prevent blocking
 	-- Note: SoftHitstun is ALLOWED (can parry during soft hitstun), but TrueHitstun is NOT
 	if self.Character:HasStatusEffects({ TrueHitstun, Stun, Dashing, BlockStunned, Guardbroken, Knockdown }) then
-		print("[Block] Client: Blocked - Player is in true hitstun/stun/dashing/block recovery/guardbroken/knocked down")
+		print("[Block] Client: Blocked - Player is in a blocking state")
 		return
 	end
 
