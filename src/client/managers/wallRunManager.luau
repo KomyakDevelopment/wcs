@@ -352,12 +352,21 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	-- Override shiftlock camera to opposite side (prevents camera clipping through wall)
 	-- Also disable shiftlock character rotation so it doesn't fight with our rotation
 	SmoothShiftLock:SetCharacterRotationEnabled(false)
-	if wallData.side == "Right" then
-		-- Wall on right, put camera on left
-		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
-	else
-		-- Wall on left, put camera on right
-		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_RIGHT_OFFSET)
+
+	-- Determine wall side relative to CAMERA (not character or input key)
+	-- This ensures camera offset is always correct regardless of how player approached the wall
+	-- Note: Wall normal points AWAY from the wall surface
+	local camera = workspace.CurrentCamera
+	if camera then
+		local cameraRight = camera.CFrame.RightVector
+		-- Dot product: negative = normal points away from camera's right = wall is on RIGHT
+		-- Dot product: positive = normal points towards camera's right = wall is on LEFT
+		local wallSideDot = self._wallNormal:Dot(cameraRight)
+		if wallSideDot < 0 then
+			-- Wall is on camera's right (normal points left), put camera on left to avoid clipping
+			SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
+		end
+		-- If wall is on left, camera stays on right (default position) - no override needed
 	end
 
 	-- Play wallrun animation based on side (with speed multiplier)
