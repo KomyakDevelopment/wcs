@@ -377,8 +377,8 @@ function HitEffectsManager:_playSuccessfulDodgeHighlight(targetModel: Model)
 	-- Tween to visible state
 	local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	local tween = TweenService:Create(highlightClone, tweenInfo, {
-		FillTransparency = 0.8,
-		OutlineTransparency = 0.9,
+		FillTransparency = 0.6,
+		OutlineTransparency = 0.7,
 	})
 
 	tween:Play()
