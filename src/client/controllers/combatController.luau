@@ -19,6 +19,7 @@ local Block = require(ReplicatedStorage.Shared.skills.block)
 local HeavyPunch = require(ReplicatedStorage.Shared.skills.heavyPunch)
 local HeavySlash = require(ReplicatedStorage.Shared.skills.heavySlash)
 local HeavySwing = require(ReplicatedStorage.Shared.skills.heavySwing)
+local HeavySlam = require(ReplicatedStorage.Shared.skills.heavySlam)
 
 -- Equipment manager for looking up weapon configs
 local EquipmentManager = require(ReplicatedStorage.Shared.managers.equipmentManager)
@@ -37,6 +38,7 @@ local CRITICAL_SKILLS = {
 	HeavyPunch = HeavyPunch,
 	HeavySlash = HeavySlash,
 	HeavySwing = HeavySwing,
+	HeavySlam = HeavySlam,
 }
 
 local CombatController = {}

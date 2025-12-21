@@ -7,9 +7,10 @@ local Slash = require(ReplicatedStorage.Shared.skills.slash)
 local Block = require(ReplicatedStorage.Shared.skills.block)
 local HeavySlash = require(ReplicatedStorage.Shared.skills.heavySlash)
 local HeavySwing = require(ReplicatedStorage.Shared.skills.heavySwing)
+local HeavySlam = require(ReplicatedStorage.Shared.skills.heavySlam)
 local Grip = require(ReplicatedStorage.Shared.skills.grip)
 
 -- Armed moveset contains weapon-based combat skills
 -- Uses Slash instead of Punch for melee attacks
--- Includes both HeavySlash (light weapons) and HeavySwing (medium weapons)
-return WCS.CreateMoveset("Armed", { Dodge, Slide, Slash, Block, HeavySlash, HeavySwing, Grip })
+-- Includes HeavySlash (light weapons), HeavySwing (medium weapons), and HeavySlam (heavy weapons)
+return WCS.CreateMoveset("Armed", { Dodge, Slide, Slash, Block, HeavySlash, HeavySwing, HeavySlam, Grip })

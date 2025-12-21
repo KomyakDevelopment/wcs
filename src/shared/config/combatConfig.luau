@@ -60,10 +60,10 @@ CombatConfig.Weapons = {
 	kubikiribocho = {
 		Damage = 14, -- Heavy hits harder
 		Range = 16, -- Longer reach
-		Cooldown = 0.8, -- Reduced endlag
+		Cooldown = 1.1, -- Slower swing speed for heavy weapon
 		HitstunDuration = 0.8, -- Longer stagger
 		-- Combo damage delays (synced to animation timing)
-		DamageDelays = { 0.48, 0.48, 0.48, 0.58 }, -- Slower combo
+		DamageDelays = { 0.78, 0.78, 0.78, 0.98 }, -- Heavy swings hit late
 		-- Flourish (combo finisher)
 		FlourishKnockbackPower = 75, -- Stronger knockback
 		FlourishKnockbackDuration = 0.25,

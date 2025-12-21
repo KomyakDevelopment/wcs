@@ -80,10 +80,10 @@ local COMBO_ANIMATIONS = {
 		[4] = "rbxassetid://114181766170631", -- Flourish
 	},
 	kubikiribocho = {
-		[1] = "rbxassetid://87386532163101",
-		[2] = "rbxassetid://91663977468313",
-		[3] = "rbxassetid://96383704992301",
-		[4] = "rbxassetid://114181766170631", -- Flourish (using kusanagi anims for now)
+		[1] = "rbxassetid://140162212121285",
+		[2] = "rbxassetid://110088968830490",
+		[3] = "rbxassetid://123941806160968",
+		[4] = "rbxassetid://114181766170631", -- Flourish (same kick as all weapons)
 	},
 }
 
@@ -497,10 +497,14 @@ function Slash:_detectHit()
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
 		if hitEffectsRemote then
-			-- Flourish (phase 4) uses kick, so use fists hit effects instead of weapon
-			local weaponType = if self.currentAttackPhase == MAX_COMBO_PHASE
-				then "fists"
-				else self:_getCurrentWeaponType()
+			local currentWeapon = self:_getCurrentWeaponType()
+			-- Flourish (phase 4) uses kick for ALL weapons, so use fists hit effects
+			local weaponType
+			if self.currentAttackPhase == MAX_COMBO_PHASE then
+				weaponType = "fists" -- Kick uses fist effects for all weapons
+			else
+				weaponType = currentWeapon
+			end
 			-- Fire effects for each target that was hit
 			for _, targetData in ipairs(actualHits) do
 				hitEffectsRemote:FireAllClients(targetData.model, weaponType)
@@ -936,14 +940,18 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 
 		-- Determine weapon category based on weapon type
 		local weaponCategory = "Light_Weapons"
+
 		if weaponType == "uchigatana" or weaponType == "kusanagi" then
 			weaponCategory = "Medium_Weapons"
 		elseif weaponType == "kubikiribocho" then
+			-- Kubikiribocho uses its own Heavy_Weapons SFX
 			weaponCategory = "Heavy_Weapons"
 		end
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
 		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+
+		print(`[Slash] Looking for swing SFX: {weaponCategory}/{weaponFolderName}/swings (weapon: {weaponType})`)
 
 		-- Get swing SFX folder for this weapon
 		local swingSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
@@ -957,6 +965,8 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 			warn(`[Slash] Swing SFX folder not found for weapon: {weaponType}`)
 			return
 		end
+
+		print(`[Slash] Found SFX folder: {swingSFXFolder:GetFullName()}`)
 
 		-- Get all Sound instances from folder
 		local sounds = {}
