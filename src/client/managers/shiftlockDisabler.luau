@@ -10,6 +10,20 @@ local ContextActionService = game:GetService("ContextActionService")
 
 local player = Players.LocalPlayer
 
+-- Lazy load SmoothShiftLock to avoid circular dependency
+local SmoothShiftLock: any = nil
+local function getSmoothShiftLock()
+	if not SmoothShiftLock then
+		local success, result = pcall(function()
+			return require(script.Parent.smoothShiftLock)
+		end)
+		if success then
+			SmoothShiftLock = result
+		end
+	end
+	return SmoothShiftLock
+end
+
 local ShiftlockDisabler = {}
 
 -- State tracking
@@ -51,6 +65,13 @@ function ShiftlockDisabler.disable(source: string)
 
 	isDisabled = true
 	print(`[ShiftlockDisabler] Disabling shiftlock (source: {source})`)
+
+	-- Force disable SmoothShiftLock (custom shiftlock module)
+	-- This completely turns it off and prevents re-enabling
+	local smoothShiftLock = getSmoothShiftLock()
+	if smoothShiftLock and smoothShiftLock.ForceDisable then
+		smoothShiftLock:ForceDisable()
+	end
 
 	-- Store original rotation type
 	pcall(function()
@@ -131,6 +152,12 @@ function ShiftlockDisabler.enable(source: string)
 		end
 	end)
 
+	-- Re-enable SmoothShiftLock (restores previous state)
+	local smoothShiftLock = getSmoothShiftLock()
+	if smoothShiftLock and smoothShiftLock.ForceEnable then
+		smoothShiftLock:ForceEnable()
+	end
+
 	print("[ShiftlockDisabler] Shiftlock restored")
 end
 
@@ -163,6 +190,15 @@ function ShiftlockDisabler.forceCleanup()
 			originalRotationType = nil
 		end
 	end)
+
+	-- Reset SmoothShiftLock force disabled state
+	local smoothShiftLock = getSmoothShiftLock()
+	if smoothShiftLock and smoothShiftLock._forcedDisabled then
+		-- Clear the forced disabled state without restoring previous enabled state
+		-- (new character should start fresh)
+		smoothShiftLock._forcedDisabled = false
+		smoothShiftLock._enabledBeforeForceDisable = false
+	end
 end
 
 -- Check if shiftlock is currently disabled

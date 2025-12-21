@@ -34,6 +34,10 @@ local BLOCK_STARTUP_TIME = 0.03 -- Windup before block becomes active
 local PARRY_WINDOW_DURATION = 0.2975 -- Perfect parry window at start of block (0.2 * 1.35)
 local BLOCK_COOLDOWN = 0.5 -- Cooldown after releasing block to prevent spam parrying
 
+-- Safety mechanisms to prevent stuck Blocking status
+local MAX_BLOCK_DURATION = 30 -- Maximum time a block can be held (safety valve)
+local CLIENT_BLOCKING_TIMEOUT = 10 -- Force-end Blocking on client if stuck for this long
+
 -- Animation IDs (defaults for fists/unarmed)
 local DEFAULT_PARRY_ANIM = "rbxassetid://137500197245035"
 local DEFAULT_BLOCK_ANIM = "rbxassetid://115856435443170"
@@ -66,6 +70,7 @@ function Block:OnConstructServer()
 	self.startupComplete = false
 	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
 	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
+	self.blockStartTime = 0 -- Track when block started for safety timeout
 end
 
 function Block:OnConstructClient()
@@ -77,6 +82,7 @@ function Block:OnConstructClient()
 	self.lastBlockEndTime = 0 -- Track when block was last released for parry cooldown
 	self.parryOnCooldown = false -- Track if parry is on cooldown (block still allowed)
 	self.currentWeaponType = nil -- Track current weapon for animation switching
+	self.safetyCheckConnection = nil -- Safety mechanism connection
 
 	-- Preload default animations (will be swapped when weapon changes)
 	self:_loadAnimationsForWeapon(nil)
@@ -86,6 +92,53 @@ function Block:OnConstructClient()
 	self.blockHitRemote = blockHitRemote.OnClientEvent:Connect(function(targetCharacter)
 		if targetCharacter == self.Character.Instance then
 			self:_playBlockHitAnimation()
+		end
+	end)
+
+	-- Safety mechanism 3: Client-side stuck Blocking detection
+	-- Periodically check if Blocking status exists but Block skill is not active
+	-- Note: Client can't directly end server-owned status effects, but can clean up local state
+	local lastBlockingDetectedTime = 0
+	local checkCounter = 0
+	self.safetyCheckConnection = RunService.Heartbeat:Connect(function()
+		-- Only check every ~0.5 seconds to reduce overhead (30 frames at 60fps)
+		checkCounter = checkCounter + 1
+		if checkCounter < 30 then
+			return
+		end
+		checkCounter = 0
+
+		-- Check if we have Blocking status effect
+		local hasBlocking = self.Character:HasStatusEffects({ Blocking })
+
+		if hasBlocking and not self.blockActive then
+			-- Blocking status exists but skill is not active - potential stuck state
+			if lastBlockingDetectedTime == 0 then
+				lastBlockingDetectedTime = tick()
+				print("[Block] Client: SAFETY - Detected Blocking without active Block skill")
+			elseif tick() - lastBlockingDetectedTime > CLIENT_BLOCKING_TIMEOUT then
+				-- Blocking has been stuck for too long, clean up local state
+				warn(`[Block] Client: SAFETY - Blocking stuck for {CLIENT_BLOCKING_TIMEOUT}s, cleaning up local state`)
+
+				-- Clear LocalCombatState to allow M1s on client side
+				-- Server-side safety will eventually clean up the actual status effect
+				if LocalCombatState then
+					LocalCombatState.endBlock()
+					print("[Block] Client: SAFETY - Cleared LocalCombatState blocking")
+				end
+
+				-- Stop any lingering animations
+				if self.currentAnimTrack then
+					self.currentAnimTrack:Stop(0.12)
+					self.currentAnimTrack = nil
+					print("[Block] Client: SAFETY - Stopped lingering block animation")
+				end
+
+				lastBlockingDetectedTime = 0
+			end
+		else
+			-- Either no Blocking or Block skill is active - reset timer
+			lastBlockingDetectedTime = 0
 		end
 	end)
 end
@@ -212,6 +265,7 @@ function Block:OnStartServer()
 	print("[Block] Server: Block started - Startup phase")
 
 	self.blockActive = true
+	self.blockStartTime = tick() -- Track when block started for safety timeout
 
 	-- Apply startup delay before block becomes active
 	task.delay(BLOCK_STARTUP_TIME, function()
@@ -243,7 +297,31 @@ function Block:OnStartServer()
 
 	-- Keep skill active until block is released (hold-to-use)
 	-- This loop prevents the skill from ending immediately
+	-- Safety checks prevent the block from getting stuck if input release is lost
 	while self.blockActive do
+		-- Safety check 1: Max block duration timeout
+		local blockDuration = tick() - self.blockStartTime
+		if blockDuration > MAX_BLOCK_DURATION then
+			warn(`[Block] Server: SAFETY - Max block duration ({MAX_BLOCK_DURATION}s) exceeded, forcing end`)
+			self.blockActive = false
+			break
+		end
+
+		-- Safety check 2: Verify character and humanoid are still valid
+		local character = self.Character.Instance
+		if not character or not character.Parent then
+			warn("[Block] Server: SAFETY - Character no longer valid, forcing end")
+			self.blockActive = false
+			break
+		end
+
+		local humanoid = character:FindFirstChild("Humanoid") :: Humanoid?
+		if not humanoid or humanoid.Health <= 0 then
+			warn("[Block] Server: SAFETY - Humanoid dead or missing, forcing end")
+			self.blockActive = false
+			break
+		end
+
 		task.wait(0.1)
 	end
 

@@ -33,6 +33,9 @@ local UserInputService = game:GetService("UserInputService")
 local Maid = require(script:WaitForChild("Maid"))
 local Spring = require(script:WaitForChild("Spring"))
 
+--// External modules
+local ShiftlockDisabler = require(script.Parent.shiftlockDisabler)
+
 --// Instances
 local LocalPlayer = Players.LocalPlayer
 local PlayerMouse = LocalPlayer:GetMouse()
@@ -67,6 +70,8 @@ function SmoothShiftLock.new()
 	self.Enabled = false
 	self._overrideOffset = nil :: Vector3?
 	self._characterRotationEnabled = true
+	self._forcedDisabled = false -- When true, shiftlock is completely disabled and cannot be toggled
+	self._enabledBeforeForceDisable = false -- Stores Enabled state before force disable for restoration
 
 	--// Setup
 	self:Enable()
@@ -88,6 +93,11 @@ function SmoothShiftLock:Enable()
 
 	--// Camera Offset
 	self._runtimeMaid:GiveTask(RunService.RenderStepped:Connect(function()
+		--// Skip all processing if shiftlock is externally disabled (knockdown, carry, etc.)
+		if ShiftlockDisabler.isDisabled() then
+			return
+		end
+
 		if self.Head.LocalTransparencyModifier > 0.6 then
 			return
 		end
@@ -123,6 +133,11 @@ end
 
 --// Internal function for ContextActionService
 function SmoothShiftLock:_doShiftLockSwitch(_, State: Enum.UserInputState)
+	--// Block shiftlock toggle if force disabled or externally disabled (knockdown, carry, etc.)
+	if self._forcedDisabled or ShiftlockDisabler.isDisabled() then
+		return Enum.ContextActionResult.Sink
+	end
+
 	if State == Enum.UserInputState.Begin then
 		self:ToggleShiftLock()
 		return Enum.ContextActionResult.Sink
@@ -133,16 +148,33 @@ end
 
 --// Update the mouse behaviour
 function SmoothShiftLock:_updateMouseState()
+	--// Don't lock mouse if externally disabled (knockdown, carry, etc.)
+	if ShiftlockDisabler.isDisabled() then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		return
+	end
 	UserInputService.MouseBehavior = (self.Enabled and Enum.MouseBehavior.LockCenter) or Enum.MouseBehavior.Default
 end
 
 --// Update the mouse icon
 function SmoothShiftLock:_updateMouseIcon()
+	--// Don't show locked cursor if externally disabled (knockdown, carry, etc.)
+	if ShiftlockDisabler.isDisabled() then
+		PlayerMouse.Icon = ""
+		return
+	end
 	PlayerMouse.Icon = (self.Enabled and Config.LOCKED_MOUSE_ICON :: string) or ""
 end
 
 --// Transition the camera to lock offset
 function SmoothShiftLock:_transitionLockOffset()
+	--// Force camera back to center if externally disabled (knockdown, carry, etc.)
+	if ShiftlockDisabler.isDisabled() then
+		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_OUT_SPEED
+		self._cameraOffsetSpring.Target = Vector3.new(0, 0, 0)
+		return
+	end
+
 	if self.Enabled then
 		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_IN_SPEED
 		-- Use override offset if set, otherwise use default
@@ -173,8 +205,71 @@ function SmoothShiftLock:SetCharacterRotationEnabled(enabled: boolean)
 	self._characterRotationEnabled = enabled
 end
 
+--// Force disable shiftlock completely (for knockdown, carry, execution, etc.)
+--// This is more aggressive than just checking isDisabled() - it actually toggles shiftlock OFF
+--// and prevents any re-enabling until ForceEnable is called
+function SmoothShiftLock:ForceDisable()
+	if self._forcedDisabled then
+		return -- Already force disabled
+	end
+
+	print("[SmoothShiftLock] Force disabling shiftlock")
+
+	-- Store current state for restoration
+	self._enabledBeforeForceDisable = self.Enabled
+	self._forcedDisabled = true
+
+	-- If shiftlock is currently enabled, turn it OFF completely
+	-- This cleans up the shiftlock maid, stops character rotation, restores AutoRotate, etc.
+	if self.Enabled then
+		self:ToggleShiftLock(false)
+	end
+
+	-- Force restore all states to ensure nothing is stuck
+	if self.Humanoid then
+		self.Humanoid.AutoRotate = true
+	end
+
+	-- Force mouse to default state
+	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	PlayerMouse.Icon = ""
+
+	-- Force camera offset to center
+	self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_OUT_SPEED
+	self._cameraOffsetSpring.Target = Vector3.new(0, 0, 0)
+end
+
+--// Re-enable shiftlock after force disable (restores previous state)
+function SmoothShiftLock:ForceEnable()
+	if not self._forcedDisabled then
+		return -- Not force disabled
+	end
+
+	print("[SmoothShiftLock] Force enabling shiftlock")
+
+	self._forcedDisabled = false
+
+	-- Restore previous enabled state
+	if self._enabledBeforeForceDisable then
+		self:ToggleShiftLock(true)
+	end
+
+	self._enabledBeforeForceDisable = false
+end
+
+--// Check if shiftlock is force disabled
+function SmoothShiftLock:IsForcedDisabled(): boolean
+	return self._forcedDisabled
+end
+
 --// ShiftLock toggle function
 function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
+	--// Block enabling if force disabled (but allow disabling)
+	if self._forcedDisabled and Enable ~= false then
+		print("[SmoothShiftLock] Toggle blocked - force disabled")
+		return
+	end
+
 	if Enable ~= nil then
 		self.Enabled = Enable
 	else
@@ -186,6 +281,15 @@ function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
 	self:_transitionLockOffset()
 	if self.Enabled then
 		self._shiftlockMaid:GiveTask(RunService.RenderStepped:Connect(function(Delta: number)
+			--// Skip all processing if shiftlock is externally disabled (knockdown, carry, etc.)
+			if ShiftlockDisabler.isDisabled() then
+				--// Ensure AutoRotate is restored when externally disabled
+				if self.Humanoid then
+					self.Humanoid.AutoRotate = true
+				end
+				return
+			end
+
 			if self.Humanoid and self.RootPart then
 				self.Humanoid.AutoRotate = not self.Enabled
 			end

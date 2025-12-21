@@ -7,6 +7,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local ShiftlockDisabler = require(script.Parent.shiftlockDisabler)
+
 local GripEffectsManager = {}
 GripEffectsManager.__index = GripEffectsManager
 
@@ -23,6 +25,7 @@ function GripEffectsManager.new()
 
 	-- Movement freeze state for local player when gripping
 	self._isLocalPlayerGripping = false
+	self._isLocalPlayerBeingGripped = false -- Track when we are the VICTIM
 	self._originalWalkSpeed = nil :: number?
 	self._originalJumpPower = nil :: number?
 	self._originalAutoRotate = nil :: boolean?
@@ -70,6 +73,14 @@ function GripEffectsManager:_onGripStart(attacker: Model, victim: Model)
 		self:_freezeLocalPlayer()
 	end
 
+	-- If local player is the VICTIM, ensure shiftlock stays disabled
+	-- This adds another layer on top of ragdoll to prevent any shiftlock issues
+	if victim == self._player.Character then
+		self._isLocalPlayerBeingGripped = true
+		ShiftlockDisabler.disable("grip")
+		print("[GripEffectsManager] Local player is grip victim - shiftlock disabled")
+	end
+
 	print(`[GripEffectsManager] Grip started: {attacker.Name} -> {victim.Name}`)
 end
 
@@ -81,6 +92,14 @@ function GripEffectsManager:_onGripCancel(attacker: Model, victim: Model)
 	-- If local player was the attacker, unfreeze their movement
 	if attacker == self._player.Character then
 		self:_unfreezeLocalPlayer()
+	end
+
+	-- If local player was the VICTIM, release grip source
+	-- Note: Shiftlock stays disabled because ragdoll is still active
+	if victim == self._player.Character and self._isLocalPlayerBeingGripped then
+		self._isLocalPlayerBeingGripped = false
+		ShiftlockDisabler.enable("grip")
+		print("[GripEffectsManager] Local player grip cancelled - grip source released (ragdoll still active)")
 	end
 
 	print(`[GripEffectsManager] Grip cancelled: {attacker.Name} -> {victim.Name}`)
@@ -98,6 +117,15 @@ function GripEffectsManager:_onExecuted(executedCharacter: Model, killerCharacte
 		if killerCharacter == self._player.Character then
 			self:_unfreezeLocalPlayer()
 		end
+	end
+
+	-- If local player was the VICTIM being executed, clear grip state
+	-- Note: We don't enable grip source here - let CharacterAdded cleanup handle it
+	-- This ensures shiftlock stays disabled until respawn
+	if executedCharacter == self._player.Character then
+		self._isLocalPlayerBeingGripped = false
+		-- Don't call ShiftlockDisabler.enable("grip") - let respawn cleanup handle it
+		print("[GripEffectsManager] Local player executed - grip state cleared (shiftlock cleanup on respawn)")
 	end
 
 	print(`[GripEffectsManager] Execution complete: {executedCharacter.Name}`)
@@ -246,6 +274,12 @@ function GripEffectsManager:destroy()
 	-- Unfreeze local player if still gripping
 	if self._isLocalPlayerGripping then
 		self:_unfreezeLocalPlayer()
+	end
+
+	-- Release grip source if we were being gripped
+	if self._isLocalPlayerBeingGripped then
+		self._isLocalPlayerBeingGripped = false
+		ShiftlockDisabler.enable("grip")
 	end
 
 	-- Stop all active animations
