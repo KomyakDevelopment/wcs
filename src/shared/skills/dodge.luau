@@ -88,6 +88,7 @@ function Dodge:OnConstructClient()
 	self.rollVFXAttachment = nil
 	self.dodgeSFX = nil
 	self.isAirDash = false
+	self.isEnhancedDashClient = false
 	self.airDashAnimation = nil
 	self.enhancedDashAnimation = nil
 
@@ -582,11 +583,13 @@ function Dodge:OnStartClient()
 
 		-- Air dash: use enhanced or normal air dash animation
 		if isEnhancedDash and self.enhancedDashAnimation then
+			self.isEnhancedDashClient = true
 			self.currentAnimTrack = self.enhancedDashAnimation
 			self.enhancedDashAnimation:Play(0.05)
 			self.enhancedDashAnimation.Priority = Enum.AnimationPriority.Action2
 			print("[Dodge] Client: Playing ENHANCED dash animation")
 		elseif self.airDashAnimation then
+			self.isEnhancedDashClient = false
 			self.currentAnimTrack = self.airDashAnimation
 			self.airDashAnimation:Play(0.05)
 			self.airDashAnimation.Priority = Enum.AnimationPriority.Action2
@@ -1162,9 +1165,12 @@ end
 function Dodge:OnEndClient()
 	-- Stop dodge animation (not rollcancel)
 	if self.currentAnimTrack then
-		self.currentAnimTrack:Stop(0.1)
+		-- Air dash (normal and enhanced) uses slower fade out for smoother transition to running
+		local fadeTime = self.isAirDash and 0.35 or 0.1
+		self.currentAnimTrack:Stop(fadeTime)
 		self.currentAnimTrack = nil
 	end
+	self.isEnhancedDashClient = false
 
 	-- Disconnect M2 listener
 	if self.m2Connection then
