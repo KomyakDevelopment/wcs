@@ -38,6 +38,10 @@ local AIR_DASH_DURATION = 0.295 -- Faster than ground dodge 79892666286494
 local AIR_DASH_ANIMATION = "rbxassetid://127043982553357" -- Different animation for air dash 96765830085186
 local AIR_DASH_Y_INFLUENCE = 0.3 -- How much camera pitch tilts the dash direction (0 = horizontal only, 1 = full camera direction)
 
+-- Enhanced dash configuration (triggered from momentum system at 100%)
+local ENHANCED_DASH_RANGE_MULTIPLIER = 6 -- 6x the range
+local ENHANCED_DASH_SPEED_MULTIPLIER = 4 -- 4x the speed
+
 -- Iframes configuration
 local IFRAME_START = 0 -- Iframes start immediately when dodge begins
 local IFRAME_END = 0.55 -- Iframes end right before dodge completes (increased for better dodge window)
@@ -310,20 +314,43 @@ end
 
 -- Perform air dash (new behavior)
 function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
+	local character = self.Character.Instance
+
+	-- Check for enhanced dash (triggered by momentum system at 100%)
+	local isEnhancedDash = character:GetAttribute("UseEnhancedDash") == true
+	if isEnhancedDash then
+		-- Clear the attribute immediately
+		character:SetAttribute("UseEnhancedDash", nil)
+		self.isEnhancedDash = true
+		print("[Dodge] Server: ENHANCED DASH activated!")
+	else
+		self.isEnhancedDash = false
+	end
+
+	-- Calculate distance and speed based on enhanced dash
+	local dashDistance = AIR_DASH_DISTANCE
+	local dashDuration = AIR_DASH_DURATION
+
+	if self.isEnhancedDash then
+		dashDistance = AIR_DASH_DISTANCE * ENHANCED_DASH_RANGE_MULTIPLIER
+		-- Speed = Distance / Duration, so for 2x speed with 3x distance: duration = 3x distance / 2x speed = 1.5x duration
+		dashDuration = (AIR_DASH_DISTANCE * ENHANCED_DASH_RANGE_MULTIPLIER) / (AIR_DASH_DISTANCE / AIR_DASH_DURATION * ENHANCED_DASH_SPEED_MULTIPLIER)
+	end
+
 	-- Apply Dashing status effect
 	self.dashingEffect = Dashing.new(self.Character)
 	if self.dashingEffect then
-		self.dashingEffect:Start(AIR_DASH_DURATION)
-		print("[Dodge] Server: Applied Dashing status effect (air dash)")
+		self.dashingEffect:Start(dashDuration)
+		print(`[Dodge] Server: Applied Dashing status effect ({if self.isEnhancedDash then "enhanced" else "air"} dash)`)
 	end
 
 	-- Calculate dash direction and strength - LOCKED at start (no control during air dash)
 	-- For air dash, use camera direction with Y-axis component
-	local dashStrength = AIR_DASH_DISTANCE / AIR_DASH_DURATION
+	local dashStrength = dashDistance / dashDuration
 	local lockedDirection = self:_calculateDashDirection(humanoid, humanoidRootPart, true) -- true = isAirDash
 	local rate = 0.0167
 
-	print(`[Dodge] Server: Starting air dash - Strength: {dashStrength}, Direction: {lockedDirection}`)
+	print(`[Dodge] Server: Starting {if self.isEnhancedDash then "ENHANCED" else "air"} dash - Distance: {dashDistance}, Duration: {dashDuration}, Strength: {dashStrength}`)
 
 	-- Create BodyVelocity for movement
 	local bodyVelocity = Instance.new("BodyVelocity")
@@ -339,16 +366,18 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 		-- Immediate iframe application (no delay)
 		self.iframesEffect = Iframes.new(self.Character)
 		if self.iframesEffect then
-			local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
+			local iframeDuration = math.min(IFRAME_END - IFRAME_START, dashDuration - IFRAME_START)
 			self.iframesEffect:Start(iframeDuration)
-			-- Set rollcancel window end time (first 75% of AIR_DASH duration)
-			self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (AIR_DASH_DURATION * 0.75))
+			-- Set rollcancel window end time (first 75% of dash duration)
+			self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (dashDuration * 0.75))
 			print(
-				`[Dodge] Server: Applied iframes immediately for {iframeDuration}s (air dash), rollcancel window: {AIR_DASH_DURATION * 0.75}s`
+				`[Dodge] Server: Applied iframes immediately for {iframeDuration}s ({if self.isEnhancedDash then "enhanced" else "air"} dash), rollcancel window: {dashDuration * 0.75}s`
 			)
 		end
 	else
-		-- Schedule iframes
+		-- Schedule iframes (capture dashDuration for closure)
+		local capturedDuration = dashDuration
+		local capturedEnhanced = self.isEnhancedDash
 		task.delay(IFRAME_START, function()
 			if not self.dodgeActive then
 				return
@@ -356,12 +385,12 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 
 			self.iframesEffect = Iframes.new(self.Character)
 			if self.iframesEffect then
-				local iframeDuration = math.min(IFRAME_END - IFRAME_START, AIR_DASH_DURATION - IFRAME_START)
+				local iframeDuration = math.min(IFRAME_END - IFRAME_START, capturedDuration - IFRAME_START)
 				self.iframesEffect:Start(iframeDuration)
-				-- Set rollcancel window end time (first 75% of AIR_DASH duration)
-				self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (AIR_DASH_DURATION * 0.75))
+				-- Set rollcancel window end time (first 75% of dash duration)
+				self.Character.Instance:SetAttribute("_RollcancelWindowEnd", tick() + (capturedDuration * 0.75))
 				print(
-					`[Dodge] Server: Applied iframes for {iframeDuration}s (air dash), rollcancel window: {AIR_DASH_DURATION * 0.75}s`
+					`[Dodge] Server: Applied iframes for {iframeDuration}s ({if capturedEnhanced then "enhanced" else "air"} dash), rollcancel window: {capturedDuration * 0.75}s`
 				)
 			end
 		end)
@@ -389,14 +418,14 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 	-- Apply initial velocity in 3D to override current velocity
 	humanoidRootPart.AssemblyLinearVelocity = lockedDirection * dashStrength
 
-	while elapsed < AIR_DASH_DURATION do
+	while elapsed < dashDuration do
 		if not self.dodgeActive then
 			-- Cancelled (landed or other reason)
 			break
 		end
 
 		-- Apply subtle easing at the end
-		local progress = elapsed / AIR_DASH_DURATION
+		local progress = elapsed / dashDuration
 		local speedMultiplier = 1
 
 		if progress > 0.8 then

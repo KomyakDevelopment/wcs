@@ -39,10 +39,12 @@ local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
 local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
 local DebugManager = require(ReplicatedStorage.Client.managers.debugManager)
 local ServerInfoUIManager = require(ReplicatedStorage.Client.managers.serverInfoUIManager)
+local MomentumManager = require(ReplicatedStorage.Client.managers.momentumManager)
 -- local HitboxVisualizerManager = require(ReplicatedStorage.Client.managers.hitboxVisualizerManager) -- DISABLED
 local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
 local EquipmentController = require(ReplicatedStorage.Client.controllers.equipmentController)
+local MomentumUI = require(ReplicatedStorage.Client.ui.momentumUI)
 
 -- Initialize WCS Client
 local Client = WCS.CreateClient()
@@ -74,6 +76,8 @@ local critVFXManager = CritVFXManager.new() -- Event-driven, listens for PlayCri
 local combatTagUIManager = CombatTagUIManager.new() -- Event-driven, listens for CombatTagUpdate
 local debugManager = DebugManager.new() -- Debug panels (only visible for whitelisted users)
 local serverInfoUIManager = ServerInfoUIManager.new() -- Updates TopInfo UI labels
+local momentumManager = MomentumManager.new() -- Momentum system for wall running and enhanced dash
+local momentumUI = MomentumUI.new() -- Momentum percentage display
 -- local hitboxVisualizerManager = HitboxVisualizerManager.new() -- Shows weapon hitboxes (DISABLED)
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
@@ -81,6 +85,23 @@ local equipmentController = EquipmentController.new()
 -- Link controllers and managers
 combatController:setEquipmentController(equipmentController)
 combatController:setSprintManager(sprintManager)
+
+-- Link momentum system
+wallRunManager:setMomentumManager(momentumManager)
+
+-- Connect momentum UI to momentum manager
+momentumManager:setOnMomentumChanged(function(momentum)
+	momentumUI:setMomentum(momentum)
+end)
+
+-- Show UI immediately when action starts, hide when action ends
+momentumManager:setOnActionStarted(function(_actionName)
+	momentumUI:show()
+end)
+
+momentumManager:setOnActionEnded(function(_actionName)
+	momentumUI:hide()
+end)
 
 -- Create BindableEvent for dodge -> sprint communication
 local resumeSprintEvent = Instance.new("BindableEvent")

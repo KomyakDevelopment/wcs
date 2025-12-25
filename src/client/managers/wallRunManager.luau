@@ -85,6 +85,9 @@ export type WallRunManager = typeof(setmetatable(
 		_wallJumpLeftAnim: AnimationTrack?,
 		_currentAnim: AnimationTrack?,
 		_wallRunningEffect: any?,
+
+		-- Momentum integration
+		_momentumManager: any?,
 	},
 	WallRunManager
 ))
@@ -117,6 +120,7 @@ function WallRunManager.new(): WallRunManager
 	self._wallJumpLeftAnim = nil
 	self._currentAnim = nil
 	self._wallRunningEffect = nil
+	self._momentumManager = nil
 
 	self:_initialize()
 
@@ -327,6 +331,11 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	end
 
 	self._character:SetAttribute("IsWallRunning", true)
+
+	-- Notify momentum manager
+	if self._momentumManager then
+		self._momentumManager:startAction("WallRun")
+	end
 
 	-- Disable physics
 	self._humanoid.PlatformStand = true
@@ -597,6 +606,11 @@ function WallRunManager:_endWallRun()
 		self._character:SetAttribute("IsWallRunning", false)
 	end
 
+	-- Notify momentum manager
+	if self._momentumManager then
+		self._momentumManager:endAction("WallRun")
+	end
+
 	-- Re-enable physics
 	if self._humanoid then
 		self._humanoid.PlatformStand = false
@@ -623,6 +637,11 @@ end
 
 function WallRunManager:destroy()
 	self:_endWallRun()
+end
+
+-- Set the momentum manager reference for integration
+function WallRunManager:setMomentumManager(momentumManager: any)
+	self._momentumManager = momentumManager
 end
 
 return WallRunManager
