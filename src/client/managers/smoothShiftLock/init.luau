@@ -69,6 +69,7 @@ function SmoothShiftLock.new()
 	--// Variables
 	self.Enabled = false
 	self._overrideOffset = nil :: Vector3?
+	self._skipCameraOffset = false -- When true, completely skip camera offset rendering (for wall running)
 	self._characterRotationEnabled = true
 	self._forcedDisabled = false -- When true, shiftlock is completely disabled and cannot be toggled
 	self._enabledBeforeForceDisable = false -- Stores Enabled state before force disable for restoration
@@ -91,14 +92,19 @@ function SmoothShiftLock:Enable()
 		return self:_doShiftLockSwitch(Name, State, Input)
 	end, Config.MOBILE_SUPPORT, Enum.ContextActionPriority.Medium.Value, unpack(Config.SHIFT_LOCK_KEYBINDS))
 
-	--// Camera Offset
-	self._runtimeMaid:GiveTask(RunService.RenderStepped:Connect(function()
+	--// Camera Offset - Run at LAST priority to ensure nothing overrides our offset
+	RunService:BindToRenderStep("SmoothShiftLock_CameraOffset", Enum.RenderPriority.Last.Value, function()
+		--// Skip completely if wall running is handling camera offset
+		if self._skipCameraOffset then
+			return
+		end
+
 		--// Skip all processing if shiftlock is externally disabled (knockdown, carry, etc.)
 		if ShiftlockDisabler.isDisabled() then
 			return
 		end
 
-		if self.Head.LocalTransparencyModifier > 0.6 then
+		if not self.Head or self.Head.LocalTransparencyModifier > 0.6 then
 			return
 		end
 
@@ -107,12 +113,22 @@ function SmoothShiftLock:Enable()
 
 		--// Camera offset
 		if Distance > 1 then
-			Camera.CFrame = (Camera.CFrame * CFrame.new(self._cameraOffsetSpring.Position))
+			local offset = self._cameraOffsetSpring.Position
+
+			-- Apply offset in world space using camera vectors
+			local worldOffset = Camera.CFrame.RightVector * offset.X
+				+ Camera.CFrame.UpVector * offset.Y
+				+ Camera.CFrame.LookVector * offset.Z
+
+			Camera.CFrame = Camera.CFrame + worldOffset
 			if self.Enabled and UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
 				self:_updateMouseState()
 			end
 		end
-	end))
+	end)
+	self._runtimeMaid:GiveTask(function()
+		RunService:UnbindFromRenderStep("SmoothShiftLock_CameraOffset")
+	end)
 end
 
 function SmoothShiftLock:Disable()
@@ -175,10 +191,10 @@ function SmoothShiftLock:_transitionLockOffset()
 		return
 	end
 
-	if self.Enabled then
-		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_IN_SPEED
-		-- Use override offset if set, otherwise use default
+	-- Apply offset if shiftlock is enabled OR if there's an override (wall running)
+	if self.Enabled or self._overrideOffset then
 		local targetOffset = self._overrideOffset or Config.LOCKED_CAMERA_OFFSET
+		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_IN_SPEED
 		self._cameraOffsetSpring.Target = targetOffset
 	else
 		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_OUT_SPEED
@@ -191,18 +207,24 @@ function SmoothShiftLock:IsEnabled(): boolean
 	return self.Enabled
 end
 
---// Temporarily override camera offset (for wall running, etc.)
+--// Temporarily override camera offset
 function SmoothShiftLock:SetCameraOffsetOverride(offset: Vector3?)
-	self._overrideOffset = offset
-	-- Immediately transition to the new offset if shiftlock is enabled
-	if self.Enabled then
-		self:_transitionLockOffset()
+	if self._overrideOffset == offset then
+		return
 	end
+
+	self._overrideOffset = offset
+	self:_transitionLockOffset()
 end
 
 --// Enable/disable character rotation (for wall running, etc.)
 function SmoothShiftLock:SetCharacterRotationEnabled(enabled: boolean)
 	self._characterRotationEnabled = enabled
+end
+
+--// Skip camera offset rendering entirely (for wall running which handles its own camera offset)
+function SmoothShiftLock:SetSkipCameraOffset(skip: boolean)
+	self._skipCameraOffset = skip
 end
 
 --// Force disable shiftlock completely (for knockdown, carry, execution, etc.)

@@ -25,9 +25,8 @@ local CONFIG = {
 	TARGET_WALL_DISTANCE = 2, -- Studs from wall
 	DISTANCE_LERP_SPEED = 10, -- How fast to lerp to target distance
 
-	-- Camera offset (to prevent clipping)
-	CAMERA_OFFSET_DISTANCE = 2.5,
-	CAMERA_OFFSET_UP = 0.5,
+	-- Shiftlock camera override (only need left offset - right is default)
+	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-3, 0.25, 0), -- Camera on left side (for right wall)
 
 	-- Movement
 	HORIZONTAL_SPEED = 32, -- Speed along wall (studs/sec) - much faster
@@ -57,10 +56,6 @@ local CONFIG = {
 	WALLRUN_ANIM_SPEED = 1.82, -- Speed multiplier for wallrun animations
 	WALLJUMP_ANIM_SPEED = 1.69, -- Speed multiplier for walljump animations
 	WALLJUMP_DURATION = 0.5, -- Duration where dodge is blocked after wall jump
-
-	-- Shiftlock camera override (flip to opposite side to prevent clipping)
-	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-1.75, 0.25, 0), -- Camera on left side
-	SHIFTLOCK_RIGHT_OFFSET = Vector3.new(1.75, 0.25, 0), -- Camera on right side (default)
 }
 
 export type WallRunManager = typeof(setmetatable(
@@ -90,7 +85,6 @@ export type WallRunManager = typeof(setmetatable(
 		_wallJumpLeftAnim: AnimationTrack?,
 		_currentAnim: AnimationTrack?,
 		_wallRunningEffect: any?,
-		_originalCameraOffset: Vector3?,
 	},
 	WallRunManager
 ))
@@ -123,7 +117,6 @@ function WallRunManager.new(): WallRunManager
 	self._wallJumpLeftAnim = nil
 	self._currentAnim = nil
 	self._wallRunningEffect = nil
-	self._originalCameraOffset = nil
 
 	self:_initialize()
 
@@ -339,34 +332,13 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	self._humanoid.PlatformStand = true
 	self._humanoid.AutoRotate = false
 
-	-- Adjust camera to prevent wall clipping (offset away from wall + slightly up)
-	local humanoid = self._character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		self._originalCameraOffset = humanoid.CameraOffset
-		-- Offset camera away from wall and slightly up to prevent clipping
-		local awayOffset = self._wallNormal * CONFIG.CAMERA_OFFSET_DISTANCE
-		local upOffset = Vector3.new(0, CONFIG.CAMERA_OFFSET_UP, 0)
-		humanoid.CameraOffset = awayOffset + upOffset
-	end
-
-	-- Override shiftlock camera to opposite side (prevents camera clipping through wall)
-	-- Also disable shiftlock character rotation so it doesn't fight with our rotation
+	-- Disable shiftlock character rotation so it doesn't fight with our rotation
 	SmoothShiftLock:SetCharacterRotationEnabled(false)
 
-	-- Determine wall side relative to CAMERA (not character or input key)
-	-- This ensures camera offset is always correct regardless of how player approached the wall
-	-- Note: Wall normal points AWAY from the wall surface
-	local camera = workspace.CurrentCamera
-	if camera then
-		local cameraRight = camera.CFrame.RightVector
-		-- Dot product: negative = normal points away from camera's right = wall is on RIGHT
-		-- Dot product: positive = normal points towards camera's right = wall is on LEFT
-		local wallSideDot = self._wallNormal:Dot(cameraRight)
-		if wallSideDot < 0 then
-			-- Wall is on camera's right (normal points left), put camera on left to avoid clipping
-			SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
-		end
-		-- If wall is on left, camera stays on right (default position) - no override needed
+	-- Only override camera when wall is on RIGHT (to flip camera to left)
+	-- When wall is on LEFT, default shiftlock (camera on right) is already correct
+	if wallData.side == "Right" then
+		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
 	end
 
 	-- Play wallrun animation based on side (with speed multiplier)
@@ -613,17 +585,9 @@ function WallRunManager:_endWallRun()
 	if self._humanoid then
 		self._humanoid.PlatformStand = false
 		self._humanoid.AutoRotate = true
-
-		-- Restore camera offset
-		if self._originalCameraOffset then
-			self._humanoid.CameraOffset = self._originalCameraOffset
-			self._originalCameraOffset = nil
-		else
-			self._humanoid.CameraOffset = Vector3.zero
-		end
 	end
 
-	-- Clear shiftlock overrides and re-enable character rotation
+	-- Clear shiftlock override and re-enable character rotation
 	SmoothShiftLock:SetCameraOffsetOverride(nil)
 	SmoothShiftLock:SetCharacterRotationEnabled(true)
 
