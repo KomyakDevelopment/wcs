@@ -39,8 +39,9 @@ local AIR_DASH_ANIMATION = "rbxassetid://127043982553357" -- Different animation
 local AIR_DASH_Y_INFLUENCE = 0.3 -- How much camera pitch tilts the dash direction (0 = horizontal only, 1 = full camera direction)
 
 -- Enhanced dash configuration (triggered from momentum system at 100%)
-local ENHANCED_DASH_RANGE_MULTIPLIER = 6 -- 6x the range
-local ENHANCED_DASH_SPEED_MULTIPLIER = 4 -- 4x the speed
+local ENHANCED_DASH_DISTANCE = 40 -- Fixed 40 stud distance
+local ENHANCED_DASH_SPEED_MULTIPLIER = 2 -- 2x the speed
+local ENHANCED_DASH_ANIMATION = "rbxassetid://131915305278984" -- Special animation for enhanced dash
 
 -- Iframes configuration
 local IFRAME_START = 0 -- Iframes start immediately when dodge begins
@@ -88,6 +89,7 @@ function Dodge:OnConstructClient()
 	self.dodgeSFX = nil
 	self.isAirDash = false
 	self.airDashAnimation = nil
+	self.enhancedDashAnimation = nil
 
 	-- Preload all dodge animations
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -104,6 +106,11 @@ function Dodge:OnConstructClient()
 			local airDashAnim = Instance.new("Animation")
 			airDashAnim.AnimationId = AIR_DASH_ANIMATION
 			self.airDashAnimation = animator:LoadAnimation(airDashAnim)
+
+			-- Preload enhanced dash animation
+			local enhancedDashAnim = Instance.new("Animation")
+			enhancedDashAnim.AnimationId = ENHANCED_DASH_ANIMATION
+			self.enhancedDashAnimation = animator:LoadAnimation(enhancedDashAnim)
 		end
 	end
 end
@@ -317,10 +324,16 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 	local character = self.Character.Instance
 
 	-- Check for enhanced dash (triggered by momentum system at 100%)
-	local isEnhancedDash = character:GetAttribute("UseEnhancedDash") == true
+	-- Uses server-side store since client attributes don't replicate
+	local Players = game:GetService("Players")
+	local player = Players:GetPlayerFromCharacter(character)
+	local isEnhancedDash = false
+
+	if player and _G.EnhancedDashStore then
+		isEnhancedDash = _G.EnhancedDashStore.get(player)
+	end
+
 	if isEnhancedDash then
-		-- Clear the attribute immediately
-		character:SetAttribute("UseEnhancedDash", nil)
 		self.isEnhancedDash = true
 		print("[Dodge] Server: ENHANCED DASH activated!")
 	else
@@ -332,9 +345,9 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 	local dashDuration = AIR_DASH_DURATION
 
 	if self.isEnhancedDash then
-		dashDistance = AIR_DASH_DISTANCE * ENHANCED_DASH_RANGE_MULTIPLIER
-		-- Speed = Distance / Duration, so for 2x speed with 3x distance: duration = 3x distance / 2x speed = 1.5x duration
-		dashDuration = (AIR_DASH_DISTANCE * ENHANCED_DASH_RANGE_MULTIPLIER) / (AIR_DASH_DISTANCE / AIR_DASH_DURATION * ENHANCED_DASH_SPEED_MULTIPLIER)
+		dashDistance = ENHANCED_DASH_DISTANCE
+		-- Speed = Distance / Duration, enhanced speed is 2x normal air dash speed
+		dashDuration = ENHANCED_DASH_DISTANCE / (AIR_DASH_DISTANCE / AIR_DASH_DURATION * ENHANCED_DASH_SPEED_MULTIPLIER)
 	end
 
 	-- Apply Dashing status effect
@@ -560,8 +573,20 @@ function Dodge:OnStartClient()
 	local activeDuration = self.isAirDash and AIR_DASH_DURATION or DODGE_DURATION
 
 	if self.isAirDash then
-		-- Air dash: use air dash animation
-		if self.airDashAnimation then
+		-- Check if this is an enhanced dash (client-side attribute set by momentum manager)
+		local isEnhancedDash = character:GetAttribute("UseEnhancedDashAnim") == true
+		if isEnhancedDash then
+			-- Clear the attribute immediately
+			character:SetAttribute("UseEnhancedDashAnim", nil)
+		end
+
+		-- Air dash: use enhanced or normal air dash animation
+		if isEnhancedDash and self.enhancedDashAnimation then
+			self.currentAnimTrack = self.enhancedDashAnimation
+			self.enhancedDashAnimation:Play(0.05)
+			self.enhancedDashAnimation.Priority = Enum.AnimationPriority.Action2
+			print("[Dodge] Client: Playing ENHANCED dash animation")
+		elseif self.airDashAnimation then
 			self.currentAnimTrack = self.airDashAnimation
 			self.airDashAnimation:Play(0.05)
 			self.airDashAnimation.Priority = Enum.AnimationPriority.Action2

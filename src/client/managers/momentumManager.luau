@@ -4,6 +4,7 @@
 -- Modular system - each action can have its own buildup delay and duration
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
@@ -20,8 +21,8 @@ export type ActionConfig = {
 
 local ACTION_CONFIGS: { [string]: ActionConfig } = {
 	WallRun = {
-		buildupDelay = 1.0, -- Start building after 1 second
-		buildupDuration = 1.5, -- Reach 100% in 1.5 seconds
+		buildupDelay = 0.5, -- Start building after 0.5 seconds
+		buildupDuration = 1.0, -- Reach 100% in 1 second
 		resetOnEnd = true, -- Reset when wall run ends
 	},
 }
@@ -46,6 +47,7 @@ export type MomentumManager = typeof(setmetatable(
 		_onEnhancedDashAvailable: ((boolean) -> ())?,
 		_onActionStarted: ((string) -> ())?,
 		_onActionEnded: ((string) -> ())?,
+		_onTriggerEnhancedDash: (() -> ())?, -- Callback to trigger the actual dodge skill
 
 		-- Enhanced dash state
 		_enhancedDashAvailable: boolean,
@@ -72,6 +74,7 @@ function MomentumManager.new(): MomentumManager
 	self._onEnhancedDashAvailable = nil
 	self._onActionStarted = nil
 	self._onActionEnded = nil
+	self._onTriggerEnhancedDash = nil
 
 	self._enhancedDashAvailable = false
 	self._enhancedDashConsumed = false
@@ -249,8 +252,14 @@ function MomentumManager:_tryEnhancedDash()
 		return
 	end
 
-	-- Set attribute to tell dodge skill to use enhanced dash
-	self._character:SetAttribute("UseEnhancedDash", true)
+	-- Fire remote to tell server about enhanced dash (client attributes don't replicate)
+	local enhancedDashRemote = ReplicatedStorage:FindFirstChild("SetEnhancedDash")
+	if enhancedDashRemote then
+		enhancedDashRemote:FireServer(true)
+	end
+
+	-- Set client-side attribute for animation (client reads this for enhanced dash anim)
+	self._character:SetAttribute("UseEnhancedDashAnim", true)
 
 	-- Mark as consumed so it can't be used again this action
 	self._enhancedDashConsumed = true
@@ -262,8 +271,10 @@ function MomentumManager:_tryEnhancedDash()
 
 	print("[MomentumManager] Enhanced dash triggered!")
 
-	-- The actual dodge activation will be handled by the combat controller
-	-- We just set the flag here
+	-- Actually trigger the dodge skill
+	if self._onTriggerEnhancedDash then
+		self._onTriggerEnhancedDash()
+	end
 end
 
 -- Check if enhanced dash is currently available
@@ -299,6 +310,11 @@ end
 -- Set callback for when an action ends
 function MomentumManager:setOnActionEnded(callback: (string) -> ())
 	self._onActionEnded = callback
+end
+
+-- Set callback to trigger the actual dodge skill for enhanced dash
+function MomentumManager:setOnTriggerEnhancedDash(callback: () -> ())
+	self._onTriggerEnhancedDash = callback
 end
 
 -- Register a new action configuration

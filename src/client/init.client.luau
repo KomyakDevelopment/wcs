@@ -103,6 +103,11 @@ momentumManager:setOnActionEnded(function(_actionName)
 	momentumUI:hide()
 end)
 
+-- When enhanced dash is triggered (Q at 100% momentum), perform the actual dodge
+momentumManager:setOnTriggerEnhancedDash(function()
+	combatController:performDodge()
+end)
+
 -- Create BindableEvent for dodge -> sprint communication
 local resumeSprintEvent = Instance.new("BindableEvent")
 resumeSprintEvent.Name = "ResumeSprintAfterDodge"

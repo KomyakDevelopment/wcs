@@ -13,6 +13,7 @@ local CarryManager = require(script.managers.carryManager)
 local DebugPermissions = require(script.managers.debugPermissions)
 local ServerInfoManager = require(script.managers.serverInfoManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
+local EnhancedDashStore = require(script.data.enhancedDashStore)
 
 local Server = WCS.CreateServer()
 
@@ -71,6 +72,10 @@ local airdashCameraRemote = Instance.new("RemoteEvent")
 airdashCameraRemote.Name = "SetAirdashCamera"
 airdashCameraRemote.Parent = ReplicatedStorage
 
+local enhancedDashRemote = Instance.new("RemoteEvent")
+enhancedDashRemote.Name = "SetEnhancedDash"
+enhancedDashRemote.Parent = ReplicatedStorage
+
 local toggleWeaponInHandRemote = Instance.new("RemoteEvent")
 toggleWeaponInHandRemote.Name = "ToggleWeaponInHand"
 toggleWeaponInHandRemote.Parent = ReplicatedStorage
@@ -107,8 +112,9 @@ local gripCancelBroadcastRemote = Instance.new("RemoteEvent")
 gripCancelBroadcastRemote.Name = "GripCancelBroadcast"
 gripCancelBroadcastRemote.Parent = ReplicatedStorage
 
--- Expose AirdashCameraStore to dodge skill (shared module needs access)
+-- Expose stores to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
+_G.EnhancedDashStore = EnhancedDashStore
 
 -- DeathManager will be exposed after initialization (needed by grip skill for executions)
 
@@ -117,6 +123,14 @@ airdashCameraRemote.OnServerEvent:Connect(function(player, cameraDirection)
 	if typeof(cameraDirection) == "Vector3" then
 		AirdashCameraStore.set(player, cameraDirection)
 		print(`[Server] Stored airdash camera for {player.Name}: {cameraDirection}`)
+	end
+end)
+
+-- Handle enhanced dash flag from client (momentum system at 100%)
+enhancedDashRemote.OnServerEvent:Connect(function(player, enabled)
+	if typeof(enabled) == "boolean" then
+		EnhancedDashStore.set(player, enabled)
+		print(`[Server] Stored enhanced dash for {player.Name}: {enabled}`)
 	end
 end)
 
