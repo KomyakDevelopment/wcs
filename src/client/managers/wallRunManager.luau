@@ -51,8 +51,8 @@ local CONFIG = {
 	-- Animations
 	WALLRUN_RIGHT_ANIM = "rbxassetid://101992096573753",
 	WALLRUN_LEFT_ANIM = "rbxassetid://105706301707645",
-	WALLJUMP_RIGHT_ANIM = "rbxassetid://127043982553357",
-	WALLJUMP_LEFT_ANIM = "rbxassetid://127043982553357",
+	WALLJUMP_RIGHT_ANIM = "rbxassetid://89866843939454",
+	WALLJUMP_LEFT_ANIM = "rbxassetid://102835966371977",
 	WALLRUN_ANIM_SPEED = 1.82, -- Speed multiplier for wallrun animations
 	WALLJUMP_ANIM_SPEED = 1.69, -- Speed multiplier for walljump animations
 	WALLJUMP_DURATION = 0.5, -- Duration where dodge is blocked after wall jump
