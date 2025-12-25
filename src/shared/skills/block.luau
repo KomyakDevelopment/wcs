@@ -46,7 +46,7 @@ local BLOCK_HIT_ANIM = "rbxassetid://127830278063869"
 -- Weapon-specific block/parry animations
 local WEAPON_BLOCK_ANIMS = {
 	kunai = {
-		block = "rbxassetid://116055719354049",
+		block = "rbxassetid://129722547154685",
 		parry = "rbxassetid://101039289396724",
 	},
 	uchigatana = {
