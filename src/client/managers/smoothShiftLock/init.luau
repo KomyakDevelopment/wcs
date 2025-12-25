@@ -100,7 +100,8 @@ function SmoothShiftLock:Enable()
 		end
 
 		--// Skip all processing if shiftlock is externally disabled (knockdown, carry, etc.)
-		if ShiftlockDisabler.isDisabled() then
+		--// UNLESS there's an override offset (wall running needs camera offset even when "disabled")
+		if ShiftlockDisabler.isDisabled() and not self._overrideOffset then
 			return
 		end
 
@@ -121,7 +122,8 @@ function SmoothShiftLock:Enable()
 				+ Camera.CFrame.LookVector * offset.Z
 
 			Camera.CFrame = Camera.CFrame + worldOffset
-			if self.Enabled and UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+			-- Don't reset MouseBehavior if character rotation is disabled (wall running handles its own mouse state)
+			if self.Enabled and UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter and self._characterRotationEnabled then
 				self:_updateMouseState()
 			end
 		end
@@ -185,7 +187,8 @@ end
 --// Transition the camera to lock offset
 function SmoothShiftLock:_transitionLockOffset()
 	--// Force camera back to center if externally disabled (knockdown, carry, etc.)
-	if ShiftlockDisabler.isDisabled() then
+	--// UNLESS there's an override offset (wall running needs camera offset even when "disabled")
+	if ShiftlockDisabler.isDisabled() and not self._overrideOffset then
 		self._cameraOffsetSpring.Speed = Config.CAMERA_TRANSITION_OUT_SPEED
 		self._cameraOffsetSpring.Target = Vector3.new(0, 0, 0)
 		return
@@ -302,10 +305,26 @@ function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
 	self:_updateMouseIcon()
 	self:_transitionLockOffset()
 	if self.Enabled then
-		self._shiftlockMaid:GiveTask(RunService.RenderStepped:Connect(function(Delta: number)
+		-- Use BindToRenderStep at priority Last-100 so wall running can override at Last+1
+		local rotationStepName = "SmoothShiftLock_CharacterRotation"
+		RunService:BindToRenderStep(rotationStepName, Enum.RenderPriority.Last.Value - 100, function()
 			--// Skip all processing if shiftlock is externally disabled (knockdown, carry, etc.)
 			if ShiftlockDisabler.isDisabled() then
 				--// Ensure AutoRotate is restored when externally disabled
+				if self.Humanoid then
+					self.Humanoid.AutoRotate = true
+				end
+				return
+			end
+
+			--// Skip character rotation if disabled (e.g., during wall running)
+			--// When disabled, don't touch AutoRotate - let wallRunManager control it
+			if not self._characterRotationEnabled then
+				return
+			end
+
+			--// Skip if there's an override (but restore AutoRotate since we're not in wall run mode)
+			if self._overrideOffset then
 				if self.Humanoid then
 					self.Humanoid.AutoRotate = true
 				end
@@ -316,11 +335,6 @@ function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
 				self.Humanoid.AutoRotate = not self.Enabled
 			end
 
-			--// Skip character rotation if disabled (e.g., during wall running)
-			if not self._characterRotationEnabled then
-				return
-			end
-
 			--// Rotate the character
 			if self.Humanoid.Sit then
 				return
@@ -329,13 +343,16 @@ function SmoothShiftLock:ToggleShiftLock(Enable: boolean?)
 				local _, y, _ = Camera.CFrame:ToOrientation()
 				self.RootPart.CFrame = self.RootPart.CFrame:Lerp(
 					CFrame.new(self.RootPart.Position) * CFrame.Angles(0, y, 0),
-					Delta * 5 * Config.CHARACTER_ROTATION_SPEED
+					1/60 * 5 * Config.CHARACTER_ROTATION_SPEED
 				)
 			else
 				local _, y, _ = Camera.CFrame:ToOrientation()
 				self.RootPart.CFrame = CFrame.new(self.RootPart.Position) * CFrame.Angles(0, y, 0)
 			end
-		end))
+		end)
+		self._shiftlockMaid:GiveTask(function()
+			RunService:UnbindFromRenderStep(rotationStepName)
+		end)
 	else
 		self.Humanoid.AutoRotate = true
 		self._shiftlockMaid:DoCleaning()

@@ -25,8 +25,8 @@ local CONFIG = {
 	TARGET_WALL_DISTANCE = 2, -- Studs from wall
 	DISTANCE_LERP_SPEED = 10, -- How fast to lerp to target distance
 
-	-- Shiftlock camera override (only need left offset - right is default)
-	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-3, 0.25, 0), -- Camera on left side (for right wall)
+	-- Shiftlock camera override for wall running
+	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-3.25, 0.25, 0), -- Camera on left side (for right wall)
 
 	-- Movement
 	HORIZONTAL_SPEED = 32, -- Speed along wall (studs/sec) - much faster
@@ -332,14 +332,13 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	self._humanoid.PlatformStand = true
 	self._humanoid.AutoRotate = false
 
-	-- Disable shiftlock character rotation so it doesn't fight with our rotation
-	SmoothShiftLock:SetCharacterRotationEnabled(false)
-
-	-- Only override camera when wall is on RIGHT (to flip camera to left)
-	-- When wall is on LEFT, default shiftlock (camera on right) is already correct
+	-- Set camera offset override (right wall = camera on left)
 	if wallData.side == "Right" then
 		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
 	end
+
+	-- Disable ONLY character rotation in SmoothShiftLock - keep mouse lock and camera offset
+	SmoothShiftLock:SetCharacterRotationEnabled(false)
 
 	-- Play wallrun animation based on side (with speed multiplier)
 	if wallData.side == "Right" and self._wallRunRightAnim then
@@ -356,6 +355,22 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	-- Camera priority is 200, so we use 300 to run after it
 	RunService:BindToRenderStep("WallRunUpdate", 300, function(deltaTime)
 		self:_updateWallRun(deltaTime)
+	end)
+
+	-- Add a FINAL rotation enforcement at Last priority + 1 to override any camera rotation
+	-- This ensures character always faces wall direction, even after shiftlock/camera tries to rotate
+	RunService:BindToRenderStep("WallRunRotationEnforce", Enum.RenderPriority.Last.Value + 1, function()
+		if self._isWallRunning and self._rootPart and self._wallDir then
+			-- Force RotationType to MovementRelative every frame to prevent Roblox ControlModule rotation
+			pcall(function()
+				local UserGameSettings = UserSettings():GetService("UserGameSettings")
+				UserGameSettings.RotationType = Enum.RotationType.MovementRelative
+			end)
+
+			-- Force character to face wall direction
+			local lookCFrame = CFrame.lookAt(self._rootPart.Position, self._rootPart.Position + self._wallDir)
+			self._rootPart.CFrame = CFrame.new(self._rootPart.Position) * lookCFrame.Rotation
+		end
 	end)
 end
 
@@ -574,8 +589,9 @@ function WallRunManager:_endWallRun()
 	self._wallDir = nil
 	self._wallPosition = nil
 
-	-- Unbind update loop
+	-- Unbind update loops
 	RunService:UnbindFromRenderStep("WallRunUpdate")
+	RunService:UnbindFromRenderStep("WallRunRotationEnforce")
 
 	if self._character then
 		self._character:SetAttribute("IsWallRunning", false)
@@ -587,7 +603,7 @@ function WallRunManager:_endWallRun()
 		self._humanoid.AutoRotate = true
 	end
 
-	-- Clear shiftlock override and re-enable character rotation
+	-- Clear shiftlock camera offset override and re-enable character rotation
 	SmoothShiftLock:SetCameraOffsetOverride(nil)
 	SmoothShiftLock:SetCharacterRotationEnabled(true)
 
