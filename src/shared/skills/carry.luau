@@ -160,6 +160,9 @@ function Carry:_pickUpTarget(target: Model)
 	self.carriedCharacter = target
 	self.isCarrying = true
 
+	-- Mark carrier as carrying (for DeathManager to prevent auto-execute)
+	character:SetAttribute("Carrying", true)
+
 	-- Mark target as being carried
 	target:SetAttribute("BeingCarried", true)
 	target:SetAttribute("CarriedBy", character.Name)
@@ -248,6 +251,9 @@ function Carry:_dropTarget()
 	end
 
 	print(`[Carry] Server: {character.Name} dropped {target.Name}`)
+
+	-- Clear carrier's carrying attribute
+	character:SetAttribute("Carrying", nil)
 
 	self.carriedCharacter = nil
 	self.isCarrying = false

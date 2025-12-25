@@ -31,6 +31,10 @@
     },
 
     "StarterPlayer": {
+      "$properties": {
+        "EnableMouseLockOption": false,
+        "DevComputerMovementMode": "UserChoice"
+      },
       "StarterPlayerScripts": {
         "Client": {
           "$path": "src/client"

@@ -184,14 +184,22 @@ function DeathManager:_setupCharacter(player: Player, character: Model)
 
 			-- Check if this was an instant-kill (void, massive damage) vs combat knockdown
 			-- If they had significant HP before being knocked, it's an instant-kill
+			-- Exception: Players carrying someone should always go to knockdown (gives them a chance)
 			local instantKillThreshold = humanoid.MaxHealth * 0.15 -- 15% of max HP
-			if lastKnownHP > instantKillThreshold then
+			local isCarrying = character:GetAttribute("Carrying") == true
+
+			if lastKnownHP > instantKillThreshold and not isCarrying then
 				-- Instant-kill: they had decent HP but got one-shot (void, ability, etc.)
 				print(`[DeathManager] {player.Name} instant-killed (had {lastKnownHP} HP, threshold {instantKillThreshold}) - auto-executing`)
 				self:_autoExecuteImmediate(player, character, humanoid)
 			else
 				-- Combat knockdown: they were already low HP from taking hits
-				print(`[DeathManager] {player.Name} combat knockdown (had {lastKnownHP} HP, now {newHealth})`)
+				-- OR they were carrying someone (drops the target, gives them a chance)
+				if isCarrying then
+					print(`[DeathManager] {player.Name} was carrying someone - combat knockdown instead of instant-kill`)
+				else
+					print(`[DeathManager] {player.Name} combat knockdown (had {lastKnownHP} HP, now {newHealth})`)
+				end
 				self:_handleKnockdown(player, character, humanoid)
 			end
 		end
