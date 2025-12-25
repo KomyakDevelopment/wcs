@@ -29,8 +29,8 @@ local CONFIG = {
 	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-3.25, 0.25, 0), -- Camera on left side (for right wall)
 
 	-- Movement
-	HORIZONTAL_SPEED = 32, -- Speed along wall (studs/sec) - much faster
-	DESCENT_HORIZONTAL_SPEED = 28, -- Slightly slower during descent but still fast
+	HORIZONTAL_SPEED = 40, -- Speed along wall (studs/sec) - much faster
+	DESCENT_HORIZONTAL_SPEED = 35, -- Slightly slower during descent but still fast
 	UPWARD_SPEED = 2, -- Slight upward drift to stay on wall
 	DOWNWARD_SPEED_MIN = -4, -- Initial descent speed (slow start)
 	DOWNWARD_SPEED_MAX = -18, -- Maximum descent speed (accelerates to this)

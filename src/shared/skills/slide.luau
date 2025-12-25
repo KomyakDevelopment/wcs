@@ -33,12 +33,12 @@ local MAX_SLIDE_DURATION = 5.0
 
 -- Physics
 local BASE_SLIDE_SPEED = SLIDE_DISTANCE / SLIDE_DURATION
-local SLOPE_ACCELERATION = 120 -- Studs/sec^2 acceleration when going downhill
+local SLOPE_ACCELERATION = 10 -- Studs/sec^2 acceleration when going downhill
 local MAX_TURN_ANGLE = 70 -- Degrees - cancel slide if turning beyond this
 local FLAT_DECELERATION = 50 -- Studs/sec^2 deceleration on flat ground
 local UPHILL_DECELERATION = 150 -- Studs/sec^2 deceleration when going uphill (quick stop)
 local MIN_SPEED = 8
-local MAX_SPEED = 40
+local MAX_SPEED = 55
 
 -- Y-velocity thresholds for slope detection (stricter to avoid false positives)
 local DOWNHILL_Y_THRESHOLD = -4 -- Y velocity below this = actually going downhill
