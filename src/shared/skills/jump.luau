@@ -5,6 +5,15 @@ local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 
+-- SFXManager lazy-loaded on client only (for volume control)
+local SFXManager = nil
+local function getSFXManager()
+	if SFXManager == nil and RunService:IsClient() then
+		SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+	end
+	return SFXManager
+end
+
 local Jump = WCS.RegisterSkill("Jump")
 
 -- WCS Client Prediction Configuration
@@ -261,6 +270,11 @@ function Jump:_playJumpSFX()
 
 	-- Clone and play with spatial audio
 	local soundClone = randomSound:Clone()
+	-- Route through SFX volume control
+	local sfxManager = getSFXManager()
+	if sfxManager then
+		soundClone.SoundGroup = sfxManager.getSoundGroup()
+	end
 	soundClone.Parent = hrp
 	soundClone:Play()
 

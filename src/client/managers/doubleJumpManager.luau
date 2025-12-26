@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
 
 local DoubleJumpManager = {}
 DoubleJumpManager.__index = DoubleJumpManager
@@ -192,6 +193,7 @@ function DoubleJumpManager:_playJumpSFX(character: Model)
 
 	local randomSound = sounds[math.random(1, #sounds)]
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = hrp
 	soundClone:Play()
 

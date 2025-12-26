@@ -41,6 +41,7 @@ local DebugManager = require(ReplicatedStorage.Client.managers.debugManager)
 local ServerInfoUIManager = require(ReplicatedStorage.Client.managers.serverInfoUIManager)
 local MomentumManager = require(ReplicatedStorage.Client.managers.momentumManager)
 local DynamicFOVManager = require(ReplicatedStorage.Client.managers.dynamicFOVManager)
+local SettingsUIManager = require(ReplicatedStorage.Client.managers.settingsUIManager)
 -- local HitboxVisualizerManager = require(ReplicatedStorage.Client.managers.hitboxVisualizerManager) -- DISABLED
 local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
 local CombatController = require(ReplicatedStorage.Client.controllers.combatController)
@@ -79,8 +80,12 @@ local debugManager = DebugManager.new() -- Debug panels (only visible for whitel
 local serverInfoUIManager = ServerInfoUIManager.new() -- Updates TopInfo UI labels
 local momentumManager = MomentumManager.new() -- Momentum system for wall running and enhanced dash
 local momentumUI = MomentumUI.new() -- Momentum percentage display
-local _dynamicFOVManager = DynamicFOVManager.new() -- Dynamic FOV based on speed/actions
+local dynamicFOVManager = DynamicFOVManager.new() -- Dynamic FOV based on speed/actions
+local settingsUIManager = SettingsUIManager.new() -- Settings menu (ESC to open)
 -- local hitboxVisualizerManager = HitboxVisualizerManager.new() -- Shows weapon hitboxes (DISABLED)
+
+-- Link settings to managers
+settingsUIManager:setDynamicFOVManager(dynamicFOVManager)
 local combatController = CombatController.new()
 local equipmentController = EquipmentController.new()
 

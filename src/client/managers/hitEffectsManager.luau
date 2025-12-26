@@ -6,6 +6,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
 local TweenService = game:GetService("TweenService")
 
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+
 local HitEffectsManager = {}
 HitEffectsManager.__index = HitEffectsManager
 
@@ -117,6 +119,7 @@ function HitEffectsManager:_playHitSound(targetModel: Model, pathArray: { string
 
 	-- Clone and play at target position
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
 
 	soundClone:Play()
@@ -235,6 +238,7 @@ function HitEffectsManager:_playRollCancelSound(targetModel: Model)
 
 	-- Clone and play at target position
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
 
 	soundClone:Play()

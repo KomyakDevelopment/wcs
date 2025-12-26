@@ -22,6 +22,7 @@ local MUSIC_SOUND_NAME = "MusicManager_Track" -- Unique name for our managed sou
 local _currentSound = nil
 local _currentSoundId = nil
 local _targetVolume = DEFAULT_VOLUME
+local _masterVolume = 1.0 -- Master volume multiplier
 local _musicGroup = nil
 local _initialized = false
 local _isTransitioning = false -- Lock to prevent race conditions
@@ -137,7 +138,7 @@ function MusicManager.playMusic(soundId, fadeTime)
 	local fadeInTween = TweenService:Create(
 		newSound,
 		TweenInfo.new(fade, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{ Volume = _targetVolume }
+		{ Volume = _targetVolume * _masterVolume }
 	)
 
 	fadeInTween:Play()
@@ -228,6 +229,11 @@ end
 -- VOLUME PREFERENCE (for settings menu)
 --============================================================================--
 
+-- Helper to calculate effective volume
+local function getEffectiveVolume()
+	return _targetVolume * _masterVolume
+end
+
 -- Set target volume for music (0-1)
 -- This is the main method for the settings slider
 -- Affects current playing song and all future songs
@@ -239,16 +245,38 @@ function MusicManager.setVolume(volume)
 		TweenService:Create(
 			_currentSound,
 			TweenInfo.new(0.3, Enum.EasingStyle.Quad),
-			{ Volume = _targetVolume }
+			{ Volume = getEffectiveVolume() }
 		):Play()
 	end
 
-	print("[MusicManager] Volume set to:", _targetVolume)
+	print("[MusicManager] Volume set to:", _targetVolume, "effective:", getEffectiveVolume())
+end
+
+-- Set master volume multiplier (0-1)
+-- Called when master volume changes - affects final output
+function MusicManager.setMasterVolume(volume)
+	_masterVolume = math.clamp(volume, 0, 1)
+
+	-- Update current sound if playing
+	if _currentSound then
+		TweenService:Create(
+			_currentSound,
+			TweenInfo.new(0.3, Enum.EasingStyle.Quad),
+			{ Volume = getEffectiveVolume() }
+		):Play()
+	end
+
+	print("[MusicManager] Master volume set to:", _masterVolume, "effective:", getEffectiveVolume())
 end
 
 -- Get current volume setting (for settings menu to display)
 function MusicManager.getVolume()
 	return _targetVolume
+end
+
+-- Get effective volume (music * master)
+function MusicManager.getEffectiveVolume()
+	return getEffectiveVolume()
 end
 
 -- Enable/disable music entirely (master toggle)

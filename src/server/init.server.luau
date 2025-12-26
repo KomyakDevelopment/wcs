@@ -14,6 +14,7 @@ local DebugPermissions = require(script.managers.debugPermissions)
 local ServerInfoManager = require(script.managers.serverInfoManager)
 local AirdashCameraStore = require(script.data.airdashCameraStore)
 local EnhancedDashStore = require(script.data.enhancedDashStore)
+local SettingsData = require(ReplicatedStorage.Shared.data.settingsData)
 
 local Server = WCS.CreateServer()
 
@@ -112,6 +113,10 @@ local gripCancelBroadcastRemote = Instance.new("RemoteEvent")
 gripCancelBroadcastRemote.Name = "GripCancelBroadcast"
 gripCancelBroadcastRemote.Parent = ReplicatedStorage
 
+local updateSettingsRemote = Instance.new("RemoteEvent")
+updateSettingsRemote.Name = "UpdateSettings"
+updateSettingsRemote.Parent = ReplicatedStorage
+
 -- Expose stores to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore
 _G.EnhancedDashStore = EnhancedDashStore
@@ -139,6 +144,13 @@ sprintStateRemote.OnServerEvent:Connect(function(player, isSprinting)
 	local character = player.Character
 	if character and typeof(isSprinting) == "boolean" then
 		character:SetAttribute("IsSprinting", isSprinting)
+	end
+end)
+
+-- Handle batched settings update from client
+updateSettingsRemote.OnServerEvent:Connect(function(player, changes)
+	if typeof(changes) == "table" then
+		SettingsData.updateSettings(player, changes)
 	end
 end)
 
@@ -377,6 +389,9 @@ end
 
 -- Setup NEW player (CharacterAutoLoads is disabled globally in Players service)
 local function setupNewPlayer(player: Player)
+	-- Load player settings from DataStore
+	SettingsData.load(player)
+
 	-- Handle future characters (respawns after clicking continue)
 	setupPlayerCharacterAdded(player)
 end
@@ -403,6 +418,8 @@ end)
 -- Clean up when player leaves
 Players.PlayerRemoving:Connect(function(player)
 	playersReadyToSpawn[player] = nil
+	-- Force save any pending settings changes
+	SettingsData.onPlayerRemoving(player)
 end)
 
 -- Handle existing players (rare edge case - server script ran after player joined)
@@ -412,3 +429,6 @@ end
 
 -- Handle new players (they need to click continue to spawn)
 Players.PlayerAdded:Connect(setupNewPlayer)
+
+-- Start settings auto-save loop
+SettingsData.startAutoSave()

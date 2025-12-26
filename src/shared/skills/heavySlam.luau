@@ -11,6 +11,15 @@ local RunService = game:GetService("RunService")
 local WCS = require(ReplicatedStorage.Packages.wcs)
 local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
+-- SFXManager lazy-loaded on client only (for volume control)
+local SFXManager = nil
+local function getSFXManager()
+	if SFXManager == nil and RunService:IsClient() then
+		SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+	end
+	return SFXManager
+end
+
 -- Pre-cache status effects at module load
 local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
 local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
@@ -648,6 +657,11 @@ function HeavySlam:_playHeavySFX()
 		end
 
 		local soundClone = randomSound:Clone()
+		-- Route through SFX volume control
+		local sfxManager = getSFXManager()
+		if sfxManager then
+			soundClone.SoundGroup = sfxManager.getSoundGroup()
+		end
 		soundClone.Parent = rootPart
 		soundClone:Play()
 

@@ -5,6 +5,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+
+-- SFXManager lazy-loaded on client only (for volume control)
+local SFXManager = nil
+local function getSFXManager()
+	if SFXManager == nil and RunService:IsClient() then
+		SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+	end
+	return SFXManager
+end
 local CombatConfig = require(ReplicatedStorage.Shared.config.combatConfig)
 
 -- Pre-cache status effects and skills at module load (avoid require() in hot paths)
@@ -997,6 +1006,11 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 
 		-- Clone the sound and parent it to the root part for spatial audio
 		local soundClone = randomSound:Clone()
+		-- Route through SFX volume control
+		local sfxManager = getSFXManager()
+		if sfxManager then
+			soundClone.SoundGroup = sfxManager.getSoundGroup()
+		end
 		soundClone.Parent = rootPart
 
 		-- Play the sound
@@ -1142,6 +1156,11 @@ function Slash:_playPredictedRollCancelSound(targetModel: Model)
 
 	local randomSound = sounds[math.random(1, #sounds)]
 	local soundClone = randomSound:Clone()
+	-- Route through SFX volume control
+	local sfxManager = getSFXManager()
+	if sfxManager then
+		soundClone.SoundGroup = sfxManager.getSoundGroup()
+	end
 	soundClone.Parent = targetModel:FindFirstChild("HumanoidRootPart") or targetModel
 	soundClone:Play()
 

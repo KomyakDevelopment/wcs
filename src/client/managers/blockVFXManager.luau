@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+
 -- Attack animation IDs to watch for (triggers parry flash when these play on other players)
 -- Maps animation ID -> attack phase (1-4) for correct hand/foot placement
 local ATTACK_ANIMATION_IDS = {
@@ -770,6 +772,7 @@ function BlockVFXManager:_playSFXFromFolder(folder: Folder, character: Model)
 
 	-- Clone the sound and parent it to the root part for spatial audio
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = rootPart
 
 	-- Play the sound

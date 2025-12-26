@@ -10,6 +10,7 @@ local TweenService = game:GetService("TweenService")
 local Debris = game:GetService("Debris")
 
 local ShiftlockDisabler = require(script.Parent.shiftlockDisabler)
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
 
 local ExecutionEffectsManager = {}
 ExecutionEffectsManager.__index = ExecutionEffectsManager
@@ -922,6 +923,7 @@ function ExecutionEffectsManager:_playDeathSFX(targetCharacter: Model)
 
 	-- Clone and play at target position
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = targetCharacter:FindFirstChild("HumanoidRootPart") or targetCharacter
 
 	soundClone:Play()

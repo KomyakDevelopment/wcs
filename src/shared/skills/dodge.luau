@@ -1,8 +1,18 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local WCS = require(ReplicatedStorage.Packages.wcs)
+
+-- SFXManager lazy-loaded on client only (for volume control)
+local SFXManager = nil
+local function getSFXManager()
+	if SFXManager == nil and RunService:IsClient() then
+		SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+	end
+	return SFXManager
+end
 
 -- Pre-cache status effects at module load (avoid require() in hot paths)
 local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
@@ -813,6 +823,11 @@ function Dodge:_playAirDashSFX()
 
 	-- Clone and play with spatial audio
 	local soundClone = randomSound:Clone()
+	-- Route through SFX volume control
+	local sfxManager = getSFXManager()
+	if sfxManager then
+		soundClone.SoundGroup = sfxManager.getSoundGroup()
+	end
 	soundClone.Parent = hrp
 	soundClone:Play()
 
@@ -861,6 +876,11 @@ function Dodge:_playDodgeSFX()
 
 	-- Clone and play with spatial audio
 	local soundClone = randomSound:Clone()
+	-- Route through SFX volume control
+	local sfxManager = getSFXManager()
+	if sfxManager then
+		soundClone.SoundGroup = sfxManager.getSoundGroup()
+	end
 	soundClone.Parent = hrp
 	soundClone:Play()
 
@@ -934,6 +954,11 @@ function Dodge:_playRollCancelSFX()
 
 	-- Clone and play with spatial audio
 	local soundClone = randomSound:Clone()
+	-- Route through SFX volume control
+	local sfxManager = getSFXManager()
+	if sfxManager then
+		soundClone.SoundGroup = sfxManager.getSoundGroup()
+	end
 	soundClone.Parent = hrp
 	soundClone:Play()
 

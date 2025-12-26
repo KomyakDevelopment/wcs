@@ -4,6 +4,8 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+
 local GuardbreakManager = {}
 GuardbreakManager.__index = GuardbreakManager
 
@@ -111,6 +113,7 @@ function GuardbreakManager:_playGuardbreakSFX(targetCharacter: Model)
 
 	-- Clone and play the sound
 	local soundClone = randomSound:Clone()
+	soundClone.SoundGroup = SFXManager.getSoundGroup() -- Route through SFX volume control
 	soundClone.Parent = rootPart
 	soundClone:Play()
 
