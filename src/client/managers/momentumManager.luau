@@ -25,6 +25,11 @@ local ACTION_CONFIGS: { [string]: ActionConfig } = {
 		buildupDuration = 1.0, -- Reach 100% in 1 second
 		resetOnEnd = true, -- Reset when wall run ends
 	},
+	Slide = {
+		buildupDelay = 0.5, -- Start building after 0.5 seconds
+		buildupDuration = 1.0, -- Reach 100% in 1 second
+		resetOnEnd = true, -- Reset when slide ends
+	},
 }
 
 export type MomentumManager = typeof(setmetatable(
@@ -48,6 +53,7 @@ export type MomentumManager = typeof(setmetatable(
 		_onActionStarted: ((string) -> ())?,
 		_onActionEnded: ((string) -> ())?,
 		_onTriggerEnhancedDash: (() -> ())?, -- Callback to trigger the actual dodge skill
+		_onTriggerEnhancedSlideJump: (() -> ())?, -- Callback to trigger enhanced slide jump
 
 		-- Enhanced dash state
 		_enhancedDashAvailable: boolean,
@@ -75,6 +81,7 @@ function MomentumManager.new(): MomentumManager
 	self._onActionStarted = nil
 	self._onActionEnded = nil
 	self._onTriggerEnhancedDash = nil
+	self._onTriggerEnhancedSlideJump = nil
 
 	self._enhancedDashAvailable = false
 	self._enhancedDashConsumed = false
@@ -99,14 +106,14 @@ function MomentumManager:_initialize()
 		self:_update(deltaTime)
 	end)
 
-	-- Input handling for enhanced dash (Q key while wall running at 100%)
+	-- Input handling for enhanced actions (Q key at 100% momentum)
 	self._inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then
 			return
 		end
 
 		if input.KeyCode == Enum.KeyCode.Q then
-			self:_tryEnhancedDash()
+			self:_tryEnhancedAction()
 		end
 	end)
 
@@ -237,8 +244,8 @@ function MomentumManager:endAction(actionName: string)
 	end
 end
 
--- Try to perform enhanced dash
-function MomentumManager:_tryEnhancedDash()
+-- Try to perform enhanced action (dash for wall run, slide jump for slide)
+function MomentumManager:_tryEnhancedAction()
 	if not self._enhancedDashAvailable then
 		return
 	end
@@ -247,11 +254,16 @@ function MomentumManager:_tryEnhancedDash()
 		return
 	end
 
-	-- Must be wall running to use enhanced dash
-	if self._activeAction ~= "WallRun" then
-		return
+	-- Handle based on active action
+	if self._activeAction == "WallRun" then
+		self:_performEnhancedDash()
+	elseif self._activeAction == "Slide" then
+		self:_performEnhancedSlideJump()
 	end
+end
 
+-- Perform enhanced dash (from wall run)
+function MomentumManager:_performEnhancedDash()
 	-- Fire remote to tell server about enhanced dash (client attributes don't replicate)
 	local enhancedDashRemote = ReplicatedStorage:FindFirstChild("SetEnhancedDash")
 	if enhancedDashRemote then
@@ -274,6 +286,30 @@ function MomentumManager:_tryEnhancedDash()
 	-- Actually trigger the dodge skill
 	if self._onTriggerEnhancedDash then
 		self._onTriggerEnhancedDash()
+	end
+end
+
+-- Perform enhanced slide jump (from slide)
+function MomentumManager:_performEnhancedSlideJump()
+	-- Set client-side attribute for animation (uses same enhanced dash anim)
+	self._character:SetAttribute("UseEnhancedSlideJumpAnim", true)
+
+	-- Set attribute to signal double jump reset (like enhanced dash)
+	self._character:SetAttribute("_EnhancedDashResetJump", true)
+
+	-- Mark as consumed so it can't be used again this action
+	self._enhancedDashConsumed = true
+	self._enhancedDashAvailable = false
+
+	if self._onEnhancedDashAvailable then
+		self._onEnhancedDashAvailable(false)
+	end
+
+	print("[MomentumManager] Enhanced slide jump triggered!")
+
+	-- Actually trigger the enhanced slide jump
+	if self._onTriggerEnhancedSlideJump then
+		self._onTriggerEnhancedSlideJump()
 	end
 end
 
@@ -315,6 +351,11 @@ end
 -- Set callback to trigger the actual dodge skill for enhanced dash
 function MomentumManager:setOnTriggerEnhancedDash(callback: () -> ())
 	self._onTriggerEnhancedDash = callback
+end
+
+-- Set callback to trigger the enhanced slide jump
+function MomentumManager:setOnTriggerEnhancedSlideJump(callback: () -> ())
+	self._onTriggerEnhancedSlideJump = callback
 end
 
 -- Register a new action configuration
