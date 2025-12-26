@@ -77,7 +77,6 @@ end
 
 -- Now safe to require modules that depend on remotes
 local WCS = require(ReplicatedStorage.Packages.wcs)
-local Slide = require(ReplicatedStorage.Shared.skills.slide)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
 local VaultManager = require(ReplicatedStorage.Client.managers.vaultManager)
@@ -172,50 +171,6 @@ end)
 -- When enhanced dash is triggered (Q at 100% momentum), perform the actual dodge
 momentumManager:setOnTriggerEnhancedDash(function()
 	combatController:performDodge()
-end)
-
--- When enhanced slide jump is triggered (Q at 100% momentum while sliding)
-momentumManager:setOnTriggerEnhancedSlideJump(function()
-	local character = localPlayer.Character
-	if not character then
-		return
-	end
-
-	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
-	if wcsCharacter then
-		Slide.PerformEnhancedSlideJump(wcsCharacter)
-	end
-end)
-
--- Track slide state for momentum system
-local slideAttributeConnection: RBXScriptConnection? = nil
-
-local function setupSlideTracking(character: Model)
-	-- Disconnect previous connection
-	if slideAttributeConnection then
-		slideAttributeConnection:Disconnect()
-		slideAttributeConnection = nil
-	end
-
-	-- Listen for _SlideActive attribute changes
-	slideAttributeConnection = character:GetAttributeChangedSignal("_SlideActive"):Connect(function()
-		local isSliding = character:GetAttribute("_SlideActive") == true
-		if isSliding then
-			momentumManager:startAction("Slide")
-		else
-			momentumManager:endAction("Slide")
-		end
-	end)
-end
-
--- Setup for current character
-if localPlayer.Character then
-	setupSlideTracking(localPlayer.Character)
-end
-
--- Setup for future characters (respawns)
-localPlayer.CharacterAdded:Connect(function(character)
-	setupSlideTracking(character)
 end)
 
 -- Create BindableEvent for dodge -> sprint communication
