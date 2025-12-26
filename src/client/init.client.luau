@@ -4,6 +4,55 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+-- =============================================================================
+-- EARLY SETTINGS LOADING
+-- Apply audio settings BEFORE MenuManager to ensure correct volume from the start
+-- =============================================================================
+local MusicManager = require(ReplicatedStorage.Client.managers.musicManager)
+local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
+
+local localPlayer = Players.LocalPlayer
+
+-- Wait briefly for server to cache settings (they're loaded on PlayerAdded)
+local settingsCache = localPlayer:GetAttribute("_SettingsCache")
+if not settingsCache then
+	-- Wait up to 1 second for settings to be cached by server
+	local startTime = tick()
+	while not settingsCache and (tick() - startTime) < 1 do
+		task.wait(0.05)
+		settingsCache = localPlayer:GetAttribute("_SettingsCache")
+	end
+end
+
+-- Apply audio settings if we have cached settings
+if settingsCache then
+	local success, settings = pcall(function()
+		return HttpService:JSONDecode(settingsCache)
+	end)
+	if success and settings then
+		-- Apply master volume first (affects both music and SFX)
+		if settings.masterVolume ~= nil then
+			MusicManager.setMasterVolume(settings.masterVolume)
+			SFXManager.setMasterVolume(settings.masterVolume)
+		end
+		-- Apply individual volumes
+		if settings.musicVolume ~= nil then
+			MusicManager.setVolume(settings.musicVolume)
+		end
+		if settings.sfxVolume ~= nil then
+			SFXManager.setVolume(settings.sfxVolume)
+		end
+		print("[Client] Applied audio settings early (master:", settings.masterVolume, "music:", settings.musicVolume, "sfx:", settings.sfxVolume, ")")
+	end
+else
+	print("[Client] No cached settings found, using defaults")
+end
+
+-- =============================================================================
+-- MENU AND LOADING
+-- =============================================================================
 
 -- Initialize menu manager FIRST (handles loading screen and continue flow)
 local MenuManager = require(ReplicatedStorage.Client.managers.menuManager)
@@ -208,7 +257,6 @@ momentumManager:setOnTriggerEnhancedSlideJump(function()
 		if #sounds > 0 then
 			local randomSound = sounds[math.random(1, #sounds)]
 			local soundClone = randomSound:Clone()
-			local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
 			soundClone.SoundGroup = SFXManager.getSoundGroup()
 			soundClone.Parent = hrp
 			soundClone:Play()
@@ -246,7 +294,6 @@ local function setupSlideTracking(character: Model)
 end
 
 -- Setup for current character
-local localPlayer = Players.LocalPlayer
 if localPlayer.Character then
 	setupSlideTracking(localPlayer.Character)
 end
