@@ -231,6 +231,7 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 
 	self.bodyVelocity = bodyVelocity
 	self.dodgeActive = true
+	self.Character.Instance:SetAttribute("_DashActive", true)
 
 	-- Apply iframes immediately if IFRAME_START is 0, otherwise schedule for later
 	if IFRAME_START == 0 then
@@ -374,6 +375,7 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 
 	self.bodyVelocity = bodyVelocity
 	self.dodgeActive = true
+	self.Character.Instance:SetAttribute("_DashActive", true)
 
 	-- Apply iframes immediately if IFRAME_START is 0, otherwise schedule for later
 	if IFRAME_START == 0 then
@@ -1103,6 +1105,7 @@ end
 function Dodge:OnEndServer()
 	-- Common cleanup
 	self.dodgeActive = false
+	self.Character.Instance:SetAttribute("_DashActive", nil)
 
 	-- Clean up landed connection (air dash)
 	if self.landedConnection then
