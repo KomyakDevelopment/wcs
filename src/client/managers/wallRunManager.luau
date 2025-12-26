@@ -26,7 +26,8 @@ local CONFIG = {
 	DISTANCE_LERP_SPEED = 10, -- How fast to lerp to target distance
 
 	-- Shiftlock camera override for wall running
-	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-3.25, 0.25, 0), -- Camera on left side (for right wall)
+	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-8.2, 0.392, 0), -- Camera on left side (for right wall)
+	SHIFTLOCK_RIGHT_OFFSET = Vector3.new(3.7, 0.277, 0), -- Camera on right side (for left wall)
 
 	-- Movement
 	HORIZONTAL_SPEED = 40, -- Speed along wall (studs/sec) - much faster
@@ -341,9 +342,11 @@ function WallRunManager:_startWallRun(wallData: WallData)
 	self._humanoid.PlatformStand = true
 	self._humanoid.AutoRotate = false
 
-	-- Set camera offset override (right wall = camera on left)
+	-- Set camera offset override based on wall side
 	if wallData.side == "Right" then
 		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_LEFT_OFFSET)
+	else
+		SmoothShiftLock:SetCameraOffsetOverride(CONFIG.SHIFTLOCK_RIGHT_OFFSET)
 	end
 
 	-- Disable ONLY character rotation in SmoothShiftLock - keep mouse lock and camera offset
