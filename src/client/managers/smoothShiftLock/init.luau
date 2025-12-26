@@ -51,7 +51,7 @@ local Config = {
 	CAMERA_TRANSITION_OUT_SPEED = 19, --// How quickly locked camera moves back from offset position
 	LOCKED_CAMERA_OFFSET = Vector3.new(1.75, 0.25, 0), --// Locked camera offset
 	--// Locked mouse icon
-	LOCKED_MOUSE_ICON = "rbxassetid://129825030507289",
+	LOCKED_MOUSE_ICON = "rbxasset://textures/MouseLockedCursor.png",
 	--// Shift lock keybinds
 	SHIFT_LOCK_KEYBINDS = { Enum.KeyCode.LeftShift, Enum.KeyCode.RightShift },
 }
