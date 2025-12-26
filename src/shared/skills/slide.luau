@@ -57,6 +57,12 @@ local UPHILL_Y_THRESHOLD = 1 -- Y velocity above this = going uphill
 local SLIDE_JUMP_EXTRA_SPEED = 18 -- Extra studs/sec added to current velocity
 local SLIDE_JUMP_MOMENTUM_TIME = 0.3 -- How long to maintain momentum after jump
 
+-- Enhanced slide jump (triggered from momentum system at 100%)
+local ENHANCED_SLIDE_JUMP_POWER = 70 -- Base upward velocity
+local ENHANCED_SLIDE_JUMP_FORWARD_BOOST = 130 -- Forward momentum
+local ENHANCED_SLIDE_JUMP_CAMERA_Y_BOOST = 70 -- Camera Y boost
+local ENHANCED_SLIDE_JUMP_ANIMATION = "rbxassetid://131915305278984" -- Same as enhanced dash
+
 -- Animation
 local SLIDE_ANIMATION = "rbxassetid://101660172801114"
 
@@ -434,6 +440,13 @@ function Slide:OnEndClient()
 		self.cancelConnection = nil
 	end
 
+	-- Stop slide SFX immediately when ending (prevents double sound with enhanced slide jump)
+	if self.slideSFX then
+		self.slideSFX:Stop()
+		self.slideSFX:Destroy()
+		self.slideSFX = nil
+	end
+
 	if self.slideVFXAttachment then
 		local vfx = self.slideVFXAttachment
 		self.slideVFXAttachment = nil
@@ -467,6 +480,129 @@ function Slide:OnEndClient()
 			resumeSprintEvent:Fire()
 		end
 	end)
+end
+
+-- =============================================================================
+-- ENHANCED SLIDE JUMP (Static method callable from momentum system)
+-- =============================================================================
+
+-- Perform enhanced slide jump (called from momentum manager at 100% momentum)
+-- This is a static method that can be called without a skill instance
+function Slide.PerformEnhancedSlideJump(wcsCharacter: any)
+	if not RunService:IsClient() then
+		return -- Only runs on client
+	end
+
+	local character = wcsCharacter.Instance
+	if not character then
+		return
+	end
+
+	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
+	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
+	if not humanoid or not hrp then
+		return
+	end
+
+	-- End the current slide skill
+	local slideSkill = wcsCharacter:GetSkillFromConstructor(Slide)
+	if slideSkill then
+		local state = slideSkill:GetState()
+		if state.IsActive then
+			slideSkill:End()
+		end
+	end
+
+	-- Apply enhanced jump velocity using camera direction
+	local camera = workspace.CurrentCamera
+	local cameraLook = camera.CFrame.LookVector
+
+	-- Calculate horizontal direction for forward boost
+	local horizontalDirection = Vector3.new(cameraLook.X, 0, cameraLook.Z).Unit
+	local forwardBoost = horizontalDirection * ENHANCED_SLIDE_JUMP_FORWARD_BOOST
+
+	-- Camera Y directly influences vertical velocity (looking up = higher jump, looking down = lower)
+	local cameraYBoost = cameraLook.Y * ENHANCED_SLIDE_JUMP_CAMERA_Y_BOOST
+
+	-- Apply velocity: horizontal boost + base power + camera Y boost
+	hrp.AssemblyLinearVelocity = Vector3.new(forwardBoost.X, ENHANCED_SLIDE_JUMP_POWER + cameraYBoost, forwardBoost.Z)
+
+	-- Play enhanced animation
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		local animation = Instance.new("Animation")
+		animation.AnimationId = ENHANCED_SLIDE_JUMP_ANIMATION
+		local animTrack = animator:LoadAnimation(animation)
+		animTrack.Priority = Enum.AnimationPriority.Action2
+		animTrack:Play(0.05)
+	end
+
+	-- Play VFX (use air dash VFX)
+	local airDashVFXSource = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("VFX")
+		and ReplicatedStorage.Assets.VFX:FindFirstChild("Movement")
+		and ReplicatedStorage.Assets.VFX.Movement:FindFirstChild("air_dash")
+		and ReplicatedStorage.Assets.VFX.Movement.air_dash:FindFirstChild("smoke")
+
+	if airDashVFXSource then
+		local vfxClone = airDashVFXSource:Clone()
+		vfxClone.Parent = hrp
+
+		-- Emit particles
+		local maxLifetime = 0
+		for _, child in ipairs(vfxClone:GetChildren()) do
+			if child:IsA("ParticleEmitter") then
+				local emitCount = child:GetAttribute("EmitCount") or 5
+				child:Emit(emitCount)
+				local lifetime = child.Lifetime.Max
+				if lifetime > maxLifetime then
+					maxLifetime = lifetime
+				end
+			end
+		end
+
+		-- Cleanup after particles fade
+		task.delay(maxLifetime + 0.5, function()
+			if vfxClone and vfxClone.Parent then
+				vfxClone:Destroy()
+			end
+		end)
+	end
+
+	-- Play SFX (use air dash SFX)
+	local airDashSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
+		and ReplicatedStorage.Assets:FindFirstChild("SFX")
+		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
+		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Airdash")
+
+	if airDashSFXFolder then
+		local sounds = {}
+		for _, child in ipairs(airDashSFXFolder:GetChildren()) do
+			if child:IsA("Sound") then
+				table.insert(sounds, child)
+			end
+		end
+
+		if #sounds > 0 then
+			local randomSound = sounds[math.random(1, #sounds)]
+			local soundClone = randomSound:Clone()
+			-- Route through SFX volume control
+			local sfxManager = getSFXManager()
+			if sfxManager then
+				soundClone.SoundGroup = sfxManager.getSoundGroup()
+			end
+			soundClone.Parent = hrp
+			soundClone:Play()
+
+			task.delay(soundClone.TimeLength + 0.1, function()
+				if soundClone and soundClone.Parent then
+					soundClone:Destroy()
+				end
+			end)
+		end
+	end
+
+	print("[Slide] Enhanced slide jump performed!")
 end
 
 return Slide

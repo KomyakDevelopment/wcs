@@ -32,7 +32,7 @@ local CONFIG = {
 	-- Movement
 	HORIZONTAL_SPEED = 40, -- Speed along wall (studs/sec) - much faster
 	DESCENT_HORIZONTAL_SPEED = 35, -- Slightly slower during descent but still fast
-	UPWARD_SPEED = 2, -- Slight upward drift to stay on wall
+	UPWARD_SPEED = -0.5, -- Slight downward drift during wall run
 	DOWNWARD_SPEED_MIN = -4, -- Initial descent speed (slow start)
 	DOWNWARD_SPEED_MAX = -18, -- Maximum descent speed (accelerates to this)
 	DESCENT_CURVE_TIME = 1.5, -- Time to reach max descent speed

@@ -44,7 +44,15 @@ if settingsCache then
 		if settings.sfxVolume ~= nil then
 			SFXManager.setVolume(settings.sfxVolume)
 		end
-		print("[Client] Applied audio settings early (master:", settings.masterVolume, "music:", settings.musicVolume, "sfx:", settings.sfxVolume, ")")
+		print(
+			"[Client] Applied audio settings early (master:",
+			settings.masterVolume,
+			"music:",
+			settings.musicVolume,
+			"sfx:",
+			settings.sfxVolume,
+			")"
+		)
 	end
 else
 	print("[Client] No cached settings found, using defaults")
@@ -69,6 +77,7 @@ end
 
 -- Now safe to require modules that depend on remotes
 local WCS = require(ReplicatedStorage.Packages.wcs)
+local Slide = require(ReplicatedStorage.Shared.skills.slide)
 local InputManager = require(ReplicatedStorage.Client.managers.inputManager)
 local SprintManager = require(ReplicatedStorage.Client.managers.sprintManager)
 local VaultManager = require(ReplicatedStorage.Client.managers.vaultManager)
@@ -165,111 +174,17 @@ momentumManager:setOnTriggerEnhancedDash(function()
 	combatController:performDodge()
 end)
 
--- Enhanced slide jump configuration
-local ENHANCED_SLIDE_JUMP_POWER = 120 -- Powerful upward velocity
-local ENHANCED_SLIDE_JUMP_FORWARD_BOOST = 30 -- Forward momentum boost
-local ENHANCED_SLIDE_JUMP_ANIMATION = "rbxassetid://131915305278984" -- Same as enhanced dash
-
 -- When enhanced slide jump is triggered (Q at 100% momentum while sliding)
 momentumManager:setOnTriggerEnhancedSlideJump(function()
-	local player = Players.LocalPlayer
-	local character = player.Character
-	if not character then return end
+	local character = localPlayer.Character
+	if not character then
+		return
+	end
 
-	local humanoid = character:FindFirstChild("Humanoid") :: Humanoid
-	local hrp = character:FindFirstChild("HumanoidRootPart") :: BasePart
-	if not humanoid or not hrp then return end
-
-	-- End the current slide by getting the slide skill and ending it
 	local wcsCharacter = WCS.Character.GetCharacterFromInstance(character)
 	if wcsCharacter then
-		local Slide = require(ReplicatedStorage.Shared.skills.slide)
-		local slideSkill = wcsCharacter:GetSkillFromConstructor(Slide)
-		if slideSkill then
-			local state = slideSkill:GetState()
-			if state.IsActive then
-				slideSkill:End()
-			end
-		end
+		Slide.PerformEnhancedSlideJump(wcsCharacter)
 	end
-
-	-- Apply enhanced jump velocity
-	local lookVector = hrp.CFrame.LookVector
-	local forwardBoost = Vector3.new(lookVector.X, 0, lookVector.Z).Unit * ENHANCED_SLIDE_JUMP_FORWARD_BOOST
-	hrp.AssemblyLinearVelocity = Vector3.new(forwardBoost.X, ENHANCED_SLIDE_JUMP_POWER, forwardBoost.Z)
-
-	-- Play enhanced animation
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		local animation = Instance.new("Animation")
-		animation.AnimationId = ENHANCED_SLIDE_JUMP_ANIMATION
-		local animTrack = animator:LoadAnimation(animation)
-		animTrack.Priority = Enum.AnimationPriority.Action2
-		animTrack:Play(0.05)
-	end
-
-	-- Play VFX (use air dash VFX)
-	local airDashVFXSource = ReplicatedStorage:FindFirstChild("Assets")
-		and ReplicatedStorage.Assets:FindFirstChild("VFX")
-		and ReplicatedStorage.Assets.VFX:FindFirstChild("Movement")
-		and ReplicatedStorage.Assets.VFX.Movement:FindFirstChild("air_dash")
-		and ReplicatedStorage.Assets.VFX.Movement.air_dash:FindFirstChild("smoke")
-
-	if airDashVFXSource then
-		local vfxClone = airDashVFXSource:Clone()
-		vfxClone.Parent = hrp
-
-		-- Emit particles
-		local maxLifetime = 0
-		for _, child in ipairs(vfxClone:GetChildren()) do
-			if child:IsA("ParticleEmitter") then
-				local emitCount = child:GetAttribute("EmitCount") or 5
-				child:Emit(emitCount)
-				local lifetime = child.Lifetime.Max
-				if lifetime > maxLifetime then
-					maxLifetime = lifetime
-				end
-			end
-		end
-
-		-- Cleanup after particles fade
-		task.delay(maxLifetime + 0.5, function()
-			if vfxClone and vfxClone.Parent then
-				vfxClone:Destroy()
-			end
-		end)
-	end
-
-	-- Play SFX (use air dash SFX)
-	local airDashSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
-		and ReplicatedStorage.Assets:FindFirstChild("SFX")
-		and ReplicatedStorage.Assets.SFX:FindFirstChild("Movement")
-		and ReplicatedStorage.Assets.SFX.Movement:FindFirstChild("Airdash")
-
-	if airDashSFXFolder then
-		local sounds = {}
-		for _, child in ipairs(airDashSFXFolder:GetChildren()) do
-			if child:IsA("Sound") then
-				table.insert(sounds, child)
-			end
-		end
-
-		if #sounds > 0 then
-			local randomSound = sounds[math.random(1, #sounds)]
-			local soundClone = randomSound:Clone()
-			soundClone.SoundGroup = SFXManager.getSoundGroup()
-			soundClone.Parent = hrp
-			soundClone:Play()
-
-			task.delay(soundClone.TimeLength + 0.1, function()
-				if soundClone and soundClone.Parent then
-					soundClone:Destroy()
-				end
-			end)
-		end
-	end
-
-	print("[Client] Enhanced slide jump performed!")
 end)
 
 -- Track slide state for momentum system
