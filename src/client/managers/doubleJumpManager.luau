@@ -95,6 +95,17 @@ function DoubleJumpManager:_setupCharacter(character: Model)
 		self:_handleJumpRequest(character)
 	end)
 
+	-- Listen for enhanced dash reset (attribute set by dodge skill after enhanced dash)
+	-- Restores 1 air jump by setting count to 1 (so player can do 1 more jump to reach maxJumps of 2)
+	self.enhancedDashResetConnection = character:GetAttributeChangedSignal("_EnhancedDashResetJump"):Connect(function()
+		if character:GetAttribute("_EnhancedDashResetJump") then
+			character:SetAttribute("_EnhancedDashResetJump", nil)
+			self.currentJumpCount = 1
+			self.isGrounded = false -- Ensure we're not considered grounded
+			print("[DoubleJumpManager] Restored 1 air jump from enhanced dash")
+		end
+	end)
+
 	print("[DoubleJumpManager] Initialized for character")
 end
 
@@ -267,6 +278,10 @@ function DoubleJumpManager:_cleanup()
 	if self.jumpRequestConnection then
 		self.jumpRequestConnection:Disconnect()
 		self.jumpRequestConnection = nil
+	end
+	if self.enhancedDashResetConnection then
+		self.enhancedDashResetConnection:Disconnect()
+		self.enhancedDashResetConnection = nil
 	end
 	self.loadedAnimation = nil
 end

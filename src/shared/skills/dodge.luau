@@ -600,6 +600,10 @@ function Dodge:OnStartClient()
 			self.enhancedDashAnimation:Play(0.05)
 			self.enhancedDashAnimation.Priority = Enum.AnimationPriority.Action2
 			print("[Dodge] Client: Playing ENHANCED dash animation")
+
+			-- Set attribute to signal Jump skill to reset counter (more reliable than GetSkillFromConstructor)
+			character:SetAttribute("_EnhancedDashResetJump", true)
+			print("[Dodge] Client: Set _EnhancedDashResetJump attribute for double jump reset")
 		elseif self.airDashAnimation then
 			self.isEnhancedDashClient = false
 			self.currentAnimTrack = self.airDashAnimation

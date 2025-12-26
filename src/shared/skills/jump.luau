@@ -30,7 +30,7 @@ local AIR_JUMP_ANIMATION = "rbxassetid://76293994701034"
 
 -- Store connections and non-serializable data outside of self to avoid WCS sync issues
 -- Keyed by skill instance (not character) to prevent race conditions during moveset transitions
-local clientConnections: { [any]: { state: RBXScriptConnection?, jumpRequest: RBXScriptConnection? } } = {}
+local clientConnections: { [any]: { state: RBXScriptConnection?, jumpRequest: RBXScriptConnection?, enhancedDashReset: RBXScriptConnection? } } = {}
 local loadedAnimations: { [any]: AnimationTrack? } = {}
 
 function Jump:OnConstructServer()
@@ -109,6 +109,16 @@ function Jump:_setupJumpSystem()
 		self:_handleJumpRequest()
 	end)
 
+	-- Listen for enhanced dash reset (attribute set by dodge skill)
+	clientConnections[self].enhancedDashReset = character:GetAttributeChangedSignal("_EnhancedDashResetJump"):Connect(function()
+		if character:GetAttribute("_EnhancedDashResetJump") then
+			character:SetAttribute("_EnhancedDashResetJump", nil)
+			self.currentJumpCount = 0
+			self.isGrounded = false -- Ensure we're not considered grounded
+			print("[Jump] Reset double jump counter from enhanced dash (immediate)")
+		end
+	end)
+
 	print("[Jump] Jump system initialized")
 end
 
@@ -133,6 +143,13 @@ function Jump:_handleJumpRequest()
 	local character = self.Character.Instance
 	if character:GetAttribute("IsWallRunning") or character:GetAttribute("IsWallJumping") then
 		return
+	end
+
+	-- Check for enhanced dash reset (attribute set by dodge skill after enhanced dash)
+	if character:GetAttribute("_EnhancedDashResetJump") then
+		character:SetAttribute("_EnhancedDashResetJump", nil)
+		self.currentJumpCount = 0
+		print("[Jump] Reset double jump counter from enhanced dash")
 	end
 
 	-- Check if we can air jump (count 1 = did ground jump, can do 1 more air jump)
@@ -380,6 +397,9 @@ function Jump:Destroy()
 		end
 		if clientConn.jumpRequest then
 			clientConn.jumpRequest:Disconnect()
+		end
+		if clientConn.enhancedDashReset then
+			clientConn.enhancedDashReset:Disconnect()
 		end
 		clientConnections[self] = nil
 	end
