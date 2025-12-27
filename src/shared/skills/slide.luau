@@ -86,6 +86,11 @@ function Slide:OnStartServer()
 		return
 	end
 
+	-- Must be sprinting to slide
+	if not character:GetAttribute("IsSprinting") then
+		return
+	end
+
 	-- Must be grounded
 	local state = humanoid:GetState()
 	if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
@@ -281,6 +286,7 @@ function Slide:OnConstructClient()
 	self.slideVFXAttachment = nil
 	self.slideSFX = nil
 	self.slideStartTime = 0
+	self.slideDidStart = false -- Track if slide actually started (for resume sprint logic)
 
 	-- Preload animation
 	local humanoid = self.Character.Instance:FindFirstChild("Humanoid")
@@ -295,8 +301,14 @@ function Slide:OnConstructClient()
 end
 
 function Slide:OnStartClient()
-	-- Check if player is wall running (direct attribute check - more reliable than status effect)
 	local character = self.Character.Instance
+
+	-- Must be sprinting to slide
+	if not character:GetAttribute("IsSprinting") then
+		return
+	end
+
+	-- Check if player is wall running (direct attribute check - more reliable than status effect)
 	if character:GetAttribute("IsWallRunning") then
 		print("[Slide] Client: Blocked - Player is wall running")
 		return
@@ -332,6 +344,7 @@ function Slide:OnStartClient()
 		end
 	end
 
+	self.slideDidStart = true -- Mark that slide actually started
 	self.slideStartTime = tick()
 
 	-- Play animation (looped for extended slides)
@@ -468,12 +481,16 @@ function Slide:OnEndClient()
 		end)
 	end
 
-	task.defer(function()
-		local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
-		if resumeSprintEvent then
-			resumeSprintEvent:Fire()
-		end
-	end)
+	-- Only fire resume sprint if slide actually started (not blocked by checks)
+	if self.slideDidStart then
+		self.slideDidStart = false
+		task.defer(function()
+			local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
+			if resumeSprintEvent then
+				resumeSprintEvent:Fire()
+			end
+		end)
+	end
 end
 
 return Slide

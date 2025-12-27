@@ -486,11 +486,14 @@ function SprintManager:_stopSprint()
 	if character then
 		local humanoid = character:FindFirstChild("Humanoid")
 		if humanoid then
-			local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
-			if holdingS then
-				humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
-			else
-				humanoid.WalkSpeed = self.baseWalkSpeed
+			-- Don't override crouch speed
+			if not character:GetAttribute("IsCrouching") then
+				local holdingS = UserInputService:IsKeyDown(Enum.KeyCode.S)
+				if holdingS then
+					humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
+				else
+					humanoid.WalkSpeed = self.baseWalkSpeed
+				end
 			end
 		end
 	end
@@ -647,7 +650,12 @@ function SprintManager:_monitorBackwardMovement()
 			return
 		end
 
-		-- Only modify WalkSpeed when definitely not sprinting
+		-- Only modify WalkSpeed when definitely not sprinting and not crouching
+		-- Crouching has its own speed control
+		if character:GetAttribute("IsCrouching") then
+			return
+		end
+
 		if holdingS then
 			humanoid.WalkSpeed = self.baseWalkSpeed * BACKWARD_SPEED_PENALTY
 		else

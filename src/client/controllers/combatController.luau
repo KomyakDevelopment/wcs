@@ -731,9 +731,8 @@ function CombatController:_executeSlide()
 		self.slideDebounce = false
 	end)
 
-	if self.sprintManager then
-		self.sprintManager:stopSprint()
-	end
+	-- Don't stop sprint here - the slide skill requires IsSprinting to be true
+	-- Sprint will resume via ResumeSprintAfterDodge event when slide ends
 
 	local slideSkill = self:getSlideSkill()
 	if slideSkill then
