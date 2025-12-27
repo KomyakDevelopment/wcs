@@ -26,7 +26,7 @@ local CONFIG = {
 	DISTANCE_LERP_SPEED = 10, -- How fast to lerp to target distance
 
 	-- Shiftlock camera override for wall running
-	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-8.2, 0.392, 0), -- Camera on left side (for right wall)
+	SHIFTLOCK_LEFT_OFFSET = Vector3.new(-7.2, 0.392, 0), -- Camera on left side (for right wall)
 	SHIFTLOCK_RIGHT_OFFSET = Vector3.new(3.7, 0.277, 0), -- Camera on right side (for left wall)
 
 	-- Movement
@@ -387,7 +387,14 @@ function WallRunManager:_startWallRun(wallData: WallData)
 end
 
 function WallRunManager:_updateWallRun(_deltaTime: number)
-	if not self._rootPart or not self._humanoid or not self._character or not self._wallNormal or not self._wallDir or not self._wallPosition then
+	if
+		not self._rootPart
+		or not self._humanoid
+		or not self._character
+		or not self._wallNormal
+		or not self._wallDir
+		or not self._wallPosition
+	then
 		self:_endWallRun()
 		return
 	end
@@ -397,11 +404,8 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 	groundParams.FilterType = Enum.RaycastFilterType.Exclude
 	groundParams.FilterDescendantsInstances = { self._character }
 
-	local groundCheck = workspace:Raycast(
-		self._rootPart.Position,
-		Vector3.new(0, -CONFIG.GROUND_CHECK_DISTANCE, 0),
-		groundParams
-	)
+	local groundCheck =
+		workspace:Raycast(self._rootPart.Position, Vector3.new(0, -CONFIG.GROUND_CHECK_DISTANCE, 0), groundParams)
 
 	if groundCheck then
 		print("[WallRunManager] Ending - near ground")
@@ -422,11 +426,8 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 	wallCheckParams.FilterType = Enum.RaycastFilterType.Exclude
 	wallCheckParams.FilterDescendantsInstances = { self._character }
 
-	local wallCheck = workspace:Raycast(
-		self._rootPart.Position,
-		-self._wallNormal * CONFIG.WALL_DETECT_DISTANCE,
-		wallCheckParams
-	)
+	local wallCheck =
+		workspace:Raycast(self._rootPart.Position, -self._wallNormal * CONFIG.WALL_DETECT_DISTANCE, wallCheckParams)
 
 	if not wallCheck then
 		print("[WallRunManager] Ending - wall ended, launching off edge")
@@ -472,7 +473,9 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		or (self._requestedSide == "Right" and self._isHoldingD)
 
 	if not shouldContinue then
-		print(`[WallRunManager] Ending - key released (Side: {self._requestedSide}, A: {self._isHoldingA}, D: {self._isHoldingD})`)
+		print(
+			`[WallRunManager] Ending - key released (Side: {self._requestedSide}, A: {self._isHoldingA}, D: {self._isHoldingD})`
+		)
 		self:_endWallRun()
 		return
 	end
@@ -489,7 +492,8 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		-- Quadratic ease-in for natural acceleration
 		local easedProgress = descentProgress * descentProgress
 		-- Interpolate between min and max descent speed
-		verticalSpeed = CONFIG.DOWNWARD_SPEED_MIN + (CONFIG.DOWNWARD_SPEED_MAX - CONFIG.DOWNWARD_SPEED_MIN) * easedProgress
+		verticalSpeed = CONFIG.DOWNWARD_SPEED_MIN
+			+ (CONFIG.DOWNWARD_SPEED_MAX - CONFIG.DOWNWARD_SPEED_MIN) * easedProgress
 		horizontalSpeed = CONFIG.DESCENT_HORIZONTAL_SPEED
 	end
 
