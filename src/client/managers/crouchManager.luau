@@ -2,6 +2,7 @@
 -- Crouch Manager
 -- Handles crouching when player is walking or idle
 -- Press Ctrl when not sprinting to toggle crouch
+-- LOW PRIORITY: Automatically cancels when any higher-priority action occurs
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -16,10 +17,35 @@ CrouchManager.__index = CrouchManager
 -- Configuration
 local CROUCH_SPEED_MULTIPLIER = 0.75 -- 75% of normal walk speed
 local BASE_WALK_SPEED = 16
+local ACTION_END_BUFFER = 0.15 -- Seconds to wait after an action ends before allowing crouch
 
 -- Animation IDs
 local CROUCH_IDLE_ANIMATION = "rbxassetid://130904732555277"
 local CROUCH_WALK_ANIMATION = "rbxassetid://91161961310038"
+
+-- Pre-cache status effects (loaded lazily to avoid circular deps)
+local StatusEffects = nil
+local function getStatusEffects()
+	if StatusEffects == nil then
+		StatusEffects = {
+			SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun),
+			TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun),
+			Stun = require(ReplicatedStorage.Shared.statusEffects.stun),
+			Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing),
+			Sliding = require(ReplicatedStorage.Shared.statusEffects.sliding),
+			Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking),
+			HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking),
+			Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown),
+			Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken),
+			Iframes = require(ReplicatedStorage.Shared.statusEffects.iframes),
+			Parrying = require(ReplicatedStorage.Shared.statusEffects.parrying),
+			Parried = require(ReplicatedStorage.Shared.statusEffects.parried),
+			BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned),
+			WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning),
+		}
+	end
+	return StatusEffects
+end
 
 function CrouchManager.new()
 	local self = setmetatable({}, CrouchManager)
@@ -28,6 +54,7 @@ function CrouchManager.new()
 	self.isCrouching = false
 	self.character = nil
 	self.humanoid = nil
+	self.lastActionEndTime = 0 -- Track when the last blocking action ended
 
 	-- Animations
 	self.crouchIdleAnim = nil
@@ -73,8 +100,15 @@ function CrouchManager:_initialize()
 		end
 	end)
 
-	-- Monitor state changes to auto-cancel crouch
+	-- Monitor state changes to auto-cancel crouch AND track action times
 	self.updateConnection = RunService.Heartbeat:Connect(function()
+		-- Always track when blocking actions are active (for buffer timing)
+		-- This ensures buffer counts from when action ENDED, not when crouch was cancelled
+		if self.character and self:_hasBlockingStatusEffects() then
+			self.lastActionEndTime = tick()
+		end
+
+		-- Check crouch validity if crouching
 		if self.isCrouching then
 			self:_checkCrouchValidity()
 		end
@@ -125,6 +159,34 @@ function CrouchManager:_handleCrouchInput()
 	end
 end
 
+function CrouchManager:_hasBlockingStatusEffects(): boolean
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(self.character)
+	if not wcsCharacter then
+		return false
+	end
+
+	local effects = getStatusEffects()
+
+	-- Check all status effects that should block/cancel crouching
+	-- This is comprehensive - crouch is LOW PRIORITY
+	return wcsCharacter:HasStatusEffects({
+		effects.SoftHitstun,
+		effects.TrueHitstun,
+		effects.Stun,
+		effects.Dashing,
+		effects.Sliding,
+		effects.Attacking,
+		effects.HeavyAttacking,
+		effects.Knockdown,
+		effects.Guardbroken,
+		effects.Iframes, -- During dodge
+		effects.Parrying,
+		effects.Parried,
+		effects.BlockStunned,
+		effects.WallRunning,
+	})
+end
+
 function CrouchManager:_canCrouch(): boolean
 	if not self.character or not self.humanoid then
 		return false
@@ -136,35 +198,29 @@ function CrouchManager:_canCrouch(): boolean
 		return false
 	end
 
-	-- Check if sprinting
+	-- Check attributes (fast checks)
 	if self.character:GetAttribute("IsSprinting") then
 		return false
 	end
 
-	-- Check if wall running
 	if self.character:GetAttribute("IsWallRunning") then
 		return false
 	end
 
-	-- Check WCS status effects that block crouching
-	local wcsCharacter = WCS.Character.GetCharacterFromInstance(self.character)
-	if wcsCharacter then
-		local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
-		local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
-		local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
-		local Dashing = require(ReplicatedStorage.Shared.statusEffects.dashing)
-		local Sliding = require(ReplicatedStorage.Shared.statusEffects.sliding)
-		local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
-		local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
-		local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
-		local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
+	if self.character:GetAttribute("_SlideActive") then
+		return false
+	end
 
-		if wcsCharacter:HasStatusEffects({
-			SoftHitstun, TrueHitstun, Stun, Dashing, Sliding,
-			Attacking, HeavyAttacking, Knockdown, Guardbroken
-		}) then
-			return false
-		end
+	-- Check WCS status effects that block crouching
+	if self:_hasBlockingStatusEffects() then
+		return false
+	end
+
+	-- Buffer check: don't allow crouch immediately after an action ends
+	-- lastActionEndTime is continuously updated by heartbeat while actions are active
+	local timeSinceLastAction = tick() - self.lastActionEndTime
+	if timeSinceLastAction < ACTION_END_BUFFER then
+		return false
 	end
 
 	return true
@@ -193,12 +249,18 @@ function CrouchManager:_tryStartCrouch()
 	print("[CrouchManager] Crouch started")
 end
 
-function CrouchManager:_stopCrouch()
+function CrouchManager:_stopCrouch(cancelledByAction: boolean?)
 	if not self.isCrouching then
 		return
 	end
 
 	self.isCrouching = false
+
+	-- If cancelled by an action, update lastActionEndTime for buffer
+	-- This prevents instantly re-crouching after the action ends
+	if cancelledByAction then
+		self.lastActionEndTime = tick()
+	end
 
 	-- Clear attribute
 	if self.character then
@@ -210,13 +272,14 @@ function CrouchManager:_stopCrouch()
 		self.humanoid.WalkSpeed = BASE_WALK_SPEED
 	end
 
-	-- Stop animation
+	-- Stop animation with faster fade for action cancellations
 	if self.currentAnimTrack then
-		self.currentAnimTrack:Stop(0.1)
+		local fadeTime = cancelledByAction and 0.05 or 0.1
+		self.currentAnimTrack:Stop(fadeTime)
 		self.currentAnimTrack = nil
 	end
 
-	print("[CrouchManager] Crouch stopped")
+	print("[CrouchManager] Crouch stopped" .. (cancelledByAction and " (cancelled by action)" or ""))
 end
 
 function CrouchManager:_updateCrouchAnimation()
@@ -247,13 +310,35 @@ function CrouchManager:_checkCrouchValidity()
 		return
 	end
 
-	-- Check if crouch should be cancelled
-	if not self:_canCrouch() then
-		self:_stopCrouch()
+	-- AGGRESSIVE CANCELLATION: Check if any higher-priority action is happening
+	-- Crouch is low priority - immediately cancel for ANY action
+
+	-- Check humanoid state first (fastest check)
+	if self.humanoid then
+		local state = self.humanoid:GetState()
+		if state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping then
+			self:_stopCrouch(true) -- Action cancelled the crouch
+			return
+		end
+	end
+
+	-- Check attributes (fast checks before WCS)
+	if self.character then
+		if self.character:GetAttribute("IsSprinting")
+			or self.character:GetAttribute("IsWallRunning")
+			or self.character:GetAttribute("_SlideActive") then
+			self:_stopCrouch(true) -- Action cancelled the crouch
+			return
+		end
+	end
+
+	-- Check WCS status effects
+	if self:_hasBlockingStatusEffects() then
+		self:_stopCrouch(true) -- Action cancelled the crouch
 		return
 	end
 
-	-- Enforce crouch speed (in case something else tried to change it)
+	-- If we're still crouching, enforce the crouch speed
 	local crouchSpeed = BASE_WALK_SPEED * CROUCH_SPEED_MULTIPLIER
 	if self.humanoid and math.abs(self.humanoid.WalkSpeed - crouchSpeed) > 0.1 then
 		self.humanoid.WalkSpeed = crouchSpeed
