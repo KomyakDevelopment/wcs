@@ -69,6 +69,18 @@ CombatConfig.Weapons = {
 		FlourishKnockbackDuration = 0.25,
 		FlourishSelfHitstun = 0.6,
 	},
+	bostaff = {
+		Damage = 11, -- Medium weapon damage
+		Range = 12, -- Medium reach
+		Cooldown = 0.8, -- Medium swing speed
+		HitstunDuration = 0.7, -- Medium stagger
+		-- Combo damage delays (synced to animation timing)
+		DamageDelays = { 0.68, 0.68, 0.68, 0.68 },
+		-- Flourish (combo finisher)
+		FlourishKnockbackPower = 65,
+		FlourishKnockbackDuration = 0.22,
+		FlourishSelfHitstun = 0.55,
+	},
 }
 
 --============================================================================--

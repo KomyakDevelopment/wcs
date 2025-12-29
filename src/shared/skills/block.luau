@@ -61,6 +61,10 @@ local WEAPON_BLOCK_ANIMS = {
 		block = "rbxassetid://122601128387564",
 		parry = "rbxassetid://111224605676234",
 	},
+	bostaff = {
+		block = "rbxassetid://122601128387564",
+		parry = "rbxassetid://111224605676234",
+	},
 }
 
 function Block:OnConstructServer()

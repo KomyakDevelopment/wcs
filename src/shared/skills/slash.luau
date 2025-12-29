@@ -94,6 +94,12 @@ local COMBO_ANIMATIONS = {
 		[3] = "rbxassetid://123941806160968",
 		[4] = "rbxassetid://114181766170631", -- Flourish (same kick as all weapons)
 	},
+	bostaff = {
+		[1] = "rbxassetid://75739942402141",
+		[2] = "rbxassetid://75739942402141",
+		[3] = "rbxassetid://75739942402141",
+		[4] = "rbxassetid://114181766170631", -- Flourish (same kick as all weapons)
+	},
 }
 
 -- Helper to get weapon config dynamically
@@ -865,7 +871,8 @@ function Slash:_handleBlock(defenderWCSCharacter)
 	end
 end
 
--- Apply weapon trail VFX to weapon's Grip attachments (client-only)
+-- Apply weapon trail VFX to weapon model (client-only)
+-- Finds and enables ALL Trail objects in the weapon model
 function Slash:_applyWeaponTrail(animTrack: AnimationTrack, currentPhase: number)
 	if not RunService:IsClient() then
 		return
@@ -893,43 +900,40 @@ function Slash:_applyWeaponTrail(animTrack: AnimationTrack, currentPhase: number
 		return
 	end
 
-	-- Find trail0 attachment anywhere in the weapon model (recursive search)
-	local trail0: Instance? = nil
+	-- Find ALL Trail objects anywhere in the weapon model
+	local trails = {}
 	for _, descendant in ipairs(weaponModel:GetDescendants()) do
-		if descendant.Name == "trail0" then
-			trail0 = descendant
-			break
+		if descendant:IsA("Trail") then
+			table.insert(trails, descendant)
 		end
 	end
 
-	if not trail0 then
-		warn("[Slash] Trail attachment (trail0) not found in weapon model")
+	if #trails == 0 then
+		warn("[Slash] No Trail objects found in weapon model")
 		return
 	end
 
-	-- Find the Trail object inside trail0
-	local trail = trail0:FindFirstChildOfClass("Trail")
-	if trail then
-		local animLength = animTrack.Length or 0.5
+	local animLength = animTrack.Length or 0.5
 
-		-- Enable trail at 10% of animation (delayed start)
-		task.delay(animLength * 0.1, function()
+	-- Enable all trails at 10% of animation (delayed start)
+	task.delay(animLength * 0.1, function()
+		for _, trail in ipairs(trails) do
 			if trail and trail.Parent then
 				trail.Enabled = true
-				print(`[Slash] Enabled weapon trail for phase {currentPhase}`)
 			end
-		end)
+		end
+		print(`[Slash] Enabled {#trails} weapon trail(s) for phase {currentPhase}`)
+	end)
 
-		-- Disable trail at 80% of animation
-		task.delay(animLength * 0.8, function()
+	-- Disable all trails at 80% of animation
+	task.delay(animLength * 0.8, function()
+		for _, trail in ipairs(trails) do
 			if trail and trail.Parent then
 				trail.Enabled = false
-				print("[Slash] Disabled weapon trail VFX")
 			end
-		end)
-	else
-		warn("[Slash] No Trail object found in trail0")
-	end
+		end
+		print(`[Slash] Disabled {#trails} weapon trail(s)`)
+	end)
 end
 
 -- Play swing SFX (client-only) - delayed to 1/4 of animation duration
@@ -950,7 +954,7 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 		-- Determine weapon category based on weapon type
 		local weaponCategory = "Light_Weapons"
 
-		if weaponType == "uchigatana" or weaponType == "kusanagi" then
+		if weaponType == "uchigatana" or weaponType == "kusanagi" or weaponType == "bostaff" then
 			weaponCategory = "Medium_Weapons"
 		elseif weaponType == "kubikiribocho" then
 			-- Kubikiribocho uses its own Heavy_Weapons SFX
@@ -958,7 +962,13 @@ function Slash:_playSwingSFX(animTrack: AnimationTrack?)
 		end
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
-		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+		-- Special case for weapons with non-standard capitalization
+		local weaponFolderName
+		if weaponType == "bostaff" then
+			weaponFolderName = "BoStaff"
+		else
+			weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+		end
 
 		print(`[Slash] Looking for swing SFX: {weaponCategory}/{weaponFolderName}/swings (weapon: {weaponType})`)
 

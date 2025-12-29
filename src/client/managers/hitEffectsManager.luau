@@ -33,6 +33,10 @@ local WEAPON_EFFECTS = {
 		soundPath = { "Assets", "SFX", "Weapon_Classes", "Heavy_Weapons", "Kubikiribocho", "hit" },
 		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Heavy_Weapons", "Kubikiribocho", "hit" },
 	},
+	bostaff = {
+		soundPath = { "Assets", "SFX", "Weapon_Classes", "Medium_Weapons", "BoStaff", "hit" },
+		vfxPath = { "Assets", "VFX", "Weapon_Classes", "Medium_Weapons", "BoStaff", "hit" },
+	},
 }
 
 -- Debounce for rollcancel sounds (prevents double sounds from client prediction + server)

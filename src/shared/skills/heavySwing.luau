@@ -629,7 +629,13 @@ function HeavySwing:_playHeavySFX()
 		end
 
 		-- Capitalize weapon type for folder name (folders use PascalCase)
-		local weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+		-- Special case for weapons with non-standard capitalization
+		local weaponFolderName
+		if weaponType == "bostaff" then
+			weaponFolderName = "BoStaff"
+		else
+			weaponFolderName = string.upper(string.sub(weaponType, 1, 1)) .. string.sub(weaponType, 2)
+		end
 
 		local swingSFXFolder = ReplicatedStorage:FindFirstChild("Assets")
 			and ReplicatedStorage.Assets:FindFirstChild("SFX")
