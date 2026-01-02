@@ -476,7 +476,11 @@ function Slash:_detectHit()
 				-- Calculate direction and angle to target
 				local directionToTarget = (targetRootPart.Position - origin).Unit
 				local dotProduct = lookDirection:Dot(directionToTarget)
-				local weaponConfig = getWeaponConfig(self.currentWeaponType or DEFAULT_WEAPON)
+				-- Flourish (phase 4) uses kick which has fists hitbox for ALL weapons
+				local hitboxWeapon = if self.currentAttackPhase == MAX_COMBO_PHASE
+					then "fists"
+					else (self.currentWeaponType or DEFAULT_WEAPON)
+				local weaponConfig = getWeaponConfig(hitboxWeapon)
 
 				-- Check if target is within attack cone angle
 				if dotProduct > HIT_ANGLE_THRESHOLD then
