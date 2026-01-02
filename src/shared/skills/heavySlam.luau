@@ -36,6 +36,7 @@ local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned)
 local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
+local Daze = require(ReplicatedStorage.Shared.statusEffects.daze)
 
 -- Pre-cache skill references
 local Dodge = require(ReplicatedStorage.Shared.skills.dodge)
@@ -502,6 +503,22 @@ function HeavySlam:_hitTarget(targetModel: Model, targetHumanoid: Humanoid, hitN
 		if hitstun then
 			hitstun:Start(weaponConfig.HitstunDuration)
 			print(`[HeavySlam] Applied SoftHitstun ({weaponConfig.HitstunDuration}s) to {targetModel.Name}`)
+		end
+
+		-- Apply Daze on first hit only (disables rolling, slows walkspeed)
+		print(`[HeavySlam] Hit number: {hitNumber}, checking for Daze application...`)
+		if hitNumber == 1 then
+			print(`[HeavySlam] First hit detected, creating Daze for {targetModel.Name}`)
+			local dazeEffect = Daze.new(targetWCSCharacter)
+			print(`[HeavySlam] Daze.new() returned: {dazeEffect and "SUCCESS" or "NIL"}`)
+			if dazeEffect then
+				dazeEffect:Start(1.5) -- 1.5 second daze
+				print(`[HeavySlam] Applied Daze (1.5s) to {targetModel.Name}`)
+			else
+				warn(`[HeavySlam] Failed to create Daze effect for {targetModel.Name}`)
+			end
+		else
+			print(`[HeavySlam] Not first hit (hitNumber={hitNumber}), skipping Daze`)
 		end
 
 		local Slash = require(ReplicatedStorage.Shared.skills.slash)

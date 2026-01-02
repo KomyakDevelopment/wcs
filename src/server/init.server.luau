@@ -19,8 +19,8 @@ local SettingsData = require(ReplicatedStorage.Shared.data.settingsData)
 local Server = WCS.CreateServer()
 
 Server:RegisterDirectory(ReplicatedStorage.Shared.movesets)
+Server:RegisterDirectory(ReplicatedStorage.Shared.statusEffects) -- Register BEFORE skills (skills may import status effects)
 Server:RegisterDirectory(ReplicatedStorage.Shared.skills)
-Server:RegisterDirectory(ReplicatedStorage.Shared.statusEffects)
 
 Server:Start()
 
@@ -116,6 +116,10 @@ gripCancelBroadcastRemote.Parent = ReplicatedStorage
 local updateSettingsRemote = Instance.new("RemoteEvent")
 updateSettingsRemote.Name = "UpdateSettings"
 updateSettingsRemote.Parent = ReplicatedStorage
+
+local dazeVFXRemote = Instance.new("RemoteEvent")
+dazeVFXRemote.Name = "DazeVFX"
+dazeVFXRemote.Parent = ReplicatedStorage
 
 -- Expose stores to dodge skill (shared module needs access)
 _G.AirdashCameraStore = AirdashCameraStore

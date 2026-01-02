@@ -42,6 +42,7 @@ local function getStatusEffects()
 			Parried = require(ReplicatedStorage.Shared.statusEffects.parried),
 			BlockStunned = require(ReplicatedStorage.Shared.statusEffects.blockStunned),
 			WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning),
+			Daze = require(ReplicatedStorage.Shared.statusEffects.daze),
 		}
 	end
 	return StatusEffects
@@ -184,6 +185,7 @@ function CrouchManager:_hasBlockingStatusEffects(): boolean
 		effects.Parried,
 		effects.BlockStunned,
 		effects.WallRunning,
+		effects.Daze,
 	})
 end
 

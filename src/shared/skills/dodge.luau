@@ -24,6 +24,7 @@ local Guardbroken = require(ReplicatedStorage.Shared.statusEffects.guardbroken)
 local Knockdown = require(ReplicatedStorage.Shared.statusEffects.knockdown)
 local Attacking = require(ReplicatedStorage.Shared.statusEffects.attacking)
 local HeavyAttacking = require(ReplicatedStorage.Shared.statusEffects.heavyAttacking)
+local Daze = require(ReplicatedStorage.Shared.statusEffects.daze)
 
 -- Lazy-loaded to avoid circular dependency (punch requires dodge)
 local Punch = nil
@@ -127,12 +128,12 @@ function Dodge:OnConstructClient()
 end
 
 function Dodge:OnStartServer()
-	-- Check if player is in hitstun, guardbroken, knocked down, or attacking
+	-- Check if player is in hitstun, guardbroken, knocked down, attacking, or dazed
 	if
 		self.Character.IsGuardbroken
-		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking })
+		or self.Character:HasStatusEffects({ SoftHitstun, TrueHitstun, Knockdown, Attacking, HeavyAttacking, Daze })
 	then
-		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, knocked down, or attacking")
+		print("[Dodge] Server: Cannot dodge - Player is in hitstun, guardbroken, knocked down, attacking, or dazed")
 		return
 	end
 
@@ -501,7 +502,7 @@ function Dodge:_performAirDash(humanoid: Humanoid, humanoidRootPart: BasePart)
 end
 
 function Dodge:OnStartClient()
-	-- Check if player has any hitstun status effects active, is guardbroken, dashing, or attacking
+	-- Check if player has any hitstun status effects active, is guardbroken, dashing, attacking, or dazed
 	if
 		self.Character:HasStatusEffects({
 			SoftHitstun,
@@ -512,9 +513,10 @@ function Dodge:OnStartClient()
 			Knockdown,
 			Attacking,
 			HeavyAttacking,
+			Daze,
 		})
 	then
-		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down/attacking")
+		print("[Dodge] Client: Blocked - Player is in hitstun/stun/guardbroken/dashing/knocked down/attacking/dazed")
 		return
 	end
 

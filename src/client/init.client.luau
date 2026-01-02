@@ -96,6 +96,7 @@ local CarryManager = require(ReplicatedStorage.Client.managers.carryManager)
 local GripEffectsManager = require(ReplicatedStorage.Client.managers.gripEffectsManager)
 local CritVFXManager = require(ReplicatedStorage.Client.managers.critVFXManager)
 local CombatTagUIManager = require(ReplicatedStorage.Client.managers.combatTagUIManager)
+local DazeVFXManager = require(ReplicatedStorage.Client.managers.dazeVFXManager)
 local DebugManager = require(ReplicatedStorage.Client.managers.debugManager)
 local ServerInfoUIManager = require(ReplicatedStorage.Client.managers.serverInfoUIManager)
 local MomentumManager = require(ReplicatedStorage.Client.managers.momentumManager)
@@ -111,8 +112,8 @@ local MomentumUI = require(ReplicatedStorage.Client.ui.momentumUI)
 local Client = WCS.CreateClient()
 
 Client:RegisterDirectory(ReplicatedStorage.Shared.movesets)
+Client:RegisterDirectory(ReplicatedStorage.Shared.statusEffects) -- Register BEFORE skills (skills may import status effects)
 Client:RegisterDirectory(ReplicatedStorage.Shared.skills)
-Client:RegisterDirectory(ReplicatedStorage.Shared.statusEffects)
 
 Client:Start()
 
@@ -136,6 +137,7 @@ local carryManager = CarryManager.new()
 local gripEffectsManager = GripEffectsManager.new() -- Event-driven, listens for GripStart/GripCancel
 local critVFXManager = CritVFXManager.new() -- Event-driven, listens for PlayCritVFX
 local combatTagUIManager = CombatTagUIManager.new() -- Event-driven, listens for CombatTagUpdate
+local dazeVFXManager = DazeVFXManager.new() -- Observes all WCS characters for Daze status effect
 local debugManager = DebugManager.new() -- Debug panels (only visible for whitelisted users)
 local serverInfoUIManager = ServerInfoUIManager.new() -- Updates TopInfo UI labels
 local momentumManager = MomentumManager.new() -- Momentum system for wall running and enhanced dash
