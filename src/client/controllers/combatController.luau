@@ -747,12 +747,19 @@ function CombatController:_executeDodge()
 		self.dodgeDebounce = false
 	end)
 
+	-- Save sprint state FIRST (before stopping sprint)
+	local player = Players.LocalPlayer
+	if player and player.Character then
+		local wasSprinting = player.Character:GetAttribute("IsSprinting") == true
+		player.Character:SetAttribute("_WasSprintingBeforeDodge", wasSprinting)
+		print(`[CombatController] Saved sprint state before dodge: {wasSprinting}`)
+	end
+
 	if self.sprintManager then
 		self.sprintManager:stopSprint()
 	end
 
 	-- Handle airdash camera direction
-	local player = Players.LocalPlayer
 	if player and player.Character then
 		local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 		local humanoid = player.Character:FindFirstChild("Humanoid")

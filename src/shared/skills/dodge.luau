@@ -522,6 +522,16 @@ function Dodge:OnStartClient()
 
 	local character = self.Character.Instance
 
+	-- Read sprint state - check both the pre-saved attribute AND current IsSprinting
+	-- The pre-saved attribute is set by combatController before skill starts
+	-- We also check IsSprinting directly as a fallback
+	local savedSprintState = character:GetAttribute("_WasSprintingBeforeDodge")
+	local currentSprintState = character:GetAttribute("IsSprinting")
+	self.wasSprintingBeforeDodge = (savedSprintState == true) or (currentSprintState == true)
+	-- Clear the saved attribute after reading
+	character:SetAttribute("_WasSprintingBeforeDodge", nil)
+	print(`[Dodge] Client: Sprint state - saved: {savedSprintState}, current: {currentSprintState}, using: {self.wasSprintingBeforeDodge}`)
+
 	-- Check if player is wall jumping - cannot dodge during wall jump
 	if character:GetAttribute("IsWallJumping") then
 		print("[Dodge] Client: Cannot dodge - Player is wall jumping")
@@ -1212,20 +1222,23 @@ function Dodge:OnEndClient()
 		self.m2Connection = nil
 	end
 
-	-- Resume sprinting if W is held, but wait for rollcancel animation to finish if present
-	task.defer(function()
-		-- If rollcancel animation is playing, wait for it to finish
-		if self.rollCancelTrack and self.rollCancelTrack.IsPlaying then
-			local animLength = self.rollCancelTrack.Length or 0.5
-			print(`[Dodge] Client: Waiting {animLength}s for rollcancel animation to finish`)
-			task.wait(animLength)
-		end
+	-- Resume sprinting ONLY if player was sprinting before the dodge
+	print(`[Dodge] Client: Checking sprint resume - wasSprintingBeforeDodge: {self.wasSprintingBeforeDodge}`)
+	if self.wasSprintingBeforeDodge then
+		task.defer(function()
+			-- If rollcancel animation is playing, wait for it to finish
+			if self.rollCancelTrack and self.rollCancelTrack.IsPlaying then
+				local animLength = self.rollCancelTrack.Length or 0.5
+				print(`[Dodge] Client: Waiting {animLength}s for rollcancel animation to finish`)
+				task.wait(animLength)
+			end
 
-		local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
-		if resumeSprintEvent then
-			resumeSprintEvent:Fire()
-		end
-	end)
+			local resumeSprintEvent = ReplicatedStorage:FindFirstChild("ResumeSprintAfterDodge")
+			if resumeSprintEvent then
+				resumeSprintEvent:Fire()
+			end
+		end)
+	end
 
 	print("[Dodge] Client: Skill ended")
 end
