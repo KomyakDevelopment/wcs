@@ -237,7 +237,7 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 	-- Create BodyVelocity for smooth movement
 	local bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.MaxForce = Vector3.new(100000, 0, 100000)
-	bodyVelocity.P = 5000 -- Moderate P value for responsive but smooth movement
+	bodyVelocity.P = 15000 -- High P value to overcome Humanoid movement interference when no input
 	bodyVelocity.Parent = humanoidRootPart
 
 	self.bodyVelocity = bodyVelocity
@@ -303,12 +303,17 @@ function Dodge:_performGroundDodge(humanoid: Humanoid, humanoidRootPart: BasePar
 		bodyVelocity.Velocity = direction * dashStrength * speedMultiplier
 
 		-- Check for wall collision (velocity suddenly drops)
+		-- Only check horizontal velocity since ground dodge only controls X/Z (MaxForce Y = 0)
 		local currentVelocity = humanoidRootPart.AssemblyLinearVelocity
+		local horizontalVelocity = Vector3.new(currentVelocity.X, 0, currentVelocity.Z)
 		local expectedSpeed = dashStrength * speedMultiplier
+		local actualSpeed = horizontalVelocity.Magnitude
+		local threshold = expectedSpeed * 0.2 -- 20% threshold (more lenient than 30%)
 
-		-- If actual speed is much lower than expected, we hit a wall
-		if currentVelocity.Magnitude < expectedSpeed * 0.3 and elapsed > 0.1 then
-			print("[Dodge] Wall collision detected - Stopping dodge")
+		-- If actual horizontal speed is much lower than expected, we hit a wall
+		-- Use 0.15s elapsed threshold to give more time for velocity to stabilize
+		if actualSpeed < threshold and elapsed > 0.15 then
+			print(`[Dodge] Wall collision detected - Actual: {actualSpeed}, Threshold: {threshold}, Elapsed: {elapsed}`)
 			self.dodgeActive = false
 			break
 		end
