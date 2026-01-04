@@ -64,6 +64,9 @@ export type ClimbManager = typeof(setmetatable(
 
 		-- Connections
 		_characterConnection: RBXScriptConnection?,
+
+		-- Callback for ledge hang integration (returns true if successfully attached)
+		_onClimbEndAtTop: ((wallNormal: Vector3, position: Vector3) -> boolean)?,
 	},
 	ClimbManager
 ))
@@ -87,6 +90,7 @@ function ClimbManager.new(): ClimbManager
 	self._climbingEffect = nil
 
 	self._characterConnection = nil
+	self._onClimbEndAtTop = nil
 
 	self:_initialize()
 
@@ -333,7 +337,13 @@ function ClimbManager:_updateClimb(_deltaTime: number)
 	local wallCheck = self:_detectWallContinuous()
 	if not wallCheck then
 		print("[ClimbManager] Ending - Wall ended")
-		self:_endClimb()
+		-- Notify ledge hang system BEFORE ending climb (for auto-attach)
+		local attachedToLedge = false
+		if self._onClimbEndAtTop and self._wallNormal and self._rootPart then
+			attachedToLedge = self._onClimbEndAtTop(self._wallNormal, self._rootPart.Position)
+		end
+		-- If attached to ledge, skip physics reset (ledge hang controls physics now)
+		self:_endClimb(attachedToLedge)
 		return
 	end
 
@@ -371,7 +381,7 @@ function ClimbManager:_detectWallContinuous(): { distance: number }?
 	return nil
 end
 
-function ClimbManager:_endClimb()
+function ClimbManager:_endClimb(skipPhysicsReset: boolean?)
 	if not self._isClimbing then
 		return
 	end
@@ -383,8 +393,8 @@ function ClimbManager:_endClimb()
 	RunService:UnbindFromRenderStep("ClimbUpdate")
 	RunService:UnbindFromRenderStep("ClimbRotationEnforce")
 
-	-- Re-enable physics
-	if self._humanoid then
+	-- Re-enable physics (unless skipped because another system took over)
+	if not skipPhysicsReset and self._humanoid then
 		self._humanoid.PlatformStand = false
 		self._humanoid.AutoRotate = true
 	end
@@ -408,6 +418,12 @@ function ClimbManager:_endClimb()
 	self._wallNormal = nil
 
 	print("[ClimbManager] Ended climbing")
+end
+
+-- Set callback for when climb ends at top of wall (for ledge hang auto-attach)
+-- Callback should return true if successfully attached to ledge (to skip physics reset)
+function ClimbManager:setOnClimbEndAtTop(callback: (wallNormal: Vector3, position: Vector3) -> boolean)
+	self._onClimbEndAtTop = callback
 end
 
 function ClimbManager:destroy()

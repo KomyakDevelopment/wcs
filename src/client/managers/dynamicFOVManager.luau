@@ -33,6 +33,7 @@ local ACTION_FOV_BONUSES = {
 	Sliding = 6, -- Moderate FOV during slide
 	WallRunning = 5, -- Slight FOV during wall run
 	Climbing = 3, -- Slight FOV during climb
+	Hanging = 3, -- Slight FOV during ledge hang
 	Sprinting = 3, -- Small FOV when sprinting
 }
 
@@ -366,6 +367,9 @@ function DynamicFOVManager:_checkCharacterActions()
 
 	-- Check climbing
 	self._activeActions["Climbing"] = getAttr("IsClimbing")
+
+	-- Check hanging
+	self._activeActions["Hanging"] = getAttr("IsHanging")
 end
 
 -- Manually set an action state (for external control)

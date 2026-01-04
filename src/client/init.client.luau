@@ -101,7 +101,8 @@ local DebugManager = require(ReplicatedStorage.Client.managers.debugManager)
 local ServerInfoUIManager = require(ReplicatedStorage.Client.managers.serverInfoUIManager)
 local MomentumManager = require(ReplicatedStorage.Client.managers.momentumManager)
 local DynamicFOVManager = require(ReplicatedStorage.Client.managers.dynamicFOVManager)
-local _ClimbManager = require(ReplicatedStorage.Client.managers.climbManager)
+local ClimbManager = require(ReplicatedStorage.Client.managers.climbManager)
+local LedgeHangManager = require(ReplicatedStorage.Client.managers.ledgeHangManager)
 local SettingsUIManager = require(ReplicatedStorage.Client.managers.settingsUIManager)
 -- local HitboxVisualizerManager = require(ReplicatedStorage.Client.managers.hitboxVisualizerManager) -- DISABLED
 local _SmoothShiftLock = require(ReplicatedStorage.Client.managers.smoothShiftLock)
@@ -144,8 +145,14 @@ local serverInfoUIManager = ServerInfoUIManager.new() -- Updates TopInfo UI labe
 local momentumManager = MomentumManager.new() -- Momentum system for wall running and enhanced dash
 local momentumUI = MomentumUI.new() -- Momentum percentage display
 local dynamicFOVManager = DynamicFOVManager.new() -- Dynamic FOV based on speed/actions
-local _climbManager = _ClimbManager.new() -- Wall climbing system (Deepwoken-style)
+local climbManager = ClimbManager.new() -- Wall climbing system (Deepwoken-style)
+local _ledgeHangManager = LedgeHangManager.new() -- Ledge hang/vault system
 local settingsUIManager = SettingsUIManager.new() -- Settings menu (ESC to open)
+
+-- Link climb manager to ledge hang manager for auto-attach when climb reaches top
+climbManager:setOnClimbEndAtTop(function(wallNormal, position)
+	return _ledgeHangManager:tryAutoAttachFromClimb(wallNormal, position)
+end)
 -- local hitboxVisualizerManager = HitboxVisualizerManager.new() -- Shows weapon hitboxes (DISABLED)
 
 -- Link settings to managers

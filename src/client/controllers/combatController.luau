@@ -525,6 +525,11 @@ function CombatController:_canPerformM1(): boolean
 		return false
 	end
 
+	-- Check if hanging (cannot attack while hanging from ledge)
+	if character.Instance:GetAttribute("IsHanging") then
+		return false
+	end
+
 	local state = attackSkill:GetState()
 	if state.Debounce then
 		return false
@@ -573,6 +578,11 @@ function CombatController:_canPerformHeavy(): boolean
 
 	-- Check if climbing (cannot heavy attack while climbing)
 	if character.Instance:GetAttribute("IsClimbing") then
+		return false
+	end
+
+	-- Check if hanging (cannot heavy attack while hanging from ledge)
+	if character.Instance:GetAttribute("IsHanging") then
 		return false
 	end
 

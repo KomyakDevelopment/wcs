@@ -186,6 +186,12 @@ function Dodge:OnStartServer()
 		return
 	end
 
+	-- Check if player is hanging - cannot dodge during hang
+	if character:GetAttribute("IsHanging") then
+		print("[Dodge] Server: Cannot dodge - Player is hanging")
+		return
+	end
+
 	-- Check if player is wall running - dodge cancels wall run
 	if character:GetAttribute("IsWallRunning") then
 		print("[Dodge] Server: Player is wall running - cancelling wall run for dodge")
@@ -552,6 +558,12 @@ function Dodge:OnStartClient()
 	-- Check if player is climbing - cannot dodge during climb
 	if character:GetAttribute("IsClimbing") then
 		print("[Dodge] Client: Cannot dodge - Player is climbing")
+		return
+	end
+
+	-- Check if player is hanging - cannot dodge during hang
+	if character:GetAttribute("IsHanging") then
+		print("[Dodge] Client: Cannot dodge - Player is hanging")
 		return
 	end
 
