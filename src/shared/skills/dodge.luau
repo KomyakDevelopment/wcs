@@ -735,10 +735,24 @@ function Dodge:OnStartClient()
 
 			print("[Dodge] Client: Cloned and parented roll VFX to HumanoidRootPart")
 
-			-- Enable all ParticleEmitters
+			-- Raycast downward to get surface color for squares VFX
+			local surfaceColor: Color3? = nil
+			local rayParams = RaycastParams.new()
+			rayParams.FilterDescendantsInstances = { character }
+			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+			local groundRay = workspace:Raycast(hrp.Position, Vector3.new(0, -10, 0), rayParams)
+			if groundRay and groundRay.Instance then
+				surfaceColor = groundRay.Instance.Color
+			end
+
+			-- Enable all ParticleEmitters and apply surface color to squares
 			for _, child in ipairs(rollVFXClone:GetChildren()) do
 				if child:IsA("ParticleEmitter") then
 					child.Enabled = true
+					-- Apply surface color to squares emitter
+					if child.Name == "squares" and surfaceColor then
+						child.Color = ColorSequence.new(surfaceColor)
+					end
 					print(`[Dodge] Client: Enabled {child.Name} particle emitter`)
 				end
 			end

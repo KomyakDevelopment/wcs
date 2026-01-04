@@ -12,6 +12,11 @@ local WCS = require(ReplicatedStorage.Packages.wcs)
 local WallRunning = require(ReplicatedStorage.Shared.statusEffects.wallRunning)
 local SmoothShiftLock = require(script.Parent.smoothShiftLock)
 
+-- Hitstun status effects for hit detection
+local SoftHitstun = require(ReplicatedStorage.Shared.statusEffects.softHitstun)
+local TrueHitstun = require(ReplicatedStorage.Shared.statusEffects.trueHitstun)
+local Stun = require(ReplicatedStorage.Shared.statusEffects.stun)
+
 local WallRunManager = {}
 WallRunManager.__index = WallRunManager
 
@@ -32,6 +37,7 @@ local CONFIG = {
 	-- Movement
 	HORIZONTAL_SPEED = 40, -- Speed along wall (studs/sec) - much faster
 	DESCENT_HORIZONTAL_SPEED = 35, -- Slightly slower during descent but still fast
+	COMBAT_SPEED_MULTIPLIER = 0.8, -- 20% slower when in combat
 	UPWARD_SPEED = -0.5, -- Slight downward drift during wall run
 	DOWNWARD_SPEED_MIN = -4, -- Initial descent speed (slow start)
 	DOWNWARD_SPEED_MAX = -18, -- Maximum descent speed (accelerates to this)
@@ -89,6 +95,9 @@ export type WallRunManager = typeof(setmetatable(
 
 		-- Momentum integration
 		_momentumManager: any?,
+
+		-- Combat tracking
+		_isInCombat: boolean,
 	},
 	WallRunManager
 ))
@@ -122,6 +131,7 @@ function WallRunManager.new(): WallRunManager
 	self._currentAnim = nil
 	self._wallRunningEffect = nil
 	self._momentumManager = nil
+	self._isInCombat = false
 
 	self:_initialize()
 
@@ -170,6 +180,14 @@ function WallRunManager:_initialize()
 	RunService.Heartbeat:Connect(function()
 		self:_updateSpeedBoost()
 	end)
+
+	-- Listen for combat tag updates
+	local combatTagRemote = ReplicatedStorage:FindFirstChild("CombatTagUpdate") :: RemoteEvent?
+	if combatTagRemote then
+		combatTagRemote.OnClientEvent:Connect(function(isTagged: boolean, _remainingTime: number)
+			self._isInCombat = isTagged
+		end)
+	end
 
 	print("[WallRunManager] Initialized - Hold A (left wall) or D (right wall) to wall run")
 end
@@ -421,6 +439,14 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		return
 	end
 
+	-- Check if player was hit (has hitstun) - cancel wall run and drop them
+	local wcsCharacter = WCS.Character.GetCharacterFromInstance(self._character)
+	if wcsCharacter and wcsCharacter:HasStatusEffects({ SoftHitstun, TrueHitstun, Stun }) then
+		print("[WallRunManager] Ending - player was hit (hitstun detected)")
+		self:_endWallRun()
+		return
+	end
+
 	-- Check if wall is still there (raycast towards wall)
 	local wallCheckParams = RaycastParams.new()
 	wallCheckParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -495,6 +521,11 @@ function WallRunManager:_updateWallRun(_deltaTime: number)
 		verticalSpeed = CONFIG.DOWNWARD_SPEED_MIN
 			+ (CONFIG.DOWNWARD_SPEED_MAX - CONFIG.DOWNWARD_SPEED_MIN) * easedProgress
 		horizontalSpeed = CONFIG.DESCENT_HORIZONTAL_SPEED
+	end
+
+	-- Apply combat speed penalty (30% slower when in combat)
+	if self._isInCombat then
+		horizontalSpeed = horizontalSpeed * CONFIG.COMBAT_SPEED_MULTIPLIER
 	end
 
 	-- Calculate velocity: horizontal along wall + vertical
