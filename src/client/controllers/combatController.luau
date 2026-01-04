@@ -520,6 +520,11 @@ function CombatController:_canPerformM1(): boolean
 		end
 	end
 
+	-- Check if climbing (cannot attack while climbing)
+	if character.Instance:GetAttribute("IsClimbing") then
+		return false
+	end
+
 	local state = attackSkill:GetState()
 	if state.Debounce then
 		return false
@@ -563,6 +568,11 @@ function CombatController:_canPerformHeavy(): boolean
 
 	-- Check guardbroken, attacking, or any hitstun (prevents spam during endlag/flourish recovery)
 	if character:HasStatusEffects({ Guardbroken, Attacking, HeavyAttacking, SoftHitstun, TrueHitstun, Stun }) then
+		return false
+	end
+
+	-- Check if climbing (cannot heavy attack while climbing)
+	if character.Instance:GetAttribute("IsClimbing") then
 		return false
 	end
 

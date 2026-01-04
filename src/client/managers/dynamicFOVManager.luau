@@ -32,6 +32,7 @@ local ACTION_FOV_BONUSES = {
 	Dashing = 10, -- Quick burst of FOV during dash
 	Sliding = 6, -- Moderate FOV during slide
 	WallRunning = 5, -- Slight FOV during wall run
+	Climbing = 3, -- Slight FOV during climb
 	Sprinting = 3, -- Small FOV when sprinting
 }
 
@@ -362,6 +363,9 @@ function DynamicFOVManager:_checkCharacterActions()
 	local momentumPercent = self._character:GetAttribute("MomentumPercent")
 	local hasMomentum = type(momentumPercent) == "number" and momentumPercent > 0.3
 	self._activeActions["MomentumWallRun"] = isWallRunning and hasMomentum
+
+	-- Check climbing
+	self._activeActions["Climbing"] = getAttr("IsClimbing")
 end
 
 -- Manually set an action state (for external control)
