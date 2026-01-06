@@ -117,6 +117,15 @@ CombatConfig.Combo = {
 }
 
 --============================================================================--
+-- FLOURISH (Combo Finisher Animation)
+--============================================================================--
+CombatConfig.Flourish = {
+	FadeInTime = 0.21, -- Heavier transition into flourish (blend from previous pose)
+	FadeOutTime = 0.28, -- Heavier transition out of flourish (blend back to idle)
+	MinPlayDuration = 0.56, -- Minimum time before flourish can be cancelled by next M1
+}
+
+--============================================================================--
 -- HITBOX
 --============================================================================--
 CombatConfig.Hitbox = {

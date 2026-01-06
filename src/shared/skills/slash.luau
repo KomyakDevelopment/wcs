@@ -355,6 +355,19 @@ function Slash:OnStartClient()
 		return
 	end
 
+	-- Block M1 during flourish protection window (don't cancel flourish mid-animation)
+	if self.flourishStartTime then
+		local flourishConfig = CombatConfig.Flourish
+		local elapsed = tick() - self.flourishStartTime
+		if elapsed < flourishConfig.MinPlayDuration then
+			return -- Flourish still playing, block next M1
+		else
+			-- Flourish protection expired, clear the timer and mark for smoother transition
+			self.flourishStartTime = nil
+			self.justFinishedFlourish = true
+		end
+	end
+
 	-- Store current phase before advancing
 	local currentPhase = self.comboPhase
 
@@ -365,8 +378,23 @@ function Slash:OnStartClient()
 	-- PRIORITY: Play animation FIRST for immediate visual feedback
 	local animTrack = weaponAnims and weaponAnims[currentPhase]
 	if animTrack then
-		animTrack:Play(0.05)
+		-- Flourish (phase 4) uses heavier transitions
+		-- Also use heavier fade when starting a new combo right after flourish ended
+		local flourishConfig = CombatConfig.Flourish
+		local fadeTime = 0.05
+		if currentPhase == 4 then
+			fadeTime = flourishConfig.FadeInTime -- Heavier fade INTO flourish
+		elseif self.justFinishedFlourish then
+			fadeTime = flourishConfig.FadeOutTime -- Heavier fade for first attack after flourish
+			self.justFinishedFlourish = false
+		end
+		animTrack:Play(fadeTime)
 		animTrack.Priority = Enum.AnimationPriority.Action4
+
+		-- Track flourish start time to prevent early cancellation
+		if currentPhase == 4 then
+			self.flourishStartTime = tick()
+		end
 	end
 
 	-- Reset combo timer
@@ -376,9 +404,27 @@ function Slash:OnStartClient()
 
 	-- Stop any other slash animations that might be playing (for current weapon)
 	if weaponAnims then
+		local flourishConfig = CombatConfig.Flourish
 		for phase, track in pairs(weaponAnims) do
 			if track and track.IsPlaying and phase ~= currentPhase then
-				track:Stop(0.05)
+				-- Don't cancel flourish (phase 4) mid-way - let it finish
+				if phase == 4 and self.flourishStartTime then
+					local elapsed = tick() - self.flourishStartTime
+					if elapsed < flourishConfig.MinPlayDuration then
+						-- Flourish still playing, don't cancel it
+						continue
+					end
+				end
+				-- Use heavier fade when:
+				-- 1. Stopping flourish (phase 4) to go back to phase 1
+				-- 2. Stopping phase 3 to transition INTO flourish (currentPhase == 4)
+				local stopFade = 0.05
+				if phase == 4 then
+					stopFade = flourishConfig.FadeOutTime -- Heavier fade OUT of flourish
+				elseif currentPhase == 4 then
+					stopFade = flourishConfig.FadeInTime -- Heavier fade INTO flourish (stop previous anim slower)
+				end
+				track:Stop(stopFade)
 			end
 		end
 	end
@@ -431,11 +477,14 @@ function Slash:OnStartClient()
 		self.comboPhase = self.comboPhase + 1
 	else
 		self.comboPhase = 1
+		-- Note: Don't clear flourishStartTime here - let it protect the animation
+		-- It will be cleared either when protection expires or combo resets
 	end
 
 	-- Set timer to reset combo
 	self.comboResetTimer = task.delay(COMBO_RESET_TIME, function()
 		self.comboPhase = 1
+		self.flourishStartTime = nil -- Clear flourish protection
 	end)
 end
 
