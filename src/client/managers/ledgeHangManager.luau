@@ -39,6 +39,9 @@ local CONFIG = {
 	-- Input
 	INPUT_BUFFER_TIME = 0.3, -- Grace period for Space press
 	COOLDOWN = 0.3, -- Seconds between grabs
+
+	-- Animation
+	VAULT_ANIMATION = "rbxassetid://100770125981931", -- Same as obstacle vault
 }
 
 -- Ease out sine for smooth vault motion
@@ -68,6 +71,7 @@ export type LedgeHangManager = typeof(setmetatable(
 		_inputBufferEnd: number,
 
 		_hangingEffect: any?,
+		_vaultAnimTrack: AnimationTrack?,
 
 		-- Connections
 		_characterConnection: RBXScriptConnection?,
@@ -89,6 +93,7 @@ function LedgeHangManager.new(): LedgeHangManager
 	self._inputBufferEnd = 0
 
 	self._hangingEffect = nil
+	self._vaultAnimTrack = nil
 
 	self._characterConnection = nil
 
@@ -156,6 +161,15 @@ function LedgeHangManager:_onCharacterAdded(character: Model)
 	self._character = character
 	self._humanoid = humanoid
 	self._rootPart = rootPart
+
+	-- Load vault animation
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if animator then
+		local vaultAnim = Instance.new("Animation")
+		vaultAnim.AnimationId = CONFIG.VAULT_ANIMATION
+		self._vaultAnimTrack = animator:LoadAnimation(vaultAnim)
+		self._vaultAnimTrack.Priority = Enum.AnimationPriority.Action
+	end
 
 	-- Reset state
 	self._lastHangTime = 0
@@ -364,6 +378,11 @@ function LedgeHangManager:_vault()
 	self._currentState = "vaulting"
 	print("[LedgeHangManager] Vaulting over ledge")
 
+	-- Play vault animation
+	if self._vaultAnimTrack then
+		self._vaultAnimTrack:Play(0.1)
+	end
+
 	-- Unbind hang updates (we'll do our own interpolation)
 	RunService:UnbindFromRenderStep("LedgeHangUpdate")
 	RunService:UnbindFromRenderStep("LedgeHangRotation")
@@ -459,6 +478,11 @@ function LedgeHangManager:_endHang()
 	-- Clear attribute
 	if self._character then
 		self._character:SetAttribute("IsHanging", nil)
+	end
+
+	-- Stop vault animation if interrupted (let it play through if vaulting completed normally)
+	if wasHanging and self._vaultAnimTrack and self._vaultAnimTrack.IsPlaying then
+		self._vaultAnimTrack:Stop(0.1)
 	end
 
 	self._ledgeData = nil
