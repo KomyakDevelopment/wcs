@@ -74,31 +74,31 @@ local COMBO_ANIMATIONS = {
 		[1] = "rbxassetid://91619051516074",
 		[2] = "rbxassetid://131141876861809",
 		[3] = "rbxassetid://122892720764576",
-		[4] = "rbxassetid://114181766170631", -- Flourish
+		[4] = "rbxassetid://82920725465361", -- Flourish
 	},
 	uchigatana = {
 		[1] = "rbxassetid://87386532163101",
 		[2] = "rbxassetid://91663977468313",
 		[3] = "rbxassetid://96383704992301",
-		[4] = "rbxassetid://114181766170631", -- Flourish
+		[4] = "rbxassetid://82920725465361", -- Flourish
 	},
 	kusanagi = {
 		[1] = "rbxassetid://87386532163101",
 		[2] = "rbxassetid://91663977468313",
 		[3] = "rbxassetid://96383704992301",
-		[4] = "rbxassetid://114181766170631", -- Flourish
+		[4] = "rbxassetid://82920725465361", -- Flourish
 	},
 	kubikiribocho = {
 		[1] = "rbxassetid://140162212121285",
 		[2] = "rbxassetid://110088968830490",
 		[3] = "rbxassetid://123941806160968",
-		[4] = "rbxassetid://114181766170631", -- Flourish (same kick as all weapons)
+		[4] = "rbxassetid://82920725465361", -- Flourish (same kick as all weapons)
 	},
 	bostaff = {
 		[1] = "rbxassetid://75739942402141",
 		[2] = "rbxassetid://75739942402141",
 		[3] = "rbxassetid://75739942402141",
-		[4] = "rbxassetid://114181766170631", -- Flourish (same kick as all weapons)
+		[4] = "rbxassetid://82920725465361", -- Flourish (same kick as all weapons)
 	},
 }
 
@@ -230,7 +230,8 @@ function Slash:OnStartServer()
 	-- NOTE: This is sent AFTER Attacking status is applied so clients can validate
 	local parryFlashRemote = ReplicatedStorage:FindFirstChild("PlayParryFlashVFX")
 	if parryFlashRemote then
-		local animId = COMBO_ANIMATIONS[self.currentWeaponType] and COMBO_ANIMATIONS[self.currentWeaponType][self.currentAttackPhase]
+		local animId = COMBO_ANIMATIONS[self.currentWeaponType]
+			and COMBO_ANIMATIONS[self.currentWeaponType][self.currentAttackPhase]
 		parryFlashRemote:FireAllClients(self.Character.Instance, self.currentAttackPhase, animId)
 		print(`[Slash] Server: Broadcasting parry flash VFX for phase {self.currentAttackPhase}, anim {animId}`)
 	end

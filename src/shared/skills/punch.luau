@@ -83,7 +83,7 @@ local COMBO_ANIMATIONS = {
 	[1] = "rbxassetid://71814602910988",
 	[2] = "rbxassetid://83691540313756",
 	[3] = "rbxassetid://118980540226262",
-	[4] = "rbxassetid://114181766170631", -- Flourish
+	[4] = "rbxassetid://82920725465361", -- Flourish
 }
 
 -- Damage delays for each combo phase (in seconds)
@@ -170,7 +170,9 @@ function Punch:OnStartServer()
 			WallRunning, -- Can't attack while wall running
 		})
 	then
-		print("[Punch] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking")
+		print(
+			"[Punch] Blocked - Player is in hitstun, guardbroken, dashing, blocking/parrying, knocked down, or attacking"
+		)
 		return
 	end
 
