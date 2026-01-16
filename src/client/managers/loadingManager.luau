@@ -16,6 +16,7 @@ local REQUIRED_REMOTES = {
 	"PlayBlockHitVFX",
 	"PlayBlockHitAnimation",
 	"PlayParriedAnimation",
+	"PlayGotHitAnimation", -- Got-hit reaction animations
 	"PlayerDeath",
 	"PlayRollCancel",
 	"PlayGuardbreak",

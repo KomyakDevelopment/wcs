@@ -53,6 +53,10 @@ local parriedAnimRemote = Instance.new("RemoteEvent")
 parriedAnimRemote.Name = "PlayParriedAnimation"
 parriedAnimRemote.Parent = ReplicatedStorage
 
+local gotHitAnimRemote = Instance.new("RemoteEvent")
+gotHitAnimRemote.Name = "PlayGotHitAnimation"
+gotHitAnimRemote.Parent = ReplicatedStorage
+
 local playerDeathRemote = Instance.new("RemoteEvent")
 playerDeathRemote.Name = "PlayerDeath"
 playerDeathRemote.Parent = ReplicatedStorage

@@ -360,8 +360,15 @@ function HeavyPunch:_detectHit()
 	-- Fire hit effects
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		local gotHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayGotHitAnimation")
 		if hitEffectsRemote then
-			hitEffectsRemote:FireAllClients(actualHits[1].model, "fists")
+			for _, targetData in ipairs(actualHits) do
+				hitEffectsRemote:FireAllClients(targetData.model, "fists")
+				-- Fire got-hit animation on the target
+				if gotHitAnimRemote then
+					gotHitAnimRemote:FireAllClients(targetData.model)
+				end
+			end
 		end
 	end
 end

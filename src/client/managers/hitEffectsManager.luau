@@ -1,6 +1,11 @@
 --!strict
 -- Hit Effects Manager (Client)
 -- Handles client-side replication of hit sounds and VFX for optimal performance and timing
+--
+-- TODO: Consider creating a centralized "onDamageDealt" hook in the combat framework.
+-- Currently, each attack skill (slash, punch, heavySlash, heavyPunch, heavySlam, heavySwing)
+-- individually fires hit effect remotes. A shared utility or event system would reduce
+-- code duplication and make adding new hit effects easier (only 1 file change instead of 6+).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Debris = game:GetService("Debris")
@@ -42,6 +47,13 @@ local WEAPON_EFFECTS = {
 -- Debounce for rollcancel sounds (prevents double sounds from client prediction + server)
 local ROLLCANCEL_DEBOUNCE = 0.3 -- seconds
 
+-- Got hit animation IDs (played on character that takes damage)
+local GOT_HIT_ANIMATIONS = {
+	"rbxassetid://77645663309419",
+	"rbxassetid://103416700464091",
+	"rbxassetid://94826212499083",
+}
+
 function HitEffectsManager.new()
 	local self = setmetatable({}, HitEffectsManager)
 
@@ -68,6 +80,12 @@ function HitEffectsManager.new()
 
 		print(`[HitEffectsManager] Roll cancel triggered on {if targetModel then targetModel.Name else "nil"}`)
 		self:playRollCancelEffects(targetModel)
+	end)
+
+	-- Listen for got-hit animations from server (when character takes damage)
+	local gotHitAnimRemote = ReplicatedStorage:WaitForChild("PlayGotHitAnimation") :: RemoteEvent
+	gotHitAnimRemote.OnClientEvent:Connect(function(targetModel: Model)
+		self:playGotHitAnimation(targetModel)
 	end)
 
 	print("[HitEffectsManager] Initialized - Listening for hit effects")
@@ -408,6 +426,40 @@ function HitEffectsManager:_playSuccessfulDodgeHighlight(targetModel: Model)
 	end)
 
 	print(`[HitEffectsManager] Playing successful dodge highlight on {targetModel.Name}`)
+end
+
+-- Play got-hit animation when character takes damage
+function HitEffectsManager:playGotHitAnimation(targetModel: Model)
+	if not targetModel or not targetModel:IsA("Model") then
+		return
+	end
+
+	local humanoid = targetModel:FindFirstChild("Humanoid") :: Humanoid?
+	if not humanoid then
+		return
+	end
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		return
+	end
+
+	-- Pick random animation from the list
+	local randomAnimId = GOT_HIT_ANIMATIONS[math.random(1, #GOT_HIT_ANIMATIONS)]
+
+	-- Create and play animation
+	local gotHitAnim = Instance.new("Animation")
+	gotHitAnim.AnimationId = randomAnimId
+	local gotHitTrack = animator:LoadAnimation(gotHitAnim)
+
+	-- Use Action2 priority so it plays over idle but doesn't override attacks
+	gotHitTrack.Priority = Enum.AnimationPriority.Action2
+	gotHitTrack:Play(0.05)
+
+	-- Clean up animation instance after track loads
+	Debris:AddItem(gotHitAnim, 1)
+
+	print(`[HitEffectsManager] Playing got-hit animation on {targetModel.Name}`)
 end
 
 return HitEffectsManager

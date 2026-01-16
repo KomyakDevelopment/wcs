@@ -398,9 +398,16 @@ function HeavySlam:_detectHit(hitNumber: number, damage: number)
 
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		local gotHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayGotHitAnimation")
 		if hitEffectsRemote then
 			local weaponType = self:_getCurrentWeaponType()
-			hitEffectsRemote:FireAllClients(actualHits[1].model, weaponType)
+			for _, targetData in ipairs(actualHits) do
+				hitEffectsRemote:FireAllClients(targetData.model, weaponType)
+				-- Fire got-hit animation on the target
+				if gotHitAnimRemote then
+					gotHitAnimRemote:FireAllClients(targetData.model)
+				end
+			end
 		end
 	end
 end

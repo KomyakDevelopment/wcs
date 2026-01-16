@@ -533,10 +533,15 @@ function Punch:_detectHit()
 	-- Fire hit effects for EACH target that was actually hit (not blocked/parried)
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		local gotHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayGotHitAnimation")
 		if hitEffectsRemote then
 			-- Fire effects for each target that was hit
 			for _, targetData in ipairs(actualHits) do
 				hitEffectsRemote:FireAllClients(targetData.model, "fists")
+				-- Fire got-hit animation on the target
+				if gotHitAnimRemote then
+					gotHitAnimRemote:FireAllClients(targetData.model)
+				end
 			end
 		end
 	end

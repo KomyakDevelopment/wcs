@@ -579,6 +579,7 @@ function Slash:_detectHit()
 	-- Fire hit effects for EACH target that was actually hit (not blocked/parried)
 	if #actualHits > 0 then
 		local hitEffectsRemote = ReplicatedStorage:FindFirstChild("PlayHitEffects")
+		local gotHitAnimRemote = ReplicatedStorage:FindFirstChild("PlayGotHitAnimation")
 		if hitEffectsRemote then
 			local currentWeapon = self:_getCurrentWeaponType()
 			-- Flourish (phase 4) uses kick for ALL weapons, so use fists hit effects
@@ -591,6 +592,10 @@ function Slash:_detectHit()
 			-- Fire effects for each target that was hit
 			for _, targetData in ipairs(actualHits) do
 				hitEffectsRemote:FireAllClients(targetData.model, weaponType)
+				-- Fire got-hit animation on the target
+				if gotHitAnimRemote then
+					gotHitAnimRemote:FireAllClients(targetData.model)
+				end
 			end
 		end
 	end
