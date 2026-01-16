@@ -300,7 +300,7 @@ function CrouchManager:_updateCrouchAnimation()
 
 		if targetAnim then
 			targetAnim.Looped = true
-			targetAnim.Priority = Enum.AnimationPriority.Action
+			targetAnim.Priority = Enum.AnimationPriority.Movement
 			targetAnim:Play(0.15)
 			self.currentAnimTrack = targetAnim
 		end

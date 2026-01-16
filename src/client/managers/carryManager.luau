@@ -155,7 +155,7 @@ function CarryManager:_playCarryingAnimation(carrier: Model)
 			local carryAnim = Instance.new("Animation")
 			carryAnim.AnimationId = CARRYING_ANIMATION
 			self._carryingAnimTrack = animator:LoadAnimation(carryAnim)
-			self._carryingAnimTrack.Priority = Enum.AnimationPriority.Action4
+			self._carryingAnimTrack.Priority = Enum.AnimationPriority.Movement
 			self._carryingAnimTrack.Looped = true
 			self._carryingAnimTrack:Play(0.2)
 			print("[CarryManager] Playing carrying animation")
@@ -171,7 +171,7 @@ function CarryManager:_playCarriedAnimation(target: Model)
 			local carriedAnim = Instance.new("Animation")
 			carriedAnim.AnimationId = CARRIED_ANIMATION
 			self._carriedAnimTrack = targetAnimator:LoadAnimation(carriedAnim)
-			self._carriedAnimTrack.Priority = Enum.AnimationPriority.Action4
+			self._carriedAnimTrack.Priority = Enum.AnimationPriority.Movement
 			self._carriedAnimTrack.Looped = true
 			self._carriedAnimTrack:Play(0.2)
 			print("[CarryManager] Playing carried animation on target")
@@ -200,7 +200,7 @@ function CarryManager:_playRemoteCarryAnimations(carrier: Model, target: Model)
 			local carryAnim = Instance.new("Animation")
 			carryAnim.AnimationId = CARRYING_ANIMATION
 			local track = animator:LoadAnimation(carryAnim)
-			track.Priority = Enum.AnimationPriority.Action4
+			track.Priority = Enum.AnimationPriority.Movement
 			track.Looped = true
 			track:Play(0.2)
 		end
@@ -214,7 +214,7 @@ function CarryManager:_playRemoteCarryAnimations(carrier: Model, target: Model)
 			local carriedAnim = Instance.new("Animation")
 			carriedAnim.AnimationId = CARRIED_ANIMATION
 			local track = animator:LoadAnimation(carriedAnim)
-			track.Priority = Enum.AnimationPriority.Action4
+			track.Priority = Enum.AnimationPriority.Movement
 			track.Looped = true
 			track:Play(0.2)
 		end
@@ -228,7 +228,7 @@ function CarryManager:_stopRemoteCarryAnimations(carrier: Model, target: Model)
 			local animator = humanoid:FindFirstChildOfClass("Animator")
 			if animator then
 				for _, track in animator:GetPlayingAnimationTracks() do
-					if track.Priority == Enum.AnimationPriority.Action4 then
+					if track.Priority == Enum.AnimationPriority.Movement then
 						track:Stop(0.2)
 					end
 				end

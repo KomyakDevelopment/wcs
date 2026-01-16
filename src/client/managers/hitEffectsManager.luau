@@ -49,10 +49,19 @@ local ROLLCANCEL_DEBOUNCE = 0.3 -- seconds
 
 -- Got hit animation IDs (played on character that takes damage)
 local GOT_HIT_ANIMATIONS = {
+	"rbxassetid://96351274490601",
 	"rbxassetid://77645663309419",
 	"rbxassetid://103416700464091",
+	"rbxassetid://128601652451711",
+	"rbxassetid://84610082798964",
+	"rbxassetid://140202711164977",
+	"rbxassetid://80772809721126",
+	"rbxassetid://99850275351269",
 	"rbxassetid://94826212499083",
 }
+
+-- Track last played got-hit animation per character to avoid repeats
+local lastGotHitAnimIndex: { [Model]: number } = {}
 
 function HitEffectsManager.new()
 	local self = setmetatable({}, HitEffectsManager)
@@ -444,16 +453,22 @@ function HitEffectsManager:playGotHitAnimation(targetModel: Model)
 		return
 	end
 
-	-- Pick random animation from the list
-	local randomAnimId = GOT_HIT_ANIMATIONS[math.random(1, #GOT_HIT_ANIMATIONS)]
+	-- Pick random animation from the list (avoid repeating the same one twice in a row)
+	local lastIndex = lastGotHitAnimIndex[targetModel]
+	local randomIndex
+	repeat
+		randomIndex = math.random(1, #GOT_HIT_ANIMATIONS)
+	until randomIndex ~= lastIndex or #GOT_HIT_ANIMATIONS == 1
+	lastGotHitAnimIndex[targetModel] = randomIndex
+	local randomAnimId = GOT_HIT_ANIMATIONS[randomIndex]
 
 	-- Create and play animation
 	local gotHitAnim = Instance.new("Animation")
 	gotHitAnim.AnimationId = randomAnimId
 	local gotHitTrack = animator:LoadAnimation(gotHitAnim)
 
-	-- Use Action2 priority so it plays over idle but doesn't override attacks
-	gotHitTrack.Priority = Enum.AnimationPriority.Action2
+	-- Use Idle priority (lowest) so it doesn't override other animations
+	gotHitTrack.Priority = Enum.AnimationPriority.Idle
 	gotHitTrack:Play(0.05)
 
 	-- Clean up animation instance after track loads
