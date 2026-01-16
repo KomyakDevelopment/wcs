@@ -195,6 +195,20 @@ function Punch:OnStartServer()
 		local attackDuration = DAMAGE_DELAYS[self.currentAttackPhase] or 0.45
 		self.attackingEffect:Start(attackDuration)
 		print(`[Punch] Applied Attacking status for {attackDuration}s`)
+
+		-- Set IsAttacking attribute for fast client-side animation detection
+		-- This helps blockVFXManager detect attack animations for parry flash timing
+		local charInstance = self.Character.Instance
+		charInstance:SetAttribute("IsAttacking", true)
+		charInstance:SetAttribute("AttackPhase", self.currentAttackPhase)
+
+		-- Clear attributes when attack window ends
+		task.delay(attackDuration, function()
+			if charInstance:GetAttribute("AttackPhase") == self.currentAttackPhase then
+				charInstance:SetAttribute("IsAttacking", nil)
+				charInstance:SetAttribute("AttackPhase", nil)
+			end
+		end)
 	end
 
 	-- Broadcast parry flash VFX to all clients (shows timing indicator for defenders)
@@ -607,9 +621,23 @@ function Punch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			return false
 		end
 
-		-- Check for parry (Parrying or Autoparry status) - 360 degrees, no facing requirement
+		-- Check for parry using ATTRIBUTES FIRST (fast replication - instant detection)
+		-- This bypasses the status effect latency problem
+		local isParrying = targetModel:GetAttribute("IsParrying")
+		local parryWindowEnd = targetModel:GetAttribute("ParryWindowEnd")
+		local currentTime = workspace:GetServerTimeNow()
+
+		-- Attribute-based parry check (instant, no latency)
+		if isParrying and parryWindowEnd and currentTime <= parryWindowEnd then
+			print(`[Punch] Target {targetModel.Name} PARRIED the attack! (attribute-based, time: {currentTime}, window ends: {parryWindowEnd})`)
+			self:_handleParry(targetWCSCharacter)
+			return false
+		end
+
+		-- Fallback: Check for parry via WCS status effects (Parrying or Autoparry)
+		-- This catches cases like Autoparry which doesn't use the attribute system
 		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
-			print(`[Punch] Target {targetModel.Name} PARRIED the attack!`)
+			print(`[Punch] Target {targetModel.Name} PARRIED the attack! (status effect fallback)`)
 			self:_handleParry(targetWCSCharacter)
 			return false
 		end

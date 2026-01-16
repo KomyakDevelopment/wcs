@@ -11,6 +11,7 @@ local SFXManager = require(ReplicatedStorage.Client.managers.sfxManager)
 
 -- Attack animation IDs to watch for (triggers parry flash when these play on other players)
 -- Maps animation ID -> attack phase (1-4) for correct hand/foot placement
+-- NOTE: This is a hint system - if animation isn't here, we still detect via Attacking status
 local ATTACK_ANIMATION_IDS = {
 	-- Slash animations (server-side IDs)
 	["rbxassetid://91619051516074"] = 1,  -- Slash phase 1 (left arm)
@@ -25,6 +26,9 @@ local ATTACK_ANIMATION_IDS = {
 	["rbxassetid://71814602910988"] = 1,  -- Punch phase 1 (left arm)
 	["rbxassetid://83691540313756"] = 2,  -- Punch phase 2 (right arm)
 	["rbxassetid://118980540226262"] = 3, -- Punch phase 3 (left arm)
+	-- Heavy attack animations
+	["rbxassetid://105621431802545"] = 4, -- Heavy punch
+	["rbxassetid://136860865307002"] = 4, -- Heavy slash (flourish)
 }
 
 local BlockVFXManager = {}
@@ -66,9 +70,10 @@ function BlockVFXManager.new()
 	-- Setup remote event listeners (for parry/block success VFX)
 	self:_setupRemotes()
 
-	-- NOTE: Animation watchers disabled - now using server remote with local animation playback
-	-- This provides frame-perfect sync by playing the animation directly on defender's client
-	-- self:_setupAnimationWatchers()
+	-- Setup animation watchers for frame-perfect parry flash timing
+	-- This detects when attack animations play on other characters and shows parry flash in sync
+	-- Much better than server remote which has different network latency than animation replication
+	self:_setupAnimationWatchers()
 
 	print("[BlockVFXManager] Initialized")
 	return self
@@ -101,60 +106,23 @@ function BlockVFXManager:_setupRemotes()
 	print("[BlockVFXManager] Remote events setup complete")
 end
 
--- Play attack animation locally on attacker's character for frame-perfect sync
--- This bypasses Roblox's animation replication delay by playing the animation directly
-function BlockVFXManager:_playLocalAttackAnimation(attackerCharacter: Model, attackPhase: number, animationId: string?)
+-- Handle attack notification from server
+-- We rely on Roblox's natural animation replication - no manual animation play
+-- This just triggers the parry flash VFX to show attack timing
+function BlockVFXManager:_playLocalAttackAnimation(attackerCharacter: Model, attackPhase: number, _animationId: string?)
 	if not attackerCharacter then
 		return
 	end
 
-	-- Don't play on local player (they already have their own animation)
+	-- Don't show on local player (they see their own effects)
 	local localPlayer = Players.LocalPlayer
 	if localPlayer and localPlayer.Character == attackerCharacter then
 		return
 	end
 
-	-- Validate animation ID
-	if not animationId or typeof(animationId) ~= "string" then
-		-- Fallback to just showing parry flash without local animation
-		self:playParryFlashVFX(attackerCharacter, attackPhase)
-		return
-	end
-
-	-- Get the humanoid and animator
-	local humanoid = attackerCharacter:FindFirstChild("Humanoid") :: Humanoid?
-	if not humanoid then
-		return
-	end
-
-	local animator = humanoid:FindFirstChildOfClass("Animator") :: Animator?
-	if not animator then
-		return
-	end
-
-	-- Create and load the animation
-	local animation = Instance.new("Animation")
-	animation.AnimationId = animationId
-	local animTrack = animator:LoadAnimation(animation)
-
-	-- Configure the animation for attack
-	animTrack.Priority = Enum.AnimationPriority.Action4
-	animTrack.Looped = false
-
-	-- Play the animation immediately (frame-perfect on defender's screen)
-	animTrack:Play(0.05)
-	print(`[BlockVFXManager] Playing local attack animation on {attackerCharacter.Name}, phase {attackPhase}, anim {animationId}`)
-
-	-- Show parry flash VFX immediately (synced with local animation)
+	-- Just show parry flash VFX - Roblox handles animation replication naturally
+	-- Manual animation play was causing "smooshing" from duplicate tracks
 	self:playParryFlashVFX(attackerCharacter, attackPhase)
-
-	-- Cleanup animation instance after it finishes
-	local animLength = animTrack.Length or 0.5
-	task.delay(animLength + 0.5, function()
-		if animation and animation.Parent then
-			animation:Destroy()
-		end
-	end)
 end
 
 -- Setup animation watchers to detect attack animations on other players
@@ -191,12 +159,23 @@ function BlockVFXManager:_setupAnimationWatchers()
 				return
 			end
 
-			-- Check if this is an attack animation
+			-- Check if this is a known attack animation
 			local attackPhase = ATTACK_ANIMATION_IDS[animId]
+
+			-- Also detect unknown animations by checking priority
+			-- Action4 priority is used for attack animations
+			if not attackPhase and animTrack.Priority == Enum.AnimationPriority.Action4 then
+				-- Check if the character has Attacking status (confirms it's an attack)
+				local isAttacking = character:GetAttribute("IsAttacking")
+				if isAttacking then
+					attackPhase = 2 -- Default to right arm for unknown attacks
+					print(`[BlockVFXManager] Detected Action4 animation on {player.Name} (not in table, using default phase)`)
+				end
+			end
+
 			if attackPhase then
 				-- Prevent same animation track from triggering multiple times
 				if self.lastAnimTrack[character] == animTrack then
-					print(`[BlockVFXManager] Same animation track, skipping duplicate for {player.Name}`)
 					return
 				end
 				self.lastAnimTrack[character] = animTrack

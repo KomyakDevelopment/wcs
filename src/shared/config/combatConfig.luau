@@ -174,8 +174,9 @@ CombatConfig.Posture = {
 -- PARRY SYSTEM
 --============================================================================--
 CombatConfig.Parry = {
-	WindowDuration = 0.2, -- How long parry is active after pressing block
-	Cooldown = 0.4, -- Time after failed parry before can parry again
+	WindowDuration = 0.3, -- How long parry is active after pressing block (increased for attribute-based system)
+	Cooldown = 0.35, -- Time after releasing block before can parry again (reduced from 0.4)
+	StartupTime = 0.02, -- Brief delay before parry window starts
 }
 
 --============================================================================--

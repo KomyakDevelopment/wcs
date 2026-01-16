@@ -411,9 +411,23 @@ function HeavyPunch:_hitTarget(targetModel: Model, targetHumanoid: Humanoid)
 			return false
 		end
 
-		-- Check for parry (heavy attacks can still be parried)
+		-- Check for parry using ATTRIBUTES FIRST (fast replication - instant detection)
+		-- This bypasses the status effect latency problem
+		local isParrying = targetModel:GetAttribute("IsParrying")
+		local parryWindowEnd = targetModel:GetAttribute("ParryWindowEnd")
+		local currentTime = workspace:GetServerTimeNow()
+
+		-- Attribute-based parry check (instant, no latency)
+		if isParrying and parryWindowEnd and currentTime <= parryWindowEnd then
+			print(`[HeavyPunch] Target {targetModel.Name} PARRIED! (attribute-based, time: {currentTime}, window ends: {parryWindowEnd})`)
+			self:_handleParry(targetWCSCharacter)
+			return false
+		end
+
+		-- Fallback: Check for parry via WCS status effects (Parrying or Autoparry)
+		-- This catches cases like Autoparry which doesn't use the attribute system
 		if targetWCSCharacter:HasStatusEffects({ Parrying, Autoparry }) then
-			print(`[HeavyPunch] Target {targetModel.Name} PARRIED!`)
+			print(`[HeavyPunch] Target {targetModel.Name} PARRIED! (status effect fallback)`)
 			self:_handleParry(targetWCSCharacter)
 			return false
 		end
